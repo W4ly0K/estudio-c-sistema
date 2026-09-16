@@ -24,9 +24,10 @@ enum CategoriaSolicitud {
 
 model Usuario {
   id_usuario  String     @id @default(uuid())
+  nombre      String
   correo      String     @unique
   rol         RolUsuario @default(SOLICITANTE)
-
+  
   // Relaciones
   solicitudes      Solicitud[]
   logs_modificados Log_Auditoria[] @relation("StaffModificador")
