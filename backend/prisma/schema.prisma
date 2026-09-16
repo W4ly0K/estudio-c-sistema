@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Enums basados en el Diccionario de Datos
+enum RolUsuario {
+  SOLICITANTE
+  STAFF
+}
+
+enum CategoriaSolicitud {
+  PODCAST
+  VIDEO
+  ESPACIOS
+  STREAMING
+  ASESORIAS
+}
+
+model Usuario {
+  id_usuario  String     @id @default(uuid())
+  correo      String     @unique
+  rol         RolUsuario @default(SOLICITANTE)
+
+  // Relaciones
+  solicitudes      Solicitud[]
+  logs_modificados Log_Auditoria[] @relation("StaffModificador")
+}
+
+model Solicitud {
+  radicado               String             @id
+  id_usuario             String
+  categoria              CategoriaSolicitud
+  proposito              String             @db.Text
+  num_participantes      Int?
+  fecha_inicio           DateTime
+  fecha_fin              DateTime
+  fecha_propuesta_inicio DateTime?          // Nullable
+  fecha_propuesta_fin    DateTime?          // Nullable
+  estado                 String
+  es_urgencia            Boolean            @default(false)
+
+  // Relaciones
+  usuario  Usuario             @relation(fields: [id_usuario], references: [id_usuario])
+  recursos Solicitud_Recurso[]
+  logs     Log_Auditoria[]
+}
+
+model Recurso {
+  id_recurso     Int    @id @default(autoincrement())
+  nombre         String
+  cantidad_total Int
+
+  // Relaciones
+  solicitudes Solicitud_Recurso[]
+}
+
+model Solicitud_Recurso {
+  id_detalle          String @id @default(uuid())
+  radicado_solicitud  String
+  id_recurso          Int
+  cantidad_solicitada Int
+
+  // Relaciones
+  solicitud Solicitud @relation(fields: [radicado_solicitud], references: [radicado])
+  recurso   Recurso   @relation(fields: [id_recurso], references: [id_recurso])
+}
+
+model Log_Auditoria {
+  id_log             String   @id @default(uuid())
+  radicado_solicitud String
+  estado_anterior    String
+  estado_nuevo       String
+  modificado_por     String
+  fecha_modificacion DateTime @default(now())
+  motivo_rechazo     String?  @db.Text
+
+  // Relaciones
+  solicitud  Solicitud @relation(fields: [radicado_solicitud], references: [radicado])
+  usuario    Usuario   @relation("StaffModificador", fields: [modificado_por], references: [id_usuario])
+}
