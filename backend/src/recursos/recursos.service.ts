@@ -1,15 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { CreateRecursoDto } from './dto/create-recurso.dto';
 import { UpdateRecursoDto } from './dto/update-recurso.dto';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RecursosService {
-  create(createRecursoDto: CreateRecursoDto) {
-    return 'This action adds a new recurso';
+  // Inyectamos nuestro puente a la base de datos
+  constructor(private prisma: PrismaService) {}
+
+  async create(createRecursoDto: CreateRecursoDto) {
+    return await this.prisma.recurso.create({
+      data: createRecursoDto,
+    });
   }
 
-  findAll() {
-    return `This action returns all recursos`;
+  async findAll() {
+    return await this.prisma.recurso.findMany();
   }
 
   findOne(id: number) {
