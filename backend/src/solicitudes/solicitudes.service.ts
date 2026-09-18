@@ -3,6 +3,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotImplementedException } from '@nestjs/common';
 
 @Injectable()
 export class SolicitudesService {
@@ -51,7 +52,7 @@ export class SolicitudesService {
         estado: 'Recibido',
         es_urgencia: esUrgencia,
         
-        Solicitud_Recurso: { 
+        recursos: { 
           create: createSolicitudeDto.recursos?.map(recurso => ({
             id_recurso: recurso.id_recurso,
             cantidad_solicitada: recurso.cantidad
@@ -61,14 +62,54 @@ export class SolicitudesService {
     });
   }
 
-  async findAll() {
-    return await this.prisma.solicitud.findMany();
+  async findAll(estado?: string, categoria?: CategoriaSolicitud) {
+    return await this.prisma.solicitud.findMany({
+      where: {
+        ...(estado ? { estado } : {}),
+        ...(categoria ? { categoria } : {}),
+      },
+      include: {
+        usuario: {
+          select: { nombre: true, correo: true },
+        },
+        recursos: {
+          include: {
+            recurso: {
+              select: { nombre: true },
+            },
+          },
+        },
+      },
+      orderBy: {
+        fecha_inicio: 'asc',
+      },
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} solicitude`;
-  }
+  async findOne(radicado: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { radicado },
+      include: {
+        usuario: {
+          select: { id_usuario: true, nombre: true, correo: true, rol: true },
+        },
+        recursos: {
+          include: {
+            recurso: true, // Trae nombre y cantidad_total del inventario para C3
+          },
+        },
+        logs: {
+          orderBy: { fecha_modificacion: 'asc' }, // Orden cronológico para C7
+        },
+      },
+    });
 
+    if (!solicitud) {
+      throw new BadRequestException(`El radicado ${radicado} no existe en el sistema.`);
+    }
+
+    return solicitud;
+  }
 
   async update(radicado: string, updateSolicitudeDto: UpdateSolicitudeDto) {
     // 1. Verificamos que la solicitud exista y capturamos su estado_anterior
@@ -140,7 +181,17 @@ export class SolicitudesService {
     };
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} solicitude`;
+  async remove(radicado: string) {
+    // Verificar si existe antes de decidir política o bloquear borrado físico inmutable
+    const existe = await this.prisma.solicitud.findUnique({ where: { radicado } });
+    if (!existe) {
+      throw new BadRequestException(`El radicado ${radicado} no existe.`);
+    }
+
+    // Regla de arquitectura financiera/auditoría: los radicados no se eliminan físicamente.
+    // Se transicionan a estado 'Cancelado por el Usuario' o 'Rechazado'.
+    throw new NotImplementedException(
+      'El borrado físico de radicados está prohibido por política de auditoría. Use PATCH para cambiar estado a cancelación.'
+    );
   }
 }

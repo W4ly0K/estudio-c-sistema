@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { CategoriaSolicitud } from '@prisma/client';
 
 @Controller('solicitudes')
 export class SolicitudesController {
@@ -13,22 +14,28 @@ export class SolicitudesController {
   }
 
   @Get()
-  findAll() {
-    return this.solicitudesService.findAll();
+  findAll(
+    @Query('estado') estado?: string,
+    @Query('categoria') categoria?: CategoriaSolicitud,
+  ) {
+    return this.solicitudesService.findAll(estado, categoria);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.solicitudesService.findOne(+id);
+  @Get(':radicado')
+  findOne(@Param('radicado') radicado: string) {
+    return this.solicitudesService.findOne(radicado);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateSolicitudeDto: UpdateSolicitudeDto) {
-    return this.solicitudesService.update(id, updateSolicitudeDto);
+  @Patch(':radicado')
+  update(
+    @Param('radicado') radicado: string,
+    @Body() updateSolicitudeDto: UpdateSolicitudeDto,
+  ) {
+    return this.solicitudesService.update(radicado, updateSolicitudeDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.solicitudesService.remove(+id);
+  @Delete(':radicado')
+  remove(@Param('radicado') radicado: string) {
+    return this.solicitudesService.remove(radicado);
   }
 }
