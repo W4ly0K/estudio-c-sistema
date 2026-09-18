@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
@@ -61,9 +62,9 @@ export class SolicitudesService {
     return `This action returns a #${id} solicitude`;
   }
 
-// Nota: Cambiamos 'id: number' por 'radicado: string' porque es la llave primaria
+
   async update(radicado: string, updateSolicitudeDto: UpdateSolicitudeDto) {
-    // 1. Verificamos que la solicitud exista
+    // 1. Verificamos que la solicitud exista y capturamos su estado_anterior
     const solicitudExistente = await this.prisma.solicitud.findUnique({
       where: { radicado }
     });
@@ -72,17 +73,50 @@ export class SolicitudesService {
       throw new BadRequestException(`El radicado ${radicado} no existe en el sistema.`);
     }
 
-    // 2. Ejecutamos la actualización
-    const solicitudActualizada = await this.prisma.solicitud.update({
-      where: { radicado },
-      data: {
-        estado: updateSolicitudeDto.estado,
-      }
-    });
+    // Si el cliente no está intentando cambiar el estado, hacemos un update normal
+    if (!updateSolicitudeDto.estado || solicitudExistente.estado === updateSolicitudeDto.estado) {
+      
+      // Separamos los campos de auditoría para que no choquen con la tabla Solicitud
+      const { motivo_rechazo, modificado_por, ...datosParaActualizar } = updateSolicitudeDto;
 
-    // 3. (Opcional - Próximo paso) Aquí insertaremos el registro en Log_Auditoria
+      const solicitudActualizada = await this.prisma.solicitud.update({
+        where: { radicado },
+        data: datosParaActualizar as Prisma.SolicitudUpdateInput,
+      });
 
-    return solicitudActualizada;
+      // Retornamos la misma estructura para mantener a TypeScript feliz
+      return {
+        mensaje: "Solicitud actualizada correctamente (sin cambio de estado)",
+        solicitud: solicitudActualizada
+      };
+    }
+
+    // 2. Si HAY un cambio de estado, disparamos una Transacción Atómica
+    const [solicitudActualizada, logAuditoria] = await this.prisma.$transaction([
+      
+      // Operación A: Actualizar el estado de la solicitud
+      this.prisma.solicitud.update({
+        where: { radicado },
+        data: { estado: updateSolicitudeDto.estado }
+      }),
+
+      // Operación B: Escribir el registro inmutable en la bitácora
+      this.prisma.log_Auditoria.create({
+        data: {
+          radicado_solicitud: radicado,
+          estado_anterior: solicitudExistente.estado,
+          estado_nuevo: updateSolicitudeDto.estado,
+          modificado_por: updateSolicitudeDto.modificado_por || '1085000000', 
+          motivo_rechazo: updateSolicitudeDto.motivo_rechazo
+        }
+      })
+      
+    ]);
+
+    return {
+      mensaje: "Estado actualizado y auditado correctamente en la bitácora",
+      solicitud: solicitudActualizada
+    };
   }
 
   remove(id: number) {
