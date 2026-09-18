@@ -1,5 +1,16 @@
-import { IsString, IsNotEmpty, IsDate, MinDate } from 'class-validator';
+import { IsString, IsNotEmpty, IsDate, MinDate, IsArray, ValidateNested, IsInt, Min, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
+
+// Sub-clase para validar los recursos individuales del arreglo
+class RecursoSolicitadoDto {
+  @IsInt()
+  @IsNotEmpty()
+  id_recurso: number;
+
+  @IsInt()
+  @Min(1, { message: 'La cantidad debe ser al menos 1' })
+  cantidad: number;
+}
 
 export class CreateSolicitudeDto {
   @IsString()
@@ -24,4 +35,11 @@ export class CreateSolicitudeDto {
   @Type(() => Date)
   @IsDate()
   fecha_fin: Date;
+
+  // Nuevo campo: Un arreglo de recursos opcional
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RecursoSolicitadoDto)
+  recursos?: RecursoSolicitadoDto[];
 }

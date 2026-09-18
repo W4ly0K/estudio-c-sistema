@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, CategoriaSolicitud } from '@prisma/client';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
@@ -39,17 +39,27 @@ export class SolicitudesService {
     // --- 3. Generar Radicado ---
     const radicadoGenerado = `EC-${hoy.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // --- 4. Persistencia ---
+    // --- 4. Persistencia con Relaciones Anidadas ---
     return await this.prisma.solicitud.create({
       data: {
         radicado: radicadoGenerado,
         id_usuario: createSolicitudeDto.id_usuario,
-        categoria: createSolicitudeDto.categoria as any,
+        categoria: createSolicitudeDto.categoria as CategoriaSolicitud,
         proposito: createSolicitudeDto.proposito,
         fecha_inicio: createSolicitudeDto.fecha_inicio,
         fecha_fin: createSolicitudeDto.fecha_fin,
         estado: 'Recibido',
         es_urgencia: esUrgencia,
+        
+        // Magia de Prisma: Insertar en la tabla intermedia de un solo golpe
+        // IMPORTANTE: Prisma suele nombrar la relación en camelCase o igual a tu modelo. 
+        // Revisa tu schema.prisma. Puede ser 'solicitud_recurso' o 'Solicitud_Recurso'.
+        Solicitud_Recurso: { 
+          create: createSolicitudeDto.recursos?.map(recurso => ({
+            id_recurso: recurso.id_recurso,
+            cantidad: recurso.cantidad
+          })) || []
+        }
       },
     });
   }
@@ -75,19 +85,33 @@ export class SolicitudesService {
 
     // Si el cliente no está intentando cambiar el estado, hacemos un update normal
     if (!updateSolicitudeDto.estado || solicitudExistente.estado === updateSolicitudeDto.estado) {
-      
-      // Separamos los campos de auditoría para que no choquen con la tabla Solicitud
-      const { motivo_rechazo, modificado_por, ...datosParaActualizar } = updateSolicitudeDto;
+      const { motivo_rechazo, modificado_por, recursos, ...datosParaActualizar } = updateSolicitudeDto;
 
       const solicitudActualizada = await this.prisma.solicitud.update({
         where: { radicado },
-        data: datosParaActualizar as Prisma.SolicitudUpdateInput,
+        data: {
+          ...(datosParaActualizar.id_usuario ? { id_usuario: datosParaActualizar.id_usuario } : {}),
+          ...(datosParaActualizar.categoria ? { categoria: datosParaActualizar.categoria as CategoriaSolicitud } : {}),
+          ...(datosParaActualizar.proposito ? { proposito: datosParaActualizar.proposito } : {}),
+          ...(datosParaActualizar.fecha_inicio ? { fecha_inicio: datosParaActualizar.fecha_inicio } : {}),
+          ...(datosParaActualizar.fecha_fin ? { fecha_fin: datosParaActualizar.fecha_fin } : {}),
+          ...(recursos
+            ? {
+                recursos: {
+                  deleteMany: {},
+                  create: recursos.map((r) => ({
+                    id_recurso: r.id_recurso,
+                    cantidad_solicitada: r.cantidad,
+                  })),
+                },
+              }
+            : {}),
+        },
       });
 
-      // Retornamos la misma estructura para mantener a TypeScript feliz
       return {
-        mensaje: "Solicitud actualizada correctamente (sin cambio de estado)",
-        solicitud: solicitudActualizada
+        mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)',
+        solicitud: solicitudActualizada,
       };
     }
 
