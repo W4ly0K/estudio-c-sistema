@@ -24,7 +24,7 @@ export class SolicitudesController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateSolicitudeDto: UpdateSolicitudeDto) {
-    return this.solicitudesService.update(+id, updateSolicitudeDto);
+    return this.solicitudesService.update(id, updateSolicitudeDto);
   }
 
   @Delete(':id')
