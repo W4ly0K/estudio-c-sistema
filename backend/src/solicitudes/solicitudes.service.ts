@@ -51,13 +51,10 @@ export class SolicitudesService {
         estado: 'Recibido',
         es_urgencia: esUrgencia,
         
-        // Magia de Prisma: Insertar en la tabla intermedia de un solo golpe
-        // IMPORTANTE: Prisma suele nombrar la relación en camelCase o igual a tu modelo. 
-        // Revisa tu schema.prisma. Puede ser 'solicitud_recurso' o 'Solicitud_Recurso'.
         Solicitud_Recurso: { 
           create: createSolicitudeDto.recursos?.map(recurso => ({
             id_recurso: recurso.id_recurso,
-            cantidad: recurso.cantidad
+            cantidad_solicitada: recurso.cantidad
           })) || []
         }
       },
