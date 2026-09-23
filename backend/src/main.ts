@@ -5,7 +5,10 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // Bloquea cualquier dato que no esté definido en nuestros DTOs
+  // 1. Habilitamos CORS primero para que React pueda conectarse
+  app.enableCors();
+  
+  // 2. Bloqueamos datos no definidos en los DTOs
   app.useGlobalPipes(new ValidationPipe({ 
     whitelist: true, 
     forbidNonWhitelisted: true 
