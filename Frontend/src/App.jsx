@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import Dashboard from './Dashboard';
-import logoEstudioC from './assets/Logo_Estudio_C_2-02.svg';
-import './App.css';
+import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; 
+
 
 function App() {
   const [status, setStatus] = useState('');
@@ -44,7 +44,7 @@ function App() {
       <div className="bg-surface p-10 border border-outline rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
         
         {/* Logo (Verifica que la ruta sea correcta) */}
-        <img src={logoEstudioC} alt="Estudio C Logo" className="h-12 w-auto mb-6 object-contain" />
+        <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         
         <h2 className="text-xl font-bold text-primary mb-1">Acceso al Sistema</h2>
         <p className="text-xs text-gray-500 mb-6">
