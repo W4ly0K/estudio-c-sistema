@@ -1,19 +1,20 @@
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // 1. Habilitamos CORS primero para que React pueda conectarse
-  app.enableCors();
-  
-  // 2. Bloqueamos datos no definidos en los DTOs
-  app.useGlobalPipes(new ValidationPipe({ 
-    whitelist: true, 
-    forbidNonWhitelisted: true 
-  }));
-  
+  app.enableCors(); // O las opciones de cors que ya tengas
+
+  // LA MAGIA ESTÁ AQUÍ: transform en true convierte los textos ISO a Dates reales
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true, 
+    }),
+  );
+
   await app.listen(3000);
 }
 bootstrap();

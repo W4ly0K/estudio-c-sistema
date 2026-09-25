@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { RecursosService } from './recursos.service';
 import { CreateRecursoDto } from './dto/create-recurso.dto';
 import { UpdateRecursoDto } from './dto/update-recurso.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('recursos')
 export class RecursosController {
   constructor(private readonly recursosService: RecursosService) {}
@@ -19,16 +21,16 @@ export class RecursosController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.recursosService.findOne(+id);
+    return this.recursosService.findOne(+id); // Aquí SÍ se mantiene el "+" porque id_recurso es Int
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateRecursoDto: UpdateRecursoDto) {
-    return this.recursosService.update(+id, updateRecursoDto);
+    return this.recursosService.update(+id, updateRecursoDto); 
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.recursosService.remove(+id);
+    return this.recursosService.remove(+id); 
   }
 }

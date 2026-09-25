@@ -20,16 +20,16 @@ export class UsuariosService {
     return await this.prisma.usuario.findMany();
   }
 
-  // Dejaremos estos tres por defecto para el siguiente paso
-  findOne(id: number) {
+  // BUG CORREGIDO: Se cambió 'id: number' a 'id: string'
+  findOne(id: string) {
     return `This action returns a #${id} usuario`;
   }
 
-  update(id: number, updateUsuarioDto: UpdateUsuarioDto) {
+  update(id: string, updateUsuarioDto: UpdateUsuarioDto) {
     return `This action updates a #${id} usuario`;
   }
 
-  remove(id: number) {
+  remove(id: string) {
     return `This action removes a #${id} usuario`;
   }
 }

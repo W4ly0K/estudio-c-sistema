@@ -9,7 +9,8 @@ import { NotImplementedException } from '@nestjs/common';
 export class SolicitudesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createSolicitudeDto: CreateSolicitudeDto) {
+  // 1. Añadimos idUsuario: string para recibirlo de forma segura desde el controlador
+  async create(createSolicitudeDto: CreateSolicitudeDto, idUsuario: string) {
     // --- 1. Mitigación M3: Validación Anti-Traslape (CA-06) ---
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
@@ -44,7 +45,7 @@ export class SolicitudesService {
     return await this.prisma.solicitud.create({
       data: {
         radicado: radicadoGenerado,
-        id_usuario: createSolicitudeDto.id_usuario,
+        id_usuario: idUsuario, // <-- Usamos el ID seguro extraído del Token JWT
         categoria: createSolicitudeDto.categoria as CategoriaSolicitud,
         proposito: createSolicitudeDto.proposito,
         fecha_inicio: createSolicitudeDto.fecha_inicio,
@@ -61,7 +62,30 @@ export class SolicitudesService {
       },
     });
   }
+  // ... (tu método create actual)
 
+  // NUEVO MÉTODO: Consulta las solicitudes filtrando estrictamente por el ID del usuario
+  async findMisSolicitudes(idUsuario: string) {
+    return await this.prisma.solicitud.findMany({
+      where: {
+        id_usuario: idUsuario,
+      },
+      include: {
+        recursos: {
+          include: {
+            recurso: {
+              select: { nombre: true },
+            },
+          },
+        },
+      },
+      orderBy: {
+        fecha_inicio: 'desc', // Ordenamos de más reciente a más antigua
+      },
+    });
+  }
+
+  // ... (tu método findAll actual)
   async findAll(estado?: string, categoria?: CategoriaSolicitud) {
     return await this.prisma.solicitud.findMany({
       where: {
@@ -128,7 +152,7 @@ export class SolicitudesService {
       const solicitudActualizada = await this.prisma.solicitud.update({
         where: { radicado },
         data: {
-          ...(datosParaActualizar.id_usuario ? { id_usuario: datosParaActualizar.id_usuario } : {}),
+          // Ya no intentamos actualizar el id_usuario, bloqueando el cambio de dueño
           ...(datosParaActualizar.categoria ? { categoria: datosParaActualizar.categoria as CategoriaSolicitud } : {}),
           ...(datosParaActualizar.proposito ? { proposito: datosParaActualizar.proposito } : {}),
           ...(datosParaActualizar.fecha_inicio ? { fecha_inicio: datosParaActualizar.fecha_inicio } : {}),
@@ -189,7 +213,6 @@ export class SolicitudesService {
     }
 
     // Regla de arquitectura financiera/auditoría: los radicados no se eliminan físicamente.
-    // Se transicionan a estado 'Cancelado por el Usuario' o 'Rechazado'.
     throw new NotImplementedException(
       'El borrado físico de radicados está prohibido por política de auditoría. Use PATCH para cambiar estado a cancelación.'
     );
