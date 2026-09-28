@@ -83,10 +83,11 @@ export default function Dashboard({ usuario, onLogout }) {
         throw new Error(errData.message || 'Error al registrar la solicitud');
       }
       
-      const respuesta = await res.json();
+      const nuevaSolicitud = await res.json(); // <-- CORRECCIÓN 1: Renombramos la variable para mayor claridad
       
-      // Agregamos la solicitud nueva a la tabla visualmente
-      setSolicitudes([respuesta.solicitud, ...solicitudes]);
+      // <-- CORRECCIÓN 2: Inyectamos 'nuevaSolicitud' directamente en lugar de 'respuesta.solicitud'
+      setSolicitudes([nuevaSolicitud, ...solicitudes]); 
+      
       setShowModal(false);
       
       // Limpiamos el formulario

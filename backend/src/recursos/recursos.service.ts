@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateRecursoDto } from './dto/create-recurso.dto';
 import { UpdateRecursoDto } from './dto/update-recurso.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,15 +18,35 @@ export class RecursosService {
     return await this.prisma.recurso.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} recurso`;
+  // Implementación real consultando Supabase
+  async findOne(id: number) {
+    const recurso = await this.prisma.recurso.findUnique({
+      where: { id_recurso: id },
+    });
+
+    if (!recurso) {
+      throw new NotFoundException(`El recurso con ID ${id} no existe en el inventario.`);
+    }
+
+    return recurso;
   }
 
-  update(id: number, updateRecursoDto: UpdateRecursoDto) {
-    return `This action updates a #${id} recurso`;
+  // Implementación real de update
+  async update(id: number, updateRecursoDto: UpdateRecursoDto) {
+    await this.findOne(id); // Validamos existencia previa
+
+    return await this.prisma.recurso.update({
+      where: { id_recurso: id },
+      data: updateRecursoDto,
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} recurso`;
+  // Implementación real de remove
+  async remove(id: number) {
+    await this.findOne(id); // Validamos existencia previa
+
+    return await this.prisma.recurso.delete({
+      where: { id_recurso: id },
+    });
   }
 }
