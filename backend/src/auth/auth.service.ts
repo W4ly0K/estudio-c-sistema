@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, InternalServerErrorException } from 
 import { JwtService } from '@nestjs/jwt';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtPayload } from './interfaces/jwt-payload.interface';
 
 @Injectable()
 export class AuthService {
@@ -56,7 +57,7 @@ export class AuthService {
       }
 
       // 4. Emisión del JWT (La expiración ya está delegada al AuthModule)
-      const jwtPayload = { sub: usuario.id_usuario, correo: usuario.correo, rol: usuario.rol };
+      const jwtPayload: JwtPayload = { sub: usuario.id_usuario, correo: usuario.correo, rol: usuario.rol };
       const backendToken = this.jwtService.sign(jwtPayload);
 
       return {
