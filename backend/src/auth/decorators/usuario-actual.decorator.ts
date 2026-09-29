@@ -1,10 +1,6 @@
 import { createParamDecorator, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import type { Request } from 'express';
+import { RequestAutenticado } from '../interfaces/request-autenticado.interface';
 import { UsuarioAutenticado } from '../interfaces/usuario-autenticado.interface';
-
-interface RequestAutenticado extends Request {
-  user?: UsuarioAutenticado;
-}
 
 /**
  * Inyecta la identidad verificada por JwtStrategy.validate().
