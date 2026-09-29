@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +6,7 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private googleClient: OAuth2Client;
 
   constructor(
@@ -81,7 +82,10 @@ export class AuthService {
       }
 
       // Si llegamos aquí, Prisma explotó o no hay conexión a Supabase
-      console.error('Error interno en verifyGoogleToken:', error);
+      this.logger.error(
+        'Error interno en verifyGoogleToken',
+        error instanceof Error ? error.stack : undefined,
+      );
       throw new InternalServerErrorException('Error interno al procesar la autenticación. Contacte soporte.');
     }
   }

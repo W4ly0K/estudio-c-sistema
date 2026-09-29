@@ -1,64 +1,52 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UsuarioActual } from '../auth/decorators/usuario-actual.decorator';
+import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
-import { CategoriaSolicitud } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-// Interfaz estricta para leer el usuario del token sin usar 'any'
-interface RequestConUsuario extends Request {
-  user: {
-    id: string;
-    correo: string;
-    rol: string;
-  };
-}
-
-@UseGuards(JwtAuthGuard)
+// Autenticación: APP_GUARD global. Autorización: @Roles por endpoint.
 @Controller('solicitudes')
 export class SolicitudesController {
   constructor(private readonly solicitudesService: SolicitudesService) {}
 
   @Post()
-  create(@Body() createSolicitudeDto: CreateSolicitudeDto, @Request() req: RequestConUsuario) {
-    // Extraemos de forma segura el ID del token JWT verificado
-    const idUsuario = req.user.id; 
-    return this.solicitudesService.create(createSolicitudeDto, idUsuario);
+  create(@Body() dto: CreateSolicitudeDto, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.create(dto, usuario.id);
   }
 
-  // ... (tu método create en el controlador)
-
-  // Ruta conectada a Prisma para cargar el historial del usuario
+  // ⚠️ Debe declararse ANTES de ':radicado': Express evalúa las rutas en orden de
+  // declaración y ':radicado' capturaría "mis-solicitudes" como si fuera un radicado.
   @Get('mis-solicitudes')
-  findMisSolicitudes(@Request() req: RequestConUsuario) {
-    const idUsuario = req.user.id;
-    // Ahora retornamos los datos reales de la base de datos
-    return this.solicitudesService.findMisSolicitudes(idUsuario);
+  findMisSolicitudes(@UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.findMisSolicitudes(usuario.id);
   }
 
-  // ... (tu método findAll en el controlador)
-
+  @Roles(RolUsuario.STAFF)
   @Get()
-  findAll(
-    @Query('estado') estado?: string,
-    @Query('categoria') categoria?: CategoriaSolicitud,
-  ) {
+  findAll(@Query('estado') estado?: string, @Query('categoria') categoria?: CategoriaSolicitud) {
     return this.solicitudesService.findAll(estado, categoria);
   }
 
+  @Roles(RolUsuario.STAFF) // Temporal: se abre al dueño en la Fase 2 (control de propiedad)
   @Get(':radicado')
   findOne(@Param('radicado') radicado: string) {
     return this.solicitudesService.findOne(radicado);
   }
 
+  @Roles(RolUsuario.STAFF)
   @Patch(':radicado')
   update(
     @Param('radicado') radicado: string,
-    @Body() updateSolicitudeDto: UpdateSolicitudeDto,
+    @Body() dto: UpdateSolicitudeDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
   ) {
-    return this.solicitudesService.update(radicado, updateSolicitudeDto);
+    return this.solicitudesService.update(radicado, dto, usuario.id);
   }
 
+  @Roles(RolUsuario.STAFF)
   @Delete(':radicado')
   remove(@Param('radicado') radicado: string) {
     return this.solicitudesService.remove(radicado);
