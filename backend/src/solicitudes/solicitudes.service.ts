@@ -1,4 +1,4 @@
-import { Prisma, CategoriaSolicitud } from '@prisma/client';
+import { Prisma, CategoriaSolicitud, Solicitud } from '@prisma/client';
 import { Injectable, BadRequestException, NotImplementedException } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
@@ -139,7 +139,11 @@ export class SolicitudesService {
     return solicitud;
   }
 
-  async update(radicado: string, updateSolicitudeDto: UpdateSolicitudeDto) {
+  async update(
+    radicado: string,
+    updateSolicitudeDto: UpdateSolicitudeDto,
+    idStaff: string,
+  ): Promise<{ mensaje: string; solicitud: Solicitud }> {
     const solicitudExistente = await this.prisma.solicitud.findUnique({
       where: { radicado }
     });
@@ -149,7 +153,7 @@ export class SolicitudesService {
     }
 
     if (!updateSolicitudeDto.estado || solicitudExistente.estado === updateSolicitudeDto.estado) {
-      const { motivo_rechazo, modificado_por, recursos, ...datosParaActualizar } = updateSolicitudeDto;
+      const { motivo_rechazo, recursos, ...datosParaActualizar } = updateSolicitudeDto;
 
       const solicitudActualizada = await this.prisma.solicitud.update({
         where: { radicado },
@@ -188,7 +192,7 @@ export class SolicitudesService {
           radicado_solicitud: radicado,
           estado_anterior: solicitudExistente.estado,
           estado_nuevo: updateSolicitudeDto.estado,
-          modificado_por: updateSolicitudeDto.modificado_por || '1085000000', 
+          modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
           motivo_rechazo: updateSolicitudeDto.motivo_rechazo
         }
       })
