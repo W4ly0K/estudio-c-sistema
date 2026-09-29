@@ -19,7 +19,6 @@ export class UpdateSolicitudeDto extends PartialType(CreateSolicitudeDto) {
   @MinLength(10, { message: 'El motivo de rechazo es obligatorio y debe ser detallado (mínimo 10 caracteres)' })
   motivo_rechazo?: string;
 
-  @IsOptional()
-  @IsString()
-  modificado_por?: string; // ID del Staff que realiza la acción
+  // modificado_por NO existe aquí por diseño (Zero Trust):
+  // el autor de la auditoría se toma de req.user vía @UsuarioActual().
 }

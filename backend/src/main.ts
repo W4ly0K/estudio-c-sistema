@@ -11,6 +11,7 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true, // Campo desconocido → 400 (visible), no descarte silencioso
       transform: true, 
     }),
   );

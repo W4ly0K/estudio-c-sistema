@@ -153,7 +153,7 @@ export class SolicitudesService {
     }
 
     if (!updateSolicitudeDto.estado || solicitudExistente.estado === updateSolicitudeDto.estado) {
-      const { motivo_rechazo, modificado_por, recursos, ...datosParaActualizar } = updateSolicitudeDto;
+      const { motivo_rechazo, recursos, ...datosParaActualizar } = updateSolicitudeDto;
 
       const solicitudActualizada = await this.prisma.solicitud.update({
         where: { radicado },
