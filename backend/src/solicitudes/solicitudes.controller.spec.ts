@@ -6,6 +6,8 @@ import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
+import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
+import type { DetalleSolicitud } from './proyecciones/detalle-solicitud.proyeccion';
 import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 
 type MetodoControlador =
@@ -25,14 +27,15 @@ const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined 
 
 describe('SolicitudesController', () => {
   describe('Autorización declarada (@Roles / @Public)', () => {
-    it.each<MetodoControlador>(['findAll', 'findOne', 'update', 'remove'])(
+    it.each<MetodoControlador>(['findAll', 'update', 'remove'])(
       '%s exige el rol STAFF',
       (metodo) => {
         expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toEqual([RolUsuario.STAFF]);
       },
     );
 
-    it.each<MetodoControlador>(['create', 'findMisSolicitudes'])(
+    // findOne dejó de exigir STAFF en la Fase 2.2: la propiedad se aplica en el servicio (ADR-002)
+    it.each<MetodoControlador>(['create', 'findMisSolicitudes', 'findOne'])(
       '%s no exige rol (basta con estar autenticado)',
       (metodo) => {
         expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toBeUndefined();
@@ -61,6 +64,7 @@ describe('SolicitudesController', () => {
         Promise<{ mensaje: string; solicitud: Solicitud } | null>,
         [string, UpdateSolicitudeDto, string]
       >(),
+      findOne: jest.fn<Promise<DetalleSolicitud | null>, [string, UsuarioAutenticado]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -85,6 +89,14 @@ describe('SolicitudesController', () => {
       await controller.update('EC-2099-0001', dto, USUARIO_STAFF);
 
       expect(serviceMock.update).toHaveBeenCalledWith('EC-2099-0001', dto, USUARIO_STAFF.id);
+    });
+
+    it('findOne() entrega al servicio el usuario COMPLETO (el rol decide filtro y proyección)', async () => {
+      serviceMock.findOne.mockResolvedValue(null);
+
+      await controller.findOne('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      expect(serviceMock.findOne).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
     });
   });
 });

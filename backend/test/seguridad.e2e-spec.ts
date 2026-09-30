@@ -4,6 +4,10 @@ import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { crearAppE2E, JWT_SECRET_E2E, PrismaMockE2E } from './utils/crear-app-e2e';
+import {
+  SELECT_DETALLE_SOLICITANTE,
+  SELECT_DETALLE_STAFF,
+} from '../src/solicitudes/proyecciones/detalle-solicitud.proyeccion';
 
 /**
  * Cadena de seguridad completa por HTTP real (Fase 1):
@@ -112,7 +116,8 @@ describe('Cadena de seguridad Zero Trust (e2e)', () => {
   });
 
   it('11. SOLICITANTE → GET /solicitudes/mis-solicitudes → 200 con SU id (prueba el ORDEN de rutas)', async () => {
-    // Si ':radicado' se declarara antes, esta petición caería en findOne (solo STAFF) → 403.
+    // Si ':radicado' se declarara antes, esta petición caería en findOne('mis-solicitudes'),
+    // que no existe → 404 (y findMany nunca se llamaría). Esta prueba lo detectaría.
     await request(app.getHttpServer())
       .get('/solicitudes/mis-solicitudes')
       .set('Authorization', bearer(firmar('uuid-solicitante', RolUsuario.SOLICITANTE)))
@@ -149,6 +154,72 @@ describe('Cadena de seguridad Zero Trust (e2e)', () => {
 
     expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ modificado_por: 'uuid-staff', estado_nuevo: 'Validado' }),
+    });
+  });
+
+  describe('Propiedad del radicado — Fase 2 (ADR-002)', () => {
+    interface ArgsFindFirst {
+      where: unknown;
+      select: unknown;
+    }
+    const ultimaConsulta = (): ArgsFindFirst =>
+      prisma.solicitud.findFirst.mock.calls[
+        prisma.solicitud.findFirst.mock.calls.length - 1
+      ][0] as unknown as ArgsFindFirst;
+
+    const tokenSolicitante = (): string =>
+      bearer(firmar('uuid-solicitante', RolUsuario.SOLICITANTE));
+    const tokenStaff = (): string => bearer(firmar('uuid-staff', RolUsuario.STAFF));
+
+    it('14. dueño → GET /solicitudes/:radicado propio → 200 con la proyección mínima (B3)', async () => {
+      const respuesta = await request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-0001')
+        .set('Authorization', tokenSolicitante())
+        .expect(200);
+
+      expect(respuesta.body).toEqual(expect.objectContaining({ radicado: 'EC-2099-0001' }));
+      expect(ultimaConsulta().where).toEqual({
+        radicado: 'EC-2099-0001',
+        id_usuario: 'uuid-solicitante',
+      });
+      expect(ultimaConsulta().select).toBe(SELECT_DETALLE_SOLICITANTE);
+    });
+
+    it('15. solicitante → radicado AJENO → 404 (fin del IDOR)', () => {
+      return request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-0002')
+        .set('Authorization', tokenSolicitante())
+        .expect(404);
+    });
+
+    it('16. ajeno e inexistente responden 404 con cuerpo IDÉNTICO (anti-enumeración)', async () => {
+      const ajeno = await request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-0002')
+        .set('Authorization', tokenSolicitante())
+        .expect(404);
+      const inexistente = await request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-9999')
+        .set('Authorization', tokenSolicitante())
+        .expect(404);
+
+      expect(inexistente.body).toEqual(ajeno.body);
+    });
+
+    it('17. STAFF → radicado de cualquier usuario → 200 con la proyección completa', async () => {
+      await request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-0002')
+        .set('Authorization', tokenStaff())
+        .expect(200);
+
+      expect(ultimaConsulta().where).toEqual({ radicado: 'EC-2099-0002' });
+      expect(ultimaConsulta().select).toBe(SELECT_DETALLE_STAFF);
+    });
+
+    it('18. STAFF → radicado inexistente → 404', () => {
+      return request(app.getHttpServer())
+        .get('/solicitudes/EC-2099-9999')
+        .set('Authorization', tokenStaff())
+        .expect(404);
     });
   });
 });

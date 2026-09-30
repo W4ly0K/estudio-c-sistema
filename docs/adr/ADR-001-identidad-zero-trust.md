@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado |
+| **Estado** | ✅ Aceptado · La restricción temporal de la Decisión E sobre `GET /solicitudes/:radicado` fue superada por [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) |
 | **Fecha** | 2026-09-29 |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `refactor/fase-1-zero-trust` |
@@ -100,7 +100,7 @@ Cada decisión de este ADR tiene al menos una prueba que falla si alguien la rev
 
 ## 4. Deuda conocida (fuera del alcance de este ADR)
 
-- Control de propiedad en `GET /solicitudes/:radicado` (Fase 2).
+- ~~Control de propiedad en `GET /solicitudes/:radicado` (Fase 2).~~ ✅ Resuelto en ADR-002.
 - `LoginGoogleDto` para validar el body del login, que hoy es un primitivo.
 - `CreateUsuarioDto` acepta `id_usuario` del cliente, y `UpdateUsuarioDto` permite modificar la clave primaria.
 - El borrado de usuarios es físico, lo que rompe la trazabilidad de la auditoría.

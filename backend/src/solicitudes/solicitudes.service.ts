@@ -1,8 +1,23 @@
-import { Prisma, CategoriaSolicitud, Solicitud } from '@prisma/client';
-import { Injectable, BadRequestException, NotImplementedException } from '@nestjs/common';
+import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud } from '@prisma/client';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  NotImplementedException,
+} from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
+import { filtroDeAcceso } from './politicas/filtro-de-acceso';
+import {
+  DetalleSolicitud,
+  SELECT_DETALLE_SOLICITANTE,
+  SELECT_DETALLE_STAFF,
+} from './proyecciones/detalle-solicitud.proyeccion';
+
+/** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
+export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
 
 @Injectable()
 export class SolicitudesService {
@@ -114,26 +129,19 @@ export class SolicitudesService {
     });
   }
 
-  async findOne(radicado: string) {
-    const solicitud = await this.prisma.solicitud.findUnique({
-      where: { radicado },
-      include: {
-        usuario: {
-          select: { id_usuario: true, nombre: true, correo: true, rol: true },
-        },
-        recursos: {
-          include: {
-            recurso: true, 
-          },
-        },
-        logs: {
-          orderBy: { fecha_modificacion: 'asc' }, 
-        },
-      },
-    });
+  async findOne(radicado: string, usuario: UsuarioAutenticado): Promise<DetalleSolicitud> {
+    // Decisión G: la propiedad se aplica DENTRO del WHERE (nunca se traen filas ajenas).
+    const where: Prisma.SolicitudWhereInput = { radicado, ...filtroDeAcceso(usuario) };
 
+    // Decisión I · fail-safe: cualquier rol distinto de STAFF recibe la proyección MÍNIMA.
+    const solicitud =
+      usuario.rol === RolUsuario.STAFF
+        ? await this.prisma.solicitud.findFirst({ where, select: SELECT_DETALLE_STAFF })
+        : await this.prisma.solicitud.findFirst({ where, select: SELECT_DETALLE_SOLICITANTE });
+
+    // Decisión H: "no existe" y "no es tuyo" son indistinguibles (mismo código y mensaje).
     if (!solicitud) {
-      throw new BadRequestException(`El radicado ${radicado} no existe en el sistema.`);
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
     }
 
     return solicitud;
