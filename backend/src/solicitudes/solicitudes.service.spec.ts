@@ -1,5 +1,12 @@
+import { NotFoundException } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
-import { SolicitudesService } from './solicitudes.service';
+import { MENSAJE_SOLICITUD_NO_ENCONTRADA, SolicitudesService } from './solicitudes.service';
+import {
+  DetalleSolicitudSolicitante,
+  SELECT_DETALLE_SOLICITANTE,
+  SELECT_DETALLE_STAFF,
+} from './proyecciones/detalle-solicitud.proyeccion';
+import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
@@ -18,6 +25,11 @@ const solicitudBase: Solicitud = {
   estado: 'Recibido',
   es_urgencia: false,
 };
+
+// Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
+// solicitante, esta línea deja de ser un error de tipos → @ts-expect-error queda sin usar → tsc falla.
+// @ts-expect-error — el solicitante no debe recibir la identidad del Staff
+type _SinAutorStaff = DetalleSolicitudSolicitante['logs'][number]['modificado_por'];
 
 const logBase: Log_Auditoria = {
   id_log: 'uuid-log',
@@ -128,6 +140,56 @@ describe('SolicitudesService', () => {
       });
       expect(JSON.stringify(prismaMock.log_Auditoria.create.mock.calls)).not.toContain(
         'uuid-atacante',
+      );
+    });
+  });
+  describe('findOne() — propiedad, proyección por rol y 404 uniforme (Fase 2)', () => {
+    interface ArgsFindFirst {
+      where: unknown;
+      select: unknown;
+    }
+    const argsDeFindFirst = (): ArgsFindFirst =>
+      prismaMock.solicitud.findFirst.mock.calls[0][0] as ArgsFindFirst;
+
+    it('SOLICITANTE: filtra por su id en el WHERE y usa la proyección mínima', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      await service.findOne('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      const args = argsDeFindFirst();
+      expect(args.where).toEqual({ radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id });
+      expect(args.select).toBe(SELECT_DETALLE_SOLICITANTE);
+    });
+
+    it('STAFF: consulta sin filtro de propiedad y usa la proyección completa', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      await service.findOne('EC-2099-0001', USUARIO_STAFF);
+
+      const args = argsDeFindFirst();
+      expect(args.where).toEqual({ radicado: 'EC-2099-0001' });
+      expect(args.select).toBe(SELECT_DETALLE_STAFF);
+    });
+
+    it('sin resultado responde 404 con mensaje genérico, sin reflejar el radicado', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+
+      const error: unknown = await service
+        .findOne('EC-2099-9999', USUARIO_SOLICITANTE)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect((error as NotFoundException).message).not.toContain('EC-2099-9999');
+    });
+
+    it('la proyección del solicitante no expone identidades internas ni inventario', () => {
+      expect(SELECT_DETALLE_SOLICITANTE).not.toHaveProperty('usuario');
+      expect(SELECT_DETALLE_SOLICITANTE).not.toHaveProperty('id_usuario');
+      expect(SELECT_DETALLE_SOLICITANTE.logs.select).not.toHaveProperty('modificado_por');
+      expect(SELECT_DETALLE_SOLICITANTE.logs.select).not.toHaveProperty('id_log');
+      expect(SELECT_DETALLE_SOLICITANTE.recursos.select.recurso.select).not.toHaveProperty(
+        'cantidad_total',
       );
     });
   });

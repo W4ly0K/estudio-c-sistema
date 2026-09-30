@@ -30,10 +30,10 @@ export class SolicitudesController {
     return this.solicitudesService.findAll(estado, categoria);
   }
 
-  @Roles(RolUsuario.STAFF) // Temporal: se abre al dueño en la Fase 2 (control de propiedad)
+  @Roles(RolUsuario.STAFF) // Temporal: se abre al dueño en el paso 2.2
   @Get(':radicado')
-  findOne(@Param('radicado') radicado: string) {
-    return this.solicitudesService.findOne(radicado);
+  findOne(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.findOne(radicado, usuario);
   }
 
   @Roles(RolUsuario.STAFF)
