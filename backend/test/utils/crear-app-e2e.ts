@@ -50,6 +50,19 @@ export const SOLICITUD_E2E: Solicitud = {
   es_urgencia: false,
 };
 
+/** Solicitud de OTRO usuario: la que el solicitante de prueba jamás debe poder leer. */
+export const SOLICITUD_AJENA_E2E: Solicitud = {
+  ...SOLICITUD_E2E,
+  radicado: 'EC-2099-0002',
+  id_usuario: 'uuid-otro',
+};
+
+const SOLICITUDES_BD: readonly Solicitud[] = [SOLICITUD_E2E, SOLICITUD_AJENA_E2E];
+
+interface ArgsFindFirstSolicitud {
+  where?: { radicado?: string; id_usuario?: string };
+}
+
 const LOG_E2E: Log_Auditoria = {
   id_log: 'uuid-log',
   radicado_solicitud: 'EC-2099-0001',
@@ -78,7 +91,19 @@ function crearPrismaMock() {
     },
     solicitud: {
       findMany: jest.fn(async (): Promise<Solicitud[]> => [SOLICITUD_E2E]),
-      findFirst: jest.fn(async (): Promise<Solicitud | null> => null),
+      // Filtra SOLO por lo que el servicio le pide: si el servicio olvidara el filtro de
+      // propiedad, devolvería la solicitud ajena y los e2e de Fase 2 fallarían.
+      findFirst: jest.fn(async (args: ArgsFindFirstSolicitud): Promise<Solicitud | null> => {
+        const filtro = args.where ?? {};
+        if (filtro.radicado === undefined) return null; // consulta anti-traslape CA-06: sin conflictos
+        return (
+          SOLICITUDES_BD.find(
+            (s) =>
+              s.radicado === filtro.radicado &&
+              (filtro.id_usuario === undefined || s.id_usuario === filtro.id_usuario),
+          ) ?? null
+        );
+      }),
       findUnique: jest.fn(async (): Promise<Solicitud | null> => SOLICITUD_E2E),
       update: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
     },

@@ -30,7 +30,8 @@ export class SolicitudesController {
     return this.solicitudesService.findAll(estado, categoria);
   }
 
-  @Roles(RolUsuario.STAFF) // Temporal: se abre al dueño en el paso 2.2
+  // Abierto a cualquier autenticado: la PROPIEDAD se aplica en el servicio
+  // (filtroDeAcceso en el WHERE) y ajenos/inexistentes responden 404 idéntico (ADR-002).
   @Get(':radicado')
   findOne(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
     return this.solicitudesService.findOne(radicado, usuario);
