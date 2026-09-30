@@ -43,8 +43,8 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test            # Pruebas unitarias (45)
-npm run test:e2e    # Pruebas end-to-end de la cadena de seguridad (14)
+npm test            # Pruebas unitarias (53)
+npm run test:e2e    # Pruebas end-to-end de la cadena de seguridad (19)
 ```
 
 - Las pruebas **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
@@ -68,6 +68,8 @@ Petición HTTP
 
 **Principio rector:** *denegar por defecto*. Todo endpoint exige JWT salvo que se marque explícitamente como público. La identidad **siempre** sale del token verificado y de la base de datos, **nunca** del cuerpo de la petición.
 
+**Autorización a nivel de dato:** que un endpoint esté abierto a un rol no significa que ese rol vea *todas* las filas. La propiedad se aplica **dentro de la consulta** con `filtroDeAcceso(usuario)`, y cada rol recibe solo los campos de su **proyección** (ver [ADR-002](../docs/adr/ADR-002-autorizacion-a-nivel-de-dato.md)).
+
 ### Herramientas disponibles
 
 | Herramienta | Ubicación | Para qué sirve |
@@ -76,6 +78,8 @@ Petición HTTP
 | `@Roles(...)` | `src/auth/decorators/roles.decorator.ts` | Restringe un endpoint o controlador a uno o más roles. El del método tiene prioridad sobre el de la clase |
 | `@UsuarioActual()` | `src/auth/decorators/usuario-actual.decorator.ts` | Inyecta la identidad verificada (`UsuarioAutenticado`). Responde 401 si no existe (fail-closed) |
 | `crearValidationPipe()` | `src/common/pipes/crear-validation-pipe.ts` | Única fuente de la configuración de validación (la usan `main.ts`, los tests y los e2e) |
+| `filtroDeAcceso(usuario)` | `src/solicitudes/politicas/filtro-de-acceso.ts` | Política de acceso por fila: devuelve el fragmento de `WHERE` que limita lo que cada rol puede ver. Un rol nuevo sin política **no compila** |
+| `SELECT_DETALLE_*` | `src/solicitudes/proyecciones/detalle-solicitud.proyeccion.ts` | Proyecciones por rol (`select` = lista blanca). La del solicitante no expone identidades internas ni inventario |
 
 ### ✅ Lista de verificación para agregar un endpoint
 
@@ -84,9 +88,11 @@ Petición HTTP
 3. Si el endpoint es exclusivo del Staff, usa `@Roles(RolUsuario.STAFF)`.
 4. Obtén la identidad **solo** con `@UsuarioActual() usuario: UsuarioAutenticado`, importando el tipo con **`import type`** (lo exige la combinación `emitDecoratorMetadata` + `isolatedModules`).
 5. **Nunca** declares en un DTO, query o parámetro campos de identidad o autoría (`id_usuario`, `modificado_por`, `rol`).
-6. Si el endpoint devuelve datos de un solicitante, **filtra por `usuario.id` en el servicio** (aislamiento de datos).
-7. Declara las rutas estáticas **antes** que las dinámicas (por ejemplo, `mis-solicitudes` antes de `:radicado`). Express las evalúa en orden de declaración.
-8. Agrega pruebas: unitarias para los metadatos de `@Roles` y e2e si cambias la cadena de seguridad.
+6. Si el endpoint devuelve datos de un solicitante, aplica la propiedad **dentro de la consulta** (`where: { ...criterio, ...filtroDeAcceso(usuario) }`). **Nunca** traigas la fila para comprobar después si es suya: un `if` olvidado es un IDOR.
+7. Si un recurso ajeno o inexistente debe rechazarse, responde **404 con el mismo mensaje** en ambos casos. Nunca 403: confirmaría que el recurso existe.
+8. Devuelve datos con **`select` explícito** (lista blanca) y una proyección por rol. No uses `include` para respuestas de la API.
+9. Declara las rutas estáticas **antes** que las dinámicas (por ejemplo, `mis-solicitudes` antes de `:radicado`). Express las evalúa en orden de declaración.
+10. Agrega pruebas **en el mismo commit**: unitarias para los metadatos de `@Roles` y la política, y e2e si cambias la cadena de seguridad (incluido un caso de recurso **ajeno**).
 
 ### Matriz de acceso vigente
 
@@ -97,7 +103,7 @@ Petición HTTP
 | `POST /solicitudes` | 🔐 Autenticado. El solicitante sale del token |
 | `GET /solicitudes/mis-solicitudes` | 🔐 Autenticado. Solo ve sus propias solicitudes |
 | `GET /solicitudes` | 🛡️ STAFF |
-| `GET /solicitudes/:radicado` | 🛡️ STAFF *(temporal: en la Fase 2 se abrirá también al dueño)* |
+| `GET /solicitudes/:radicado` | 🔐 Autenticado. SOLICITANTE: solo los **propios**, con proyección mínima; ajeno o inexistente → **404 idéntico**. STAFF: todos, con proyección completa |
 | `PATCH /solicitudes/:radicado` | 🛡️ STAFF. El autor del log de auditoría sale del token |
 | `DELETE /solicitudes/:radicado` | 🛡️ STAFF. El borrado físico está prohibido (responde 501) |
 | `/usuarios` (todas las operaciones) | 🛡️ STAFF |
@@ -117,7 +123,10 @@ src/
 │   ├── jwt-auth.guard.ts
 │   └── jwt.strategy.ts  Valida el JWT y consulta el usuario vigente en la BD
 ├── common/pipes/        crearValidationPipe()
-├── solicitudes/  usuarios/  recursos/  prisma/
+├── solicitudes/
+│   ├── politicas/       filtroDeAcceso (autorización por fila)
+│   └── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
+├── usuarios/  recursos/  prisma/
 test/
 ├── utils/               Helpers solo para pruebas (excluidos del build)
 └── *.e2e-spec.ts
@@ -128,3 +137,32 @@ test/
 El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 
 - [ADR-001 — Identidad y autorización Zero Trust](../docs/adr/ADR-001-identidad-zero-trust.md)
+- [ADR-002 — Autorización a nivel de dato en solicitudes](../docs/adr/ADR-002-autorizacion-a-nivel-de-dato.md)
+
+## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
+
+Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
+
+```json
+{
+  "radicado": "EC-2026-0142",
+  "categoria": "PODCAST",
+  "proposito": "Grabación del episodio piloto",
+  "num_participantes": 3,
+  "fecha_inicio": "2026-10-15T14:00:00.000Z",
+  "fecha_fin": "2026-10-15T16:00:00.000Z",
+  "fecha_propuesta_inicio": null,
+  "fecha_propuesta_fin": null,
+  "estado": "En Producción",
+  "es_urgencia": true,
+  "recursos": [{ "cantidad_solicitada": 2, "recurso": { "nombre": "Micrófono de solapa" } }],
+  "logs": [
+    { "estado_anterior": "Recibido", "estado_nuevo": "Validado",
+      "fecha_modificacion": "2026-10-10T15:20:00.000Z", "motivo_rechazo": null }
+  ]
+}
+```
+
+- `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
+- **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
+- El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
