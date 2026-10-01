@@ -6,6 +6,11 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { crearValidationPipe } from '../../src/common/pipes/crear-validation-pipe';
+import { Reloj } from '../../src/common/reloj/reloj';
+import { RelojFijo } from './reloj-fijo';
+
+/** "Ahora" de los e2e: lunes 5 de octubre de 2026, 10:00 en Bogotá (determinista). */
+export const AHORA_E2E = new Date('2026-10-05T10:00:00-05:00');
 
 /**
  * Levanta el AppModule REAL (APP_GUARD globales, rutas y pipe de producción)
@@ -42,8 +47,8 @@ export const SOLICITUD_E2E: Solicitud = {
   categoria: CategoriaSolicitud.ESPACIOS,
   proposito: 'Grabación de clase magistral',
   num_participantes: null,
-  fecha_inicio: new Date(2099, 0, 15, 9, 0),
-  fecha_fin: new Date(2099, 0, 15, 10, 0),
+  fecha_inicio: new Date('2099-01-15T09:00:00-05:00'),
+  fecha_fin: new Date('2099-01-15T10:00:00-05:00'),
   fecha_propuesta_inicio: null,
   fecha_propuesta_fin: null,
   estado: 'Recibido',
@@ -72,6 +77,10 @@ const LOG_E2E: Log_Auditoria = {
   fecha_modificacion: new Date(),
   motivo_rechazo: null,
 };
+
+interface ArgsCreateSolicitud {
+  data: Pick<Solicitud, 'radicado' | 'fecha_inicio' | 'fecha_fin' | 'es_urgencia'>;
+}
 
 interface ArgsFindUniqueUsuario {
   where: { id_usuario: string };
@@ -105,6 +114,16 @@ function crearPrismaMock() {
         );
       }),
       findUnique: jest.fn(async (): Promise<Solicitud | null> => SOLICITUD_E2E),
+      // Devuelve lo que el servicio decidió persistir (radicado, fechas y urgencia)
+      create: jest.fn(
+        async (args: ArgsCreateSolicitud): Promise<Solicitud> => ({
+          ...SOLICITUD_E2E,
+          radicado: args.data.radicado,
+          fecha_inicio: args.data.fecha_inicio,
+          fecha_fin: args.data.fecha_fin,
+          es_urgencia: args.data.es_urgencia,
+        }),
+      ),
       update: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
     },
     log_Auditoria: {
@@ -124,6 +143,8 @@ export type PrismaMockE2E = ReturnType<typeof crearPrismaMock>;
 export interface ContextoE2E {
   app: INestApplication<App>;
   prisma: PrismaMockE2E;
+  /** Reloj de la app: fijo en AHORA_E2E; cada suite puede moverlo con fijar(). */
+  reloj: RelojFijo;
   /** Firma un JWT válido con el JwtService REAL del módulo (mismo secreto y expiración). */
   firmar: (sub: string, rol: RolUsuario) => string;
 }
@@ -131,10 +152,13 @@ export interface ContextoE2E {
 export async function crearAppE2E(): Promise<ContextoE2E> {
   process.env.JWT_SECRET = JWT_SECRET_E2E;
   const prisma = crearPrismaMock();
+  const reloj = new RelojFijo(AHORA_E2E);
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(prisma)
+    .overrideProvider(Reloj)
+    .useValue(reloj)
     .compile();
 
   const app = moduleRef.createNestApplication<INestApplication<App>>();
@@ -145,5 +169,5 @@ export async function crearAppE2E(): Promise<ContextoE2E> {
   const firmar = (sub: string, rol: RolUsuario): string =>
     jwt.sign({ sub, correo: `${sub}@unicesmag.edu.co`, rol });
 
-  return { app, prisma, firmar };
+  return { app, prisma, reloj, firmar };
 }

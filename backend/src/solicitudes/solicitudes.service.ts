@@ -10,6 +10,13 @@ import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
+import { Reloj } from '../common/reloj/reloj';
+import { calendarioLaboralColombia } from './reglas/calendario-colombia';
+import {
+  evaluarHorario,
+  MENSAJES_ERROR_HORARIO,
+} from './reglas/horario.validator';
+import { aMomentoLocal } from './reglas/zona-horaria';
 import {
   DetalleSolicitud,
   SELECT_DETALLE_SOLICITANTE,
@@ -21,10 +28,32 @@ export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
 
 @Injectable()
 export class SolicitudesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly reloj: Reloj,
+  ) {}
 
   async create(createSolicitudeDto: CreateSolicitudeDto, idUsuario: string) {
-    // --- 1. Mitigación M3: Validación Anti-Traslape (CA-06) ---
+    // Decisión D-U: un único "ahora" por petición. Validación, urgencia y año
+    // del radicado corresponden al MISMO instante (sin carrera a medianoche).
+    const ahora = this.reloj.ahora();
+
+    // --- 1. Reglas de horario puras (Fase 3): CA-04, pasado, mismo día, día
+    // hábil y urgencia por 5 días hábiles. Van ANTES de CA-06: una entrada
+    // inválida se rechaza sin consultar la base de datos.
+    const horario = evaluarHorario(
+      {
+        inicio: createSolicitudeDto.fecha_inicio,
+        fin: createSolicitudeDto.fecha_fin,
+      },
+      ahora,
+      calendarioLaboralColombia,
+    );
+    if (!horario.valido) {
+      throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
+    }
+
+    // --- 2. Mitigación M3: Validación Anti-Traslape (CA-06) ---
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
         estado: { notIn: ['Rechazado', 'Cancelado por el Usuario'] },
@@ -41,29 +70,11 @@ export class SolicitudesService {
       );
     }
 
-    // --- 2. Mitigación CA-04: Bloqueo de horario de almuerzo (12:00 a 14:00) ---
-    const getDecimalHour = (date: Date) => date.getHours() + date.getMinutes() / 60;
-    const horaInicio = getDecimalHour(createSolicitudeDto.fecha_inicio);
-    const horaFin = getDecimalHour(createSolicitudeDto.fecha_fin);
+    // --- 3. Generar Radicado (año de Bogotá, no el del servidor) ---
+    const anioRadicacion = aMomentoLocal(ahora).fecha.anio;
+    const radicadoGenerado = `EC-${anioRadicacion}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Si la reserva empieza antes de las 14:00 y termina después de las 12:00, se cruza con el almuerzo
-    if (horaInicio < 14 && horaFin > 12) {
-      throw new BadRequestException(
-        'Error CA-04: El sistema no permite programar radicados durante el horario de almuerzo institucional (12:00 a 14:00).'
-      );
-    }
-
-    // --- 3. Lógica de Fechas (Urgencia) ---
-    const hoy = new Date();
-    const fechaReserva = createSolicitudeDto.fecha_inicio;
-    const diferenciaMilisegundos = fechaReserva.getTime() - hoy.getTime();
-    const diferenciaDias = Math.ceil(diferenciaMilisegundos / (1000 * 60 * 60 * 24));
-    const esUrgencia = diferenciaDias < 5;
-
-    // --- 4. Generar Radicado ---
-    const radicadoGenerado = `EC-${hoy.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    // --- 5. Persistencia con Relaciones Anidadas ---
+    // --- 4. Persistencia con Relaciones Anidadas ---
     return await this.prisma.solicitud.create({
       data: {
         radicado: radicadoGenerado,
@@ -73,7 +84,7 @@ export class SolicitudesService {
         fecha_inicio: createSolicitudeDto.fecha_inicio,
         fecha_fin: createSolicitudeDto.fecha_fin,
         estado: 'Recibido',
-        es_urgencia: esUrgencia,
+        es_urgencia: horario.urgente,
         
         recursos: { 
           create: createSolicitudeDto.recursos?.map(recurso => ({

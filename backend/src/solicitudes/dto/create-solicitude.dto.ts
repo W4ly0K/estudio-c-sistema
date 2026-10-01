@@ -1,6 +1,7 @@
-import { IsString, IsNotEmpty, IsDate, MinDate, IsArray, ValidateNested, IsInt, Min, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, ValidateNested, IsInt, Min, IsOptional, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CategoriaSolicitud } from '@prisma/client'; // <-- 1. Importamos el Enum de Prisma
+import { FechaConZonaHoraria } from '../../common/validadores/fecha-con-zona-horaria.decorator';
 
 // Sub-clase para validar los recursos individuales del arreglo
 class RecursoSolicitadoDto {
@@ -28,15 +29,13 @@ export class CreateSolicitudeDto {
   @IsNotEmpty()
   proposito: string;
 
-  @Type(() => Date)
-  @IsDate({ message: 'La fecha de inicio debe tener un formato válido' })
-  @MinDate(new Date(new Date().setHours(0, 0, 0, 0)), {
-    message: 'No puedes programar una solicitud en una fecha pasada'
-  })
+  // Fase 3 (D-W): ISO 8601 con zona horaria obligatoria. La regla "no en el
+  // pasado" ya NO vive aquí: @MinDate se evaluaba una sola vez al cargar el
+  // módulo (fecha congelada). Ahora la aplica evaluarHorario con el Reloj.
+  @FechaConZonaHoraria()
   fecha_inicio: Date;
 
-  @Type(() => Date)
-  @IsDate()
+  @FechaConZonaHoraria()
   fecha_fin: Date;
 
   // Nuevo campo: Un arreglo de recursos opcional

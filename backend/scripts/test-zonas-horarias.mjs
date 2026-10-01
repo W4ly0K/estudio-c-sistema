@@ -1,5 +1,6 @@
 /**
- * Ejecuta las pruebas de `src/solicitudes/reglas` una vez por zona horaria.
+ * Ejecuta las pruebas de `src/solicitudes` una vez por zona horaria.
+ * (Fase 3.4, D-X: incluye el servicio, que fecha el radicado en Bogotá.)
  *
  * Por qué existe (Fase 3, Decisión D-K): Jest entrega a cada suite una COPIA
  * de `process.env`, así que asignar `process.env.TZ` dentro de una prueba no
@@ -19,13 +20,13 @@ const ZONAS = [
 ];
 
 for (const zona of ZONAS) {
-  console.log(`\n▶ Pruebas de reglas con TZ=${zona}`);
+  console.log(`\n▶ Pruebas de solicitudes con TZ=${zona}`);
   const resultado = spawnSync(
     process.execPath,
     [
       '--experimental-vm-modules',
       './node_modules/jest/bin/jest.js',
-      'src/solicitudes/reglas',
+      'src/solicitudes',
     ],
     { stdio: 'inherit', env: { ...process.env, TZ: zona } },
   );
@@ -40,4 +41,4 @@ for (const zona of ZONAS) {
   }
 }
 
-console.log(`\n✔ Reglas verificadas en ${ZONAS.length} zonas horarias.`);
+console.log(`\n✔ Solicitudes verificadas en ${ZONAS.length} zonas horarias.`);
