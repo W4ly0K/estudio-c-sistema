@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
 import { MENSAJE_SOLICITUD_NO_ENCONTRADA, SolicitudesService } from './solicitudes.service';
 import {
@@ -10,6 +10,11 @@ import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-ht
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { type ErrorHorario, MENSAJES_ERROR_HORARIO } from './reglas/horario.validator';
+import { RelojFijo } from '../../test/utils/reloj-fijo';
+
+/** "Ahora" fijo: lunes 5 de octubre de 2026, 10:00 en Bogotá. Mínima sin urgencia: miércoles 14. */
+const AHORA = new Date('2026-10-05T10:00:00-05:00');
 
 const solicitudBase: Solicitud = {
   radicado: 'EC-2099-0001',
@@ -17,9 +22,9 @@ const solicitudBase: Solicitud = {
   categoria: CategoriaSolicitud.ESPACIOS,
   proposito: 'Grabación de clase magistral',
   num_participantes: null,
-  // Hora LOCAL (9:00–10:00): la regla CA-04 actual usa getHours(), que depende de la zona horaria
-  fecha_inicio: new Date(2099, 0, 15, 9, 0),
-  fecha_fin: new Date(2099, 0, 15, 10, 0),
+  // Fase 3: instantes con zona horaria explícita (jueves 15 de enero de 2099, 9:00–10:00 en Bogotá)
+  fecha_inicio: new Date('2099-01-15T09:00:00-05:00'),
+  fecha_fin: new Date('2099-01-15T10:00:00-05:00'),
   fecha_propuesta_inicio: null,
   fecha_propuesta_fin: null,
   estado: 'Recibido',
@@ -55,6 +60,7 @@ describe('SolicitudesService', () => {
   };
 
   let service: SolicitudesService;
+  let reloj: RelojFijo;
 
   beforeEach(() => {
     prismaMock.solicitud.findFirst.mockReset();
@@ -64,7 +70,8 @@ describe('SolicitudesService', () => {
     prismaMock.solicitud.update.mockReset();
     prismaMock.log_Auditoria.create.mockReset();
     prismaMock.$transaction.mockReset();
-    service = new SolicitudesService(prismaMock as unknown as PrismaService);
+    reloj = new RelojFijo(AHORA);
+    service = new SolicitudesService(prismaMock as unknown as PrismaService, reloj);
   });
 
   it('create() persiste como id_usuario el identificador recibido del token', async () => {
@@ -84,6 +91,96 @@ describe('SolicitudesService', () => {
         data: expect.objectContaining({ id_usuario: 'uuid-del-token', estado: 'Recibido' }),
       }),
     );
+  });
+
+  describe('create() — reglas de horario integradas (Fase 3)', () => {
+    const dtoEntre = (inicio: string, fin: string): CreateSolicitudeDto => ({
+      categoria: CategoriaSolicitud.ESPACIOS,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: new Date(inicio),
+      fecha_fin: new Date(fin),
+    });
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+    });
+
+    /**
+     * Record sobre la unión: si se agrega un código de error y no se le da un
+     * caso aquí, tsc falla (la misma idea que la Decisión D-Q).
+     */
+    const CASO_POR_ERROR: Record<ErrorHorario, readonly [string, string]> = {
+      FIN_NO_POSTERIOR: ['2026-10-27T10:00:00-05:00', '2026-10-27T09:00:00-05:00'],
+      EN_EL_PASADO: ['2026-10-05T09:00:00-05:00', '2026-10-05T11:00:00-05:00'],
+      MULTIPLES_DIAS: ['2026-10-27T17:00:00-05:00', '2026-10-28T09:00:00-05:00'],
+      DIA_NO_HABIL: ['2026-10-12T09:00:00-05:00', '2026-10-12T10:00:00-05:00'],
+      FUERA_DE_BLOQUE: ['2026-10-27T08:00:00Z', '2026-10-27T10:00:00Z'], // 03:00–05:00 en Bogotá
+    };
+
+    it.each(Object.entries(CASO_POR_ERROR) as [ErrorHorario, readonly [string, string]][])(
+      '%s → 400 con su mensaje, SIN consultar la BD (CA-04 antes que CA-06)',
+      async (codigo, [inicio, fin]) => {
+        const intento = service.create(dtoEntre(inicio, fin), 'uuid-del-token');
+
+        await expect(intento).rejects.toBeInstanceOf(BadRequestException);
+        await expect(intento).rejects.toThrow(MENSAJES_ERROR_HORARIO[codigo]);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['martes 13: último día urgente', '2026-10-13', true],
+      ['miércoles 14: fecha mínima sin urgencia', '2026-10-14', false],
+    ])('es_urgencia según el Reloj inyectado: %s → %s', async (_caso, dia, urgente) => {
+      await service.create(
+        dtoEntre(`${dia}T14:00:00-05:00`, `${dia}T15:00:00-05:00`),
+        'uuid-del-token',
+      );
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ es_urgencia: urgente }) }),
+      );
+    });
+
+    it('consulta el Reloj UNA sola vez por petición (D-U)', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await service.create(
+        dtoEntre('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+        'uuid-del-token',
+      );
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+
+    it('el año del radicado es el de Bogotá: 31/12 a las 20:00 ya es 2027 en UTC', async () => {
+      reloj.fijar(new Date('2026-12-31T20:00:00-05:00'));
+
+      await service.create(
+        dtoEntre('2027-01-12T09:00:00-05:00', '2027-01-12T10:00:00-05:00'),
+        'uuid-del-token',
+      );
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ radicado: expect.stringMatching(/^EC-2026-\d{4}$/) }),
+        }),
+      );
+    });
+
+    it('con una franja válida sí evalúa CA-06 y respeta el conflicto', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      await expect(
+        service.create(
+          dtoEntre('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+          'uuid-del-token',
+        ),
+      ).rejects.toThrow('Error CA-06');
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
   });
 
   it('findMisSolicitudes() filtra por el identificador del token (aislamiento de datos)', async () => {

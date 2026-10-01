@@ -43,14 +43,16 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test            # Pruebas unitarias (53)
-npm run test:e2e    # Pruebas end-to-end de la cadena de seguridad (19)
+npm test            # Pruebas unitarias (217; 1 omitida por diseño)
+npm run test:e2e    # Pruebas end-to-end por HTTP real (23)
+npm run test:tz     # Pruebas de src/solicitudes en 4 zonas horarias (4 × 166)
 ```
 
 - Las pruebas **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
 - ⚠️ **No quites `--experimental-vm-modules` de los scripts de prueba.** Los paquetes de NestJS 12 son ESM y Jest necesita ese flag para cargarlos. El aviso `ExperimentalWarning: VM Modules` que aparece en consola es esperado.
 - ⚠️ Jest 30 usa un resolvedor nativo (`unrs-resolver`) que se descarga **por sistema operativo**. Si copias `node_modules` de un sistema a otro (por ejemplo, de Windows a Linux), Jest falla con un mensaje engañoso: `Module ts-jest ... was not found`. La solución es ejecutar `npm ci` en cada sistema.
 - Durante los e2e verás líneas `WARN [JwtAuthGuard] JWT rechazado: ...`. **Son esperadas**: registran los ataques que simulan las pruebas.
+- **`npm run test:tz` es obligatorio si tocas fechas u horas.** Jest entrega a cada suite una *copia* de `process.env`, así que la zona horaria no se puede cambiar desde una prueba. El script `scripts/test-zonas-horarias.mjs` relanza Jest con `TZ` = UTC, America/Bogota, Pacific/Pago_Pago (UTC−11) y Pacific/Kiritimati (UTC+14). En un equipo en Bogotá, `npm test` **no detecta** un `getFullYear()` o un `getDay()` mal usados; en UTC sí. La prueba omitida de `npm test` es la precondición de esta verificación: solo se ejecuta cuando el proceso recibe `TZ`.
 
 ---
 
@@ -80,6 +82,10 @@ Petición HTTP
 | `crearValidationPipe()` | `src/common/pipes/crear-validation-pipe.ts` | Única fuente de la configuración de validación (la usan `main.ts`, los tests y los e2e) |
 | `filtroDeAcceso(usuario)` | `src/solicitudes/politicas/filtro-de-acceso.ts` | Política de acceso por fila: devuelve el fragmento de `WHERE` que limita lo que cada rol puede ver. Un rol nuevo sin política **no compila** |
 | `SELECT_DETALLE_*` | `src/solicitudes/proyecciones/detalle-solicitud.proyeccion.ts` | Proyecciones por rol (`select` = lista blanca). La del solicitante no expone identidades internas ni inventario |
+| `Reloj` | `src/common/reloj/reloj.ts` | Fuente inyectable del "ahora". Pídelo **una sola vez** por operación. En pruebas se reemplaza por `RelojFijo` (`test/utils/`) |
+| `@FechaConZonaHoraria()` | `src/common/validadores/fecha-con-zona-horaria.decorator.ts` | Acepta solo fechas ISO 8601 **reales** con `Z` o `±HH:MM`. Rechaza fechas ambiguas e imposibles (`2026-02-30`, `T24:00`) |
+| `evaluarHorario(...)` | `src/solicitudes/reglas/horario.validator.ts` | Reglas puras de CA-04, fechas pasadas, mismo día, día hábil y urgencia por 5 días hábiles. Devuelve un resultado; no lanza excepciones de HTTP |
+| `calendarioLaboralColombia` | `src/solicitudes/reglas/calendario-colombia.ts` | Días hábiles: lunes a viernes sin los festivos de la Ley 51 de 1983, calculados con el algoritmo de Meeus |
 
 ### ✅ Lista de verificación para agregar un endpoint
 
@@ -93,6 +99,7 @@ Petición HTTP
 8. Devuelve datos con **`select` explícito** (lista blanca) y una proyección por rol. No uses `include` para respuestas de la API.
 9. Declara las rutas estáticas **antes** que las dinámicas (por ejemplo, `mis-solicitudes` antes de `:radicado`). Express las evalúa en orden de declaración.
 10. Agrega pruebas **en el mismo commit**: unitarias para los metadatos de `@Roles` y la política, y e2e si cambias la cadena de seguridad (incluido un caso de recurso **ajeno**).
+11. **Fechas y horas:** recibe fechas con `@FechaConZonaHoraria()` (nunca `@Type(() => Date)` solo), obtén el "ahora" del `Reloj` inyectado (nunca `new Date()` ni `@MinDate` en un DTO, que se evalúa al cargar el módulo) y evalúa las reglas en la hora de Bogotá con `aMomentoLocal()`. **Nunca** uses métodos locales de `Date` (`getHours`, `getDay`, `getFullYear`…). Ejecuta `npm run test:tz`.
 
 ### Matriz de acceso vigente
 
@@ -122,14 +129,20 @@ src/
 │   ├── interfaces/      JwtPayload, UsuarioAutenticado, RequestAutenticado
 │   ├── jwt-auth.guard.ts
 │   └── jwt.strategy.ts  Valida el JWT y consulta el usuario vigente en la BD
-├── common/pipes/        crearValidationPipe()
+├── common/
+│   ├── pipes/           crearValidationPipe()
+│   ├── reloj/           Reloj (abstracto) y RelojDelSistema
+│   └── validadores/     @FechaConZonaHoraria()
 ├── solicitudes/
 │   ├── politicas/       filtroDeAcceso (autorización por fila)
-│   └── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
+│   ├── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
+│   └── reglas/          Código puro: fecha civil, zona horaria, calendario laboral, urgencia y HorarioValidator
 ├── usuarios/  recursos/  prisma/
 test/
-├── utils/               Helpers solo para pruebas (excluidos del build)
+├── utils/               Helpers solo para pruebas (excluidos del build), incluido RelojFijo
 └── *.e2e-spec.ts
+scripts/
+└── test-zonas-horarias.mjs   Lanzador de npm run test:tz
 ```
 
 ## 7. Decisiones de arquitectura
@@ -138,6 +151,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 
 - [ADR-001 — Identidad y autorización Zero Trust](../docs/adr/ADR-001-identidad-zero-trust.md)
 - [ADR-002 — Autorización a nivel de dato en solicitudes](../docs/adr/ADR-002-autorizacion-a-nivel-de-dato.md)
+- [ADR-003 — Reglas de horario, días hábiles y zona horaria](../docs/adr/ADR-003-reglas-de-horario.md)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -166,3 +180,28 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
+
+## 9. Contrato de `POST /solicitudes` para el frontend (pantalla B2)
+
+**Fechas:** `fecha_inicio` y `fecha_fin` deben ser ISO 8601 con zona horaria explícita. Cualquiera de estas formas es válida:
+
+```json
+{ "fecha_inicio": "2026-10-13T08:00:00-05:00", "fecha_fin": "2026-10-13T10:00:00-05:00" }
+{ "fecha_inicio": "2026-10-13T13:00:00.000Z",  "fecha_fin": "2026-10-13T15:00:00.000Z" }
+```
+
+Una fecha sin zona (`2026-10-13T08:00:00`) o imposible (`2026-02-30…`) responde **400** desde el pipe, con un mensaje que empieza por `fecha_inicio debe ser una fecha ISO 8601 real con zona horaria explícita`.
+
+**Reglas de horario** (siempre en la hora de Bogotá). Si se incumplen, la respuesta es **400** con **uno solo** de estos mensajes, el de la primera regla incumplida, en este orden:
+
+| Regla | `message` |
+|---|---|
+| Fin posterior al inicio | `Error CA-04: La hora de finalización debe ser posterior a la hora de inicio.` |
+| No en el pasado | `Error CA-04: No se puede programar una solicitud en una fecha u hora pasada.` |
+| Mismo día | `Error CA-04: La reserva debe iniciar y terminar el mismo día.` |
+| Día hábil | `Error CA-04: El Estudio C no atiende sábados, domingos ni festivos.` |
+| Bloque de atención | `Error CA-04: El horario debe estar completamente dentro de un bloque de atención (8:00 a.m. – 12:00 p.m. o 2:00 p.m. – 6:00 p.m.).` |
+
+- Terminar **exactamente** a las 12:00 o a las 18:00 es válido.
+- Las reglas de horario se evalúan **antes** que el anti-traslape (CA-06): el mensaje `Error CA-06: …` solo aparece con una franja válida.
+- **201:** la solicitud creada incluye `es_urgencia`. Es `true` cuando la reserva cae antes del 6.º día hábil posterior a la radicación (5 días hábiles completos para el Staff, PRD §6). La urgencia **no bloquea** el envío: la UI debe avisar al solicitante que tiene que notificar al Staff por correo o WhatsApp.
