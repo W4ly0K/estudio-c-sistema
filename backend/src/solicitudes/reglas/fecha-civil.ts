@@ -89,3 +89,12 @@ export function aClaveIso(fecha: FechaCivil): string {
   const dia = String(fecha.dia).padStart(2, '0');
   return `${anio}-${mes}-${dia}`;
 }
+
+/**
+ * Orden cronológico entre dos fechas civiles (Decisión D-R): −1, 0 o 1.
+ * Compara año, mes y día como números; nunca convierte a instantes.
+ */
+export function compararFechas(a: FechaCivil, b: FechaCivil): -1 | 0 | 1 {
+  const diferencia = a.anio - b.anio || a.mes - b.mes || a.dia - b.dia;
+  return diferencia < 0 ? -1 : diferencia > 0 ? 1 : 0;
+}

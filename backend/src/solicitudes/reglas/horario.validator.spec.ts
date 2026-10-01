@@ -2,9 +2,11 @@ import {
   calendarioLaboralColombia,
   type CalendarioLaboral,
 } from './calendario-colombia';
+import { aClaveIso } from './fecha-civil';
 import {
   BLOQUES_DE_ATENCION,
   type ErrorHorario,
+  evaluarHorario,
   MENSAJES_ERROR_HORARIO,
   validarFranjaHoraria,
 } from './horario.validator';
@@ -281,5 +283,55 @@ describe('validarFranjaHoraria', () => {
       }
       expect(Object.keys(MENSAJES_ERROR_HORARIO)).toHaveLength(5);
     });
+  });
+});
+
+describe('evaluarHorario (franja + urgencia, Decisión D-N)', () => {
+  /** Radicación: lunes 5 de octubre de 2026, 10:00 → mínima: miércoles 14. */
+  const RADICACION = bog('2026-10-05T10:00');
+
+  it.each([
+    ['el mismo día de la radicación, más tarde', '2026-10-05', true],
+    ['martes 13: el último día urgente', '2026-10-13', true],
+    ['miércoles 14: la fecha mínima', '2026-10-14', false],
+    ['tres semanas después', '2026-10-27', false],
+  ])('reserva %s (%s) → urgente: %s', (_caso, dia, urgente) => {
+    const r = evaluarHorario(
+      { inicio: bog(`${dia}T14:00`), fin: bog(`${dia}T15:00`) },
+      RADICACION,
+      calendarioLaboralColombia,
+    );
+    expect(r.valido).toBe(true);
+    if (r.valido) {
+      expect(r.urgente).toBe(urgente);
+      expect(aClaveIso(r.fechaMinimaSinUrgencia)).toBe('2026-10-14');
+    }
+  });
+
+  /**
+   * La radicación se fecha en Bogotá: a las 23:59:59.999 del lunes 5 un
+   * servidor en UTC ya está en el martes 6 (04:59:59.999Z).
+   */
+  it.each([
+    ['último milisegundo del lunes 5', '2026-10-05T23:59:59.999', '2026-10-14'],
+    ['primer instante del martes 6', '2026-10-06T00:00:00.000', '2026-10-15'],
+  ])('radicación en el %s → mínima %s', (_caso, ahora, minima) => {
+    const r = evaluarHorario(
+      { inicio: bog('2026-10-27T09:00'), fin: bog('2026-10-27T10:00') },
+      bog(ahora),
+      calendarioLaboralColombia,
+    );
+    expect(r.valido && aClaveIso(r.fechaMinimaSinUrgencia)).toBe(minima);
+  });
+
+  it('propaga el error de la franja sin calcular la urgencia', () => {
+    // Con NADA_HABIL, calcular la urgencia lanzaría RangeError (D-S). Que
+    // devuelva DIA_NO_HABIL prueba que la urgencia va DESPUÉS de la franja.
+    const r = evaluarHorario(
+      { inicio: bog(`${DIA}T09:00`), fin: bog(`${DIA}T10:00`) },
+      AHORA,
+      NADA_HABIL,
+    );
+    expect(r).toEqual({ valido: false, error: 'DIA_NO_HABIL' });
   });
 });

@@ -1,5 +1,6 @@
 import type { CalendarioLaboral } from './calendario-colombia';
-import { aClaveIso } from './fecha-civil';
+import { aClaveIso, type FechaCivil } from './fecha-civil';
+import { esUrgente, fechaMinimaSinUrgencia } from './urgencia';
 import { aMomentoLocal, MS_POR_HORA, type MomentoLocal } from './zona-horaria';
 
 /**
@@ -110,4 +111,40 @@ export function validarFranjaHoraria(
   }
 
   return { valido: true, inicioLocal, finLocal };
+}
+
+/** Contrato de la Decisión D-N: franja válida + urgencia, o el primer error. */
+export type ResultadoHorario =
+  | {
+      readonly valido: true;
+      readonly urgente: boolean;
+      /** Para que el frontend sugiera la fecha (PRD §6) sin recalcularla. */
+      readonly fechaMinimaSinUrgencia: FechaCivil;
+    }
+  | { readonly valido: false; readonly error: ErrorHorario };
+
+/**
+ * Compone la validación de la franja con la urgencia. La urgencia solo se
+ * calcula si la franja es válida: no tiene sentido sobre una reserva rechazada.
+ * La fecha de radicación es la fecha de Bogotá de `ahora`, que viene siempre
+ * del reloj del servidor (nunca del cliente).
+ */
+export function evaluarHorario(
+  franja: FranjaSolicitada,
+  ahora: Date,
+  calendario: CalendarioLaboral,
+): ResultadoHorario {
+  const franjaValidada = validarFranjaHoraria(franja, ahora, calendario);
+  if (!franjaValidada.valido) {
+    return franjaValidada;
+  }
+
+  const radicacion = aMomentoLocal(ahora).fecha;
+  const fechaMinima = fechaMinimaSinUrgencia(radicacion, calendario);
+
+  return {
+    valido: true,
+    urgente: esUrgente(franjaValidada.inicioLocal.fecha, fechaMinima),
+    fechaMinimaSinUrgencia: fechaMinima,
+  };
 }
