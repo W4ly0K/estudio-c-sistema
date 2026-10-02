@@ -34,6 +34,29 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 | `JWT_SECRET` | Secreto para firmar y verificar los JWT. **Obligatorio**: si falta, la API no arranca (fail-fast). Usa una cadena larga y aleatoria |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth usado para verificar el token de inicio de sesión |
 
+## 2.1 Base de datos y migraciones
+
+Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
+
+```bash
+npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
+npx prisma migrate status
+```
+
+| Comando | Contra Supabase | Motivo |
+|---|---|---|
+| `npm run db:migrate` (`prisma migrate deploy`) | ✅ Único comando que modifica el esquema | Aplica solo migraciones pendientes y nunca hace *reset* |
+| `prisma migrate status` / `prisma migrate diff` | ✅ Solo lectura | Diagnóstico de migraciones pendientes y de *drift* |
+| `prisma migrate dev` | ❌ Prohibido | Necesita una base *shadow* y, si detecta *drift*, ofrece resetear la base y borrar los datos |
+| `prisma db push` | ❌ Retirado | No deja historial y podría eliminar restricciones escritas en SQL |
+| `prisma migrate reset` | ❌ Nunca | Destruye todos los datos |
+
+- `DIRECT_URL` debe usar el **puerto 5432** (pooler en modo sesión). Prisma Migrate usa *advisory locks* de sesión, que el modo transacción (puerto 6543, PgBouncer) no conserva.
+- Las migraciones nuevas se escriben a mano en `prisma/migrations/<timestamp>_<nombre>/migration.sql` y se revisan antes de aplicarlas.
+- Una migración ya aplicada **no se edita**: Prisma guarda su *checksum* (SHA-256 del archivo) en `_prisma_migrations`. Para corregirla se crea una migración nueva.
+- El `.gitattributes` de la raíz fuerza **LF** en `prisma/migrations/**/*.sql`, de modo que el *checksum* sea idéntico en Windows, en el CI y en la base de datos.
+- En Windows, si se genera SQL con `prisma migrate diff ... > archivo.sql`, hay que hacerlo desde Git Bash o PowerShell 7: el `>` de PowerShell 5.1 escribe UTF-16 y Prisma no puede leer el archivo.
+
 ## 3. Ejecución
 
 ```bash
@@ -138,6 +161,9 @@ src/
 │   ├── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
 │   └── reglas/          Código puro: fecha civil, zona horaria, calendario laboral, urgencia y HorarioValidator
 ├── usuarios/  recursos/  prisma/
+prisma/
+├── schema.prisma
+└── migrations/          Historial versionado (0_init = baseline); se aplica solo con npm run db:migrate
 test/
 ├── utils/               Helpers solo para pruebas (excluidos del build), incluido RelojFijo
 └── *.e2e-spec.ts

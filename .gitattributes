@@ -1,0 +1,3 @@
+# Migraciones de Prisma siempre en LF: el checksum de migration.sql debe ser
+# identico en Windows, en el CI (Linux) y en _prisma_migrations (Fase 4.1).
+backend/prisma/migrations/**/*.sql text eol=lf
