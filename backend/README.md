@@ -145,6 +145,7 @@ Petición HTTP
 9. Declara las rutas estáticas **antes** que las dinámicas (por ejemplo, `mis-solicitudes` antes de `:radicado`). Express las evalúa en orden de declaración.
 10. Agrega pruebas **en el mismo commit**: unitarias para los metadatos de `@Roles` y la política, y e2e si cambias la cadena de seguridad (incluido un caso de recurso **ajeno**).
 11. **Fechas y horas:** recibe fechas con `@FechaConZonaHoraria()` (nunca `@Type(() => Date)` solo), obtén el "ahora" del `Reloj` inyectado (nunca `new Date()` ni `@MinDate` en un DTO, que se evalúa al cargar el módulo) y evalúa las reglas en la hora de Bogotá con `aMomentoLocal()`. **Nunca** uses métodos locales de `Date` (`getHours`, `getDay`, `getFullYear`…). Ejecuta `npm run test:tz`.
+12. **Integridad garantizada por el motor:** toda regla de unicidad o de no traslape se garantiza con una restricción de PostgreSQL, no solo con una consulta previa (bajo concurrencia, la consulta previa no protege: ADR-004). El error del motor se traduce con un detector anclado a **esa** restricción y **nunca** se reenvía su mensaje al cliente (el `DETAIL` contiene datos de terceros). Los cambios de esquema van solo por migraciones nuevas con `npm run db:migrate`; una migración aplicada no se edita. Ejecuta `npm run test:integracion` si tocas restricciones o migraciones.
 
 ### Matriz de acceso vigente
 
@@ -200,6 +201,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-001 — Identidad y autorización Zero Trust](../docs/adr/ADR-001-identidad-zero-trust.md)
 - [ADR-002 — Autorización a nivel de dato en solicitudes](../docs/adr/ADR-002-autorizacion-a-nivel-de-dato.md)
 - [ADR-003 — Reglas de horario, días hábiles y zona horaria](../docs/adr/ADR-003-reglas-de-horario.md)
+- [ADR-004 — Concurrencia y anti-traslape (CA-06) garantizados por el motor](../docs/adr/ADR-004-concurrencia-ca06.md)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
