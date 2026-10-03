@@ -241,3 +241,13 @@ Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franj
 - Es el **mismo** mensaje si el cruce lo detecta la consulta previa o si lo detecta PostgreSQL al guardar (dos peticiones simultáneas por la misma franja). El frontend no debe distinguirlos.
 - El mensaje **no incluye** el radicado, el horario ni ningún otro dato de la reserva con la que se cruza (minimización de datos).
 - Los intervalos son semiabiertos `[inicio, fin)`: una reserva de 10:00 a 11:00 y otra de 11:00 a 12:00 no se cruzan.
+
+## 10. Contrato de `PATCH /solicitudes/:radicado` (solo STAFF)
+
+Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
+
+- **Reglas de horario (400):** se aplican **solo si cambia `fecha_inicio` o `fecha_fin`**, con los mismos mensajes y el mismo orden de la §9. Un cambio de estado por sí solo no las evalúa: marcar `Entregado` una reserva que ya ocurrió es válido.
+- **`es_urgencia`:** al reprogramar se **recalcula** con la anticipación real en el momento del cambio.
+- **Anti-traslape (409):** mismo mensaje exacto de la §9. Se verifica cuando la solicitud queda en un estado que ocupa la franja (todos salvo `Rechazado` y `Cancelado por el Usuario`) y, además, cambian las fechas o se **reactiva** desde uno de esos dos estados. La solicitud nunca choca consigo misma.
+- **Estado y fechas en la misma petición** se aplican juntos, en una sola transacción. Si cambia el estado, se registra el log de auditoría con el STAFF del token (CA-09).
+- **200:** `{ mensaje, solicitud }`. `mensaje` es `Estado actualizado y auditado correctamente en la bitácora` si cambió el estado, o `Solicitud actualizada correctamente (sin cambio de estado)` si no.

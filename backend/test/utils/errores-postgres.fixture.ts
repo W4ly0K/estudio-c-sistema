@@ -27,6 +27,16 @@ export const MENSAJE_23P01_UPDATE = [
   'ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23P01", message: "conflicting key value violates exclusion constraint \\"Solicitud_sin_traslape_ca06\\"", severity: "ERROR", detail: Some("Key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:15:00\\",\\"2026-10-14 15:45:00\\")) conflicts with existing key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:00:00\\",\\"2026-10-14 16:00:00\\"))."), column: None, hint: None }), transient: false })',
 ].join('\n');
 
+/** (d3) $transaction([update estado, create log]) reactivando una Rechazado → 23P01. */
+export const MENSAJE_23P01_TRANSACCION = [
+  '',
+  'Invalid `prisma.solicitud.update()` invocation:',
+  '',
+  '',
+  'Error in batch request 0: Error occurred during query execution:',
+  'ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23P01", message: "conflicting key value violates exclusion constraint \\"Solicitud_sin_traslape_ca06\\"", severity: "ERROR", detail: Some("Key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:15:00\\",\\"2026-10-14 15:45:00\\")) conflicts with existing key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:00:00\\",\\"2026-10-14 16:00:00\\"))."), column: None, hint: None }), transient: false })',
+].join('\n');
+
 /** (e) create con fin < inicio → 23514 de Solicitud_fechas_validas_check. */
 export const MENSAJE_23514_CHECK = [
   '',
