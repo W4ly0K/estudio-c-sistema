@@ -34,6 +34,29 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 | `JWT_SECRET` | Secreto para firmar y verificar los JWT. **Obligatorio**: si falta, la API no arranca (fail-fast). Usa una cadena larga y aleatoria |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth usado para verificar el token de inicio de sesión |
 
+## 2.1 Base de datos y migraciones
+
+Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
+
+```bash
+npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
+npx prisma migrate status
+```
+
+| Comando | Contra Supabase | Motivo |
+|---|---|---|
+| `npm run db:migrate` (`prisma migrate deploy`) | ✅ Único comando que modifica el esquema | Aplica solo migraciones pendientes y nunca hace *reset* |
+| `prisma migrate status` / `prisma migrate diff` | ✅ Solo lectura | Diagnóstico de migraciones pendientes y de *drift* |
+| `prisma migrate dev` | ❌ Prohibido | Necesita una base *shadow* y, si detecta *drift*, ofrece resetear la base y borrar los datos |
+| `prisma db push` | ❌ Retirado | No deja historial y podría eliminar restricciones escritas en SQL |
+| `prisma migrate reset` | ❌ Nunca | Destruye todos los datos |
+
+- `DIRECT_URL` debe usar el **puerto 5432** (pooler en modo sesión). Prisma Migrate usa *advisory locks* de sesión, que el modo transacción (puerto 6543, PgBouncer) no conserva.
+- Las migraciones nuevas se escriben a mano en `prisma/migrations/<timestamp>_<nombre>/migration.sql` y se revisan antes de aplicarlas.
+- Una migración ya aplicada **no se edita**: Prisma guarda su *checksum* (SHA-256 del archivo) en `_prisma_migrations`. Para corregirla se crea una migración nueva.
+- El `.gitattributes` de la raíz fuerza **LF** en `prisma/migrations/**/*.sql`, de modo que el *checksum* sea idéntico en Windows, en el CI y en la base de datos.
+- En Windows, si se genera SQL con `prisma migrate diff ... > archivo.sql`, hay que hacerlo desde Git Bash o PowerShell 7: el `>` de PowerShell 5.1 escribe UTF-16 y Prisma no puede leer el archivo.
+
 ## 3. Ejecución
 
 ```bash
@@ -43,16 +66,38 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test            # Pruebas unitarias (217; 1 omitida por diseño)
-npm run test:e2e    # Pruebas end-to-end por HTTP real (23)
-npm run test:tz     # Pruebas de src/solicitudes en 4 zonas horarias (4 × 166)
+npm test                 # Pruebas unitarias (300; 1 omitida por diseño)
+npm run test:e2e         # Pruebas end-to-end por HTTP real (30)
+npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias (4 × 219)
+npm run test:integracion # CA-06 contra PostgreSQL real, en una base DESECHABLE (8)
 ```
 
-- Las pruebas **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
+- `npm test`, `test:e2e` y `test:tz` **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
 - ⚠️ **No quites `--experimental-vm-modules` de los scripts de prueba.** Los paquetes de NestJS 12 son ESM y Jest necesita ese flag para cargarlos. El aviso `ExperimentalWarning: VM Modules` que aparece en consola es esperado.
 - ⚠️ Jest 30 usa un resolvedor nativo (`unrs-resolver`) que se descarga **por sistema operativo**. Si copias `node_modules` de un sistema a otro (por ejemplo, de Windows a Linux), Jest falla con un mensaje engañoso: `Module ts-jest ... was not found`. La solución es ejecutar `npm ci` en cada sistema.
 - Durante los e2e verás líneas `WARN [JwtAuthGuard] JWT rechazado: ...`. **Son esperadas**: registran los ataques que simulan las pruebas.
 - **`npm run test:tz` es obligatorio si tocas fechas u horas.** Jest entrega a cada suite una *copia* de `process.env`, así que la zona horaria no se puede cambiar desde una prueba. El script `scripts/test-zonas-horarias.mjs` relanza Jest con `TZ` = UTC, America/Bogota, Pacific/Pago_Pago (UTC−11) y Pacific/Kiritimati (UTC+14). En un equipo en Bogotá, `npm test` **no detecta** un `getFullYear()` o un `getDay()` mal usados; en UTC sí. La prueba omitida de `npm test` es la precondición de esta verificación: solo se ejecuta cuando el proceso recibe `TZ`.
+
+### 4.1 Pruebas de integración (`npm run test:integracion`)
+
+Prueban contra **PostgreSQL real** lo que los mocks no pueden: 10 peticiones simultáneas por la misma franja (CA-06 sin carrera), el **canario** del formato del error de Prisma que reconoce `esViolacionDeTraslapeCa06` (si una actualización de Prisma lo cambia, esta batería falla antes que producción) y la coincidencia entre la restricción instalada y el código.
+
+**Nunca se ejecutan contra producción.** El `globalSetup` aplica tres capas, todas *fail-closed*:
+
+1. **Identidad del proyecto:** la referencia de Supabase sale del usuario (`postgres.<ref>`) **o** del host (`db.<ref>.supabase.co`) y se compara con todas las URLs de `backend/.env`, incluidas las duplicadas y las comentadas.
+2. **Confirmación explícita:** `INTEGRACION_CONFIRMO_DESECHABLE` debe ser igual a la referencia (o `host:puerto/base`).
+3. **Centinela dentro de la base:** la tabla `guardia.bd_desechable` debe existir y tener una fila antes de cada `TRUNCATE`.
+
+**Preparación (una sola vez, en el SQL Editor del proyecto DESECHABLE):**
+
+```sql
+DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres;
+CREATE SCHEMA IF NOT EXISTS guardia;
+CREATE TABLE IF NOT EXISTS guardia.bd_desechable (marcada_en timestamptz DEFAULT now());
+INSERT INTO guardia.bd_desechable DEFAULT VALUES;
+```
+
+Después copia `.env.integracion.ejemplo` como `.env.integracion` (ignorado por Git), completa las URLs y la confirmación, y ejecuta `npm run test:integracion`. El script aplica las migraciones con `prisma migrate deploy` usando **solo** las URLs de prueba y vacía las tablas antes de cada caso.
 
 ---
 
@@ -100,6 +145,7 @@ Petición HTTP
 9. Declara las rutas estáticas **antes** que las dinámicas (por ejemplo, `mis-solicitudes` antes de `:radicado`). Express las evalúa en orden de declaración.
 10. Agrega pruebas **en el mismo commit**: unitarias para los metadatos de `@Roles` y la política, y e2e si cambias la cadena de seguridad (incluido un caso de recurso **ajeno**).
 11. **Fechas y horas:** recibe fechas con `@FechaConZonaHoraria()` (nunca `@Type(() => Date)` solo), obtén el "ahora" del `Reloj` inyectado (nunca `new Date()` ni `@MinDate` en un DTO, que se evalúa al cargar el módulo) y evalúa las reglas en la hora de Bogotá con `aMomentoLocal()`. **Nunca** uses métodos locales de `Date` (`getHours`, `getDay`, `getFullYear`…). Ejecuta `npm run test:tz`.
+12. **Integridad garantizada por el motor:** toda regla de unicidad o de no traslape se garantiza con una restricción de PostgreSQL, no solo con una consulta previa (bajo concurrencia, la consulta previa no protege: ADR-004). El error del motor se traduce con un detector anclado a **esa** restricción y **nunca** se reenvía su mensaje al cliente (el `DETAIL` contiene datos de terceros). Los cambios de esquema van solo por migraciones nuevas con `npm run db:migrate`; una migración aplicada no se edita. Ejecuta `npm run test:integracion` si tocas restricciones o migraciones.
 
 ### Matriz de acceso vigente
 
@@ -138,6 +184,9 @@ src/
 │   ├── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
 │   └── reglas/          Código puro: fecha civil, zona horaria, calendario laboral, urgencia y HorarioValidator
 ├── usuarios/  recursos/  prisma/
+prisma/
+├── schema.prisma
+└── migrations/          Historial versionado (0_init = baseline); se aplica solo con npm run db:migrate
 test/
 ├── utils/               Helpers solo para pruebas (excluidos del build), incluido RelojFijo
 └── *.e2e-spec.ts
@@ -152,6 +201,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-001 — Identidad y autorización Zero Trust](../docs/adr/ADR-001-identidad-zero-trust.md)
 - [ADR-002 — Autorización a nivel de dato en solicitudes](../docs/adr/ADR-002-autorizacion-a-nivel-de-dato.md)
 - [ADR-003 — Reglas de horario, días hábiles y zona horaria](../docs/adr/ADR-003-reglas-de-horario.md)
+- [ADR-004 — Concurrencia y anti-traslape (CA-06) garantizados por el motor](../docs/adr/ADR-004-concurrencia-ca06.md)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -205,3 +255,23 @@ Una fecha sin zona (`2026-10-13T08:00:00`) o imposible (`2026-02-30…`) respond
 - Terminar **exactamente** a las 12:00 o a las 18:00 es válido.
 - Las reglas de horario se evalúan **antes** que el anti-traslape (CA-06): el mensaje `Error CA-06: …` solo aparece con una franja válida.
 - **201:** la solicitud creada incluye `es_urgencia`. Es `true` cuando la reserva cae antes del 6.º día hábil posterior a la radicación (5 días hábiles completos para el Staff, PRD §6). La urgencia **no bloquea** el envío: la UI debe avisar al solicitante que tiene que notificar al Staff por correo o WhatsApp.
+
+**Anti-traslape (CA-06).** Si la franja se cruza con otra solicitud activa (cualquier estado distinto de `Rechazado` y `Cancelado por el Usuario`), la respuesta es **409 Conflict** con este mensaje exacto:
+
+```
+Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.
+```
+
+- Es el **mismo** mensaje si el cruce lo detecta la consulta previa o si lo detecta PostgreSQL al guardar (dos peticiones simultáneas por la misma franja). El frontend no debe distinguirlos.
+- El mensaje **no incluye** el radicado, el horario ni ningún otro dato de la reserva con la que se cruza (minimización de datos).
+- Los intervalos son semiabiertos `[inicio, fin)`: una reserva de 10:00 a 11:00 y otra de 11:00 a 12:00 no se cruzan.
+
+## 10. Contrato de `PATCH /solicitudes/:radicado` (solo STAFF)
+
+Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
+
+- **Reglas de horario (400):** se aplican **solo si cambia `fecha_inicio` o `fecha_fin`**, con los mismos mensajes y el mismo orden de la §9. Un cambio de estado por sí solo no las evalúa: marcar `Entregado` una reserva que ya ocurrió es válido.
+- **`es_urgencia`:** al reprogramar se **recalcula** con la anticipación real en el momento del cambio.
+- **Anti-traslape (409):** mismo mensaje exacto de la §9. Se verifica cuando la solicitud queda en un estado que ocupa la franja (todos salvo `Rechazado` y `Cancelado por el Usuario`) y, además, cambian las fechas o se **reactiva** desde uno de esos dos estados. La solicitud nunca choca consigo misma.
+- **Estado y fechas en la misma petición** se aplican juntos, en una sola transacción. Si cambia el estado, se registra el log de auditoría con el STAFF del token (CA-09).
+- **200:** `{ mensaje, solicitud }`. `mensaje` es `Estado actualizado y auditado correctamente en la bitácora` si cambió el estado, o `Solicitud actualizada correctamente (sin cambio de estado)` si no.

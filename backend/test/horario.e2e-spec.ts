@@ -1,9 +1,21 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
-import { crearAppE2E, PrismaMockE2E } from './utils/crear-app-e2e';
+import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
+import {
+  crearAppE2E,
+  PrismaMockE2E,
+  SOLICITUD_AJENA_E2E,
+  SOLICITUD_E2E,
+} from './utils/crear-app-e2e';
+import {
+  errorDesconocidoDePrisma,
+  MENSAJE_23514_CHECK,
+  MENSAJE_23P01_CREATE,
+  MENSAJE_23P01_TRANSACCION,
+} from './utils/errores-postgres.fixture';
 
 /**
  * Reglas de horario por HTTP real (Fase 3): ValidationPipe → controlador →
@@ -14,6 +26,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaMockE2E;
   let token: string;
+  let tokenStaff: string;
 
   const cuerpo = (fecha_inicio: string, fecha_fin: string) => ({
     categoria: CategoriaSolicitud.ESPACIOS,
@@ -32,6 +45,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
     let firmar: (sub: string, rol: RolUsuario) => string;
     ({ app, prisma, firmar } = await crearAppE2E());
     token = firmar('uuid-solicitante', RolUsuario.SOLICITANTE);
+    tokenStaff = firmar('uuid-staff', RolUsuario.STAFF);
   });
 
   afterAll(async () => {
@@ -79,5 +93,107 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
     expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.EN_EL_PASADO);
     expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  describe('CA-06 · anti-traslape sin condición de carrera (Fase 4)', () => {
+    const franjaValida = () => cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00');
+
+    it('23. la consulta previa encuentra un cruce → 409 con el mensaje mínimo', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await radicar(franjaValida()).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('24. el motor rechaza con el 23P01 real (carrera) → el MISMO 409, sin datos del motor', async () => {
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.create.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+        const respuesta = await radicar(franjaValida()).expect(409);
+
+        expect(respuesta.body.message).toBe(MENSAJE_CA06);
+        const cuerpoRespuesta = JSON.stringify(respuesta.body);
+        for (const fuga of ['23P01', 'Solicitud_sin_traslape', '2026-10-14']) {
+          expect(cuerpoRespuesta).not.toContain(fuga);
+        }
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('25. un 23514 no se disfraza de CA-06 → 500 genérico, sin el DETAIL', async () => {
+      const errores = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.create.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23514_CHECK));
+
+        const respuesta = await radicar(franjaValida()).expect(500);
+
+        expect(respuesta.body).toEqual({ statusCode: 500, message: 'Internal server error' });
+      } finally {
+        errores.mockRestore();
+      }
+    });
+  });
+
+  describe('PATCH /solicitudes/:radicado · CA-04 y CA-06 al reprogramar (Fase 4.5)', () => {
+    const editar = (body: object) =>
+      request(app.getHttpServer())
+        .patch(`/solicitudes/${SOLICITUD_E2E.radicado}`)
+        .set('Authorization', `Bearer ${tokenStaff}`)
+        .send(body);
+
+    it('26. mover la reserva a un sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
+      const respuesta = await editar(
+        cuerpo('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'),
+      ).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+    });
+
+    it('27. la reprogramación se cruza con otra → 409 con el mensaje mínimo', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await editar(
+        cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+      ).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+    });
+
+    it('28. el motor rechaza la reactivación (23P01 real en $transaction) → el MISMO 409', async () => {
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Rechazado' });
+        prisma.$transaction.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION));
+
+        const respuesta = await editar({ estado: 'Recibido' }).expect(409);
+
+        expect(respuesta.body.message).toBe(MENSAJE_CA06);
+        expect(JSON.stringify(respuesta.body)).not.toContain('23P01');
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('29. marcar "Entregado" una reserva que ya ocurrió → 200 (sin reglas de horario)', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({
+        ...SOLICITUD_E2E,
+        fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+      });
+
+      await editar({ estado: 'Entregado' }).expect(200);
+
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
   });
 });

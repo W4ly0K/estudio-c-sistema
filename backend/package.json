@@ -20,6 +20,8 @@
     "test:debug": "node --inspect-brk --experimental-vm-modules -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
     "test:tz": "node scripts/test-zonas-horarias.mjs",
+    "test:integracion": "node --env-file=.env.integracion --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-integracion.json",
+    "db:migrate": "prisma migrate deploy",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -44,6 +44,8 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+# Base desechable de npm run test:integracion (Fase 4.6)
+.env.integracion
 
 # temp directory
 .temp
