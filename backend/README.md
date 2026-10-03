@@ -66,16 +66,38 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test            # Pruebas unitarias (217; 1 omitida por diseño)
-npm run test:e2e    # Pruebas end-to-end por HTTP real (23)
-npm run test:tz     # Pruebas de src/solicitudes en 4 zonas horarias (4 × 166)
+npm test                 # Pruebas unitarias (300; 1 omitida por diseño)
+npm run test:e2e         # Pruebas end-to-end por HTTP real (30)
+npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias (4 × 219)
+npm run test:integracion # CA-06 contra PostgreSQL real, en una base DESECHABLE (8)
 ```
 
-- Las pruebas **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
+- `npm test`, `test:e2e` y `test:tz` **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
 - ⚠️ **No quites `--experimental-vm-modules` de los scripts de prueba.** Los paquetes de NestJS 12 son ESM y Jest necesita ese flag para cargarlos. El aviso `ExperimentalWarning: VM Modules` que aparece en consola es esperado.
 - ⚠️ Jest 30 usa un resolvedor nativo (`unrs-resolver`) que se descarga **por sistema operativo**. Si copias `node_modules` de un sistema a otro (por ejemplo, de Windows a Linux), Jest falla con un mensaje engañoso: `Module ts-jest ... was not found`. La solución es ejecutar `npm ci` en cada sistema.
 - Durante los e2e verás líneas `WARN [JwtAuthGuard] JWT rechazado: ...`. **Son esperadas**: registran los ataques que simulan las pruebas.
 - **`npm run test:tz` es obligatorio si tocas fechas u horas.** Jest entrega a cada suite una *copia* de `process.env`, así que la zona horaria no se puede cambiar desde una prueba. El script `scripts/test-zonas-horarias.mjs` relanza Jest con `TZ` = UTC, America/Bogota, Pacific/Pago_Pago (UTC−11) y Pacific/Kiritimati (UTC+14). En un equipo en Bogotá, `npm test` **no detecta** un `getFullYear()` o un `getDay()` mal usados; en UTC sí. La prueba omitida de `npm test` es la precondición de esta verificación: solo se ejecuta cuando el proceso recibe `TZ`.
+
+### 4.1 Pruebas de integración (`npm run test:integracion`)
+
+Prueban contra **PostgreSQL real** lo que los mocks no pueden: 10 peticiones simultáneas por la misma franja (CA-06 sin carrera), el **canario** del formato del error de Prisma que reconoce `esViolacionDeTraslapeCa06` (si una actualización de Prisma lo cambia, esta batería falla antes que producción) y la coincidencia entre la restricción instalada y el código.
+
+**Nunca se ejecutan contra producción.** El `globalSetup` aplica tres capas, todas *fail-closed*:
+
+1. **Identidad del proyecto:** la referencia de Supabase sale del usuario (`postgres.<ref>`) **o** del host (`db.<ref>.supabase.co`) y se compara con todas las URLs de `backend/.env`, incluidas las duplicadas y las comentadas.
+2. **Confirmación explícita:** `INTEGRACION_CONFIRMO_DESECHABLE` debe ser igual a la referencia (o `host:puerto/base`).
+3. **Centinela dentro de la base:** la tabla `guardia.bd_desechable` debe existir y tener una fila antes de cada `TRUNCATE`.
+
+**Preparación (una sola vez, en el SQL Editor del proyecto DESECHABLE):**
+
+```sql
+DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres;
+CREATE SCHEMA IF NOT EXISTS guardia;
+CREATE TABLE IF NOT EXISTS guardia.bd_desechable (marcada_en timestamptz DEFAULT now());
+INSERT INTO guardia.bd_desechable DEFAULT VALUES;
+```
+
+Después copia `.env.integracion.ejemplo` como `.env.integracion` (ignorado por Git), completa las URLs y la confirmación, y ejecuta `npm run test:integracion`. El script aplica las migraciones con `prisma migrate deploy` usando **solo** las URLs de prueba y vacía las tablas antes de cada caso.
 
 ---
 
