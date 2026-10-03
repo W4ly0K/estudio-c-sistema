@@ -367,7 +367,12 @@ describe('SolicitudesService', () => {
     const dataDelUpdate = (): Record<string, unknown> =>
       (prismaMock.solicitud.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
 
-    const franjaDel = (dia: string, desde: string, hasta: string): UpdateSolicitudeDto => ({
+    // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
+    const franjaDel = (
+      dia: string,
+      desde: string,
+      hasta: string,
+    ): Pick<UpdateSolicitudeDto, 'fecha_inicio' | 'fecha_fin'> => ({
       fecha_inicio: new Date(`${dia}T${desde}:00-05:00`),
       fecha_fin: new Date(`${dia}T${hasta}:00-05:00`),
     });
