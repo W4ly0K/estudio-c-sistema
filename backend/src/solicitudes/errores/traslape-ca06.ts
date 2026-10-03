@@ -8,6 +8,14 @@ import { Prisma } from '@prisma/client';
 export const RESTRICCION_CA06 = 'Solicitud_sin_traslape_ca06';
 
 /**
+ * Único mensaje de CA-06 (409), lo detecte la consulta previa o el motor.
+ * Minimización de datos: no revela el radicado, el horario ni ningún otro dato
+ * de la reserva con la que se cruza.
+ */
+export const MENSAJE_CA06 =
+  'Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.';
+
+/**
  * Firma del 23P01 de NUESTRA restricción dentro del mensaje de Prisma 5.22.
  * Prisma no expone un código tipado para este error (Bitácora 4.2 · H1): llega
  * como PrismaClientUnknownRequestError con un ConnectorError en formato Debug

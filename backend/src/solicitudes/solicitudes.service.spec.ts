@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
 import { MENSAJE_SOLICITUD_NO_ENCONTRADA, SolicitudesService } from './solicitudes.service';
 import {
@@ -12,6 +12,12 @@ import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { type ErrorHorario, MENSAJES_ERROR_HORARIO } from './reglas/horario.validator';
 import { RelojFijo } from '../../test/utils/reloj-fijo';
+import { MENSAJE_CA06 } from './errores/traslape-ca06';
+import {
+  errorDesconocidoDePrisma,
+  MENSAJE_23514_CHECK,
+  MENSAJE_23P01_CREATE,
+} from '../../test/utils/errores-postgres.fixture';
 
 /** "Ahora" fijo: lunes 5 de octubre de 2026, 10:00 en Bogotá. Mínima sin urgencia: miércoles 14. */
 const AHORA = new Date('2026-10-05T10:00:00-05:00');
@@ -169,17 +175,95 @@ describe('SolicitudesService', () => {
         }),
       );
     });
+  });
 
-    it('con una franja válida sí evalúa CA-06 y respeta el conflicto', async () => {
+  describe('create() — CA-06 sin condición de carrera (Fase 4)', () => {
+    const dtoValido: CreateSolicitudeDto = {
+      categoria: CategoriaSolicitud.ESPACIOS,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+    };
+    let avisos: jest.SpyInstance;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    /** Ejecuta create() y devuelve lo que rechazó; si se resolviera, la prueba falla. */
+    const rechazo = async (): Promise<unknown> => {
+      try {
+        await service.create(dtoValido, 'uuid-del-token');
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('create() debía rechazar');
+    };
+
+    it('1 · la consulta previa encuentra un cruce → 409 con MENSAJE_CA06 exacto, sin el radicado ajeno', async () => {
       prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
 
-      await expect(
-        service.create(
-          dtoEntre('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
-          'uuid-del-token',
-        ),
-      ).rejects.toThrow('Error CA-06');
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const conflicto = error as ConflictException;
+      expect(conflicto.getStatus()).toBe(409);
+      expect(conflicto.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(conflicto.getResponse())).not.toContain(solicitudBase.radicado);
       expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('2 · la consulta previa solo pide el radicado (minimización)', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create(dtoValido, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { radicado: true } }),
+      );
+    });
+
+    it('3 · el motor rechaza con el 23P01 real (carrera) → el MISMO 409, sin nada del DETAIL', async () => {
+      prismaMock.solicitud.create.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const conflicto = error as ConflictException;
+      expect(conflicto.getStatus()).toBe(409);
+      expect(conflicto.message).toBe(MENSAJE_CA06);
+      const respuesta = JSON.stringify(conflicto.getResponse());
+      for (const fuga of ['23P01', 'Solicitud_sin_traslape', '2026-10-14', 'tsrange']) {
+        expect(respuesta).not.toContain(fuga);
+      }
+    });
+
+    it('4 · registra la carrera una vez, con el radicado propio y sin el mensaje del motor', async () => {
+      prismaMock.solicitud.create.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+      await rechazo();
+
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toMatch(/EC-2026-\d{4}/);
+      expect(texto).not.toContain('2026-10-14');
+      expect(texto).not.toContain('23P01');
+    });
+
+    it.each<[string, () => Error]>([
+      ['5 · 23514 real del CHECK de fechas', () => errorDesconocidoDePrisma(MENSAJE_23514_CHECK)],
+      ['6 · error genérico (p. ej. sin conexión)', () => new Error("Can't reach database server")],
+    ])('%s → se relanza la MISMA instancia (no es un 409)', async (_caso, crearError) => {
+      const original = crearError();
+      prismaMock.solicitud.create.mockRejectedValue(original);
+
+      expect(await rechazo()).toBe(original);
+      expect(avisos).not.toHaveBeenCalled();
     });
   });
 

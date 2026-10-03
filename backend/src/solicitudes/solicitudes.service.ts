@@ -2,6 +2,8 @@ import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud } from '@prisma/clien
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
+  Logger,
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
@@ -17,6 +19,7 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { aMomentoLocal } from './reglas/zona-horaria';
+import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from './errores/traslape-ca06';
 import {
   DetalleSolicitud,
   SELECT_DETALLE_SOLICITANTE,
@@ -28,6 +31,8 @@ export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
 
 @Injectable()
 export class SolicitudesService {
+  private readonly logger = new Logger(SolicitudesService.name);
+
   constructor(
     private prisma: PrismaService,
     private readonly reloj: Reloj,
@@ -53,7 +58,9 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
     }
 
-    // --- 2. Mitigación M3: Validación Anti-Traslape (CA-06) ---
+    // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable ---
+    // Consulta previa: resuelve el caso común sin llegar al motor. Minimización
+    // (Fase 4): solo se pide el radicado y la respuesta no lo revela (409 único).
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
         estado: { notIn: ['Rechazado', 'Cancelado por el Usuario'] },
@@ -62,12 +69,11 @@ export class SolicitudesService {
           { fecha_fin: { gt: createSolicitudeDto.fecha_inicio } },
         ],
       },
+      select: { radicado: true },
     });
 
     if (conflicto) {
-      throw new BadRequestException(
-        `Error CA-06: Horario en conflicto con la solicitud ${conflicto.radicado}. Envío bloqueado.`
-      );
+      throw new ConflictException(MENSAJE_CA06);
     }
 
     // --- 3. Generar Radicado (año de Bogotá, no el del servidor) ---
@@ -75,25 +81,41 @@ export class SolicitudesService {
     const radicadoGenerado = `EC-${anioRadicacion}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     // --- 4. Persistencia con Relaciones Anidadas ---
-    return await this.prisma.solicitud.create({
-      data: {
-        radicado: radicadoGenerado,
-        id_usuario: idUsuario,
-        categoria: createSolicitudeDto.categoria as CategoriaSolicitud,
-        proposito: createSolicitudeDto.proposito,
-        fecha_inicio: createSolicitudeDto.fecha_inicio,
-        fecha_fin: createSolicitudeDto.fecha_fin,
-        estado: 'Recibido',
-        es_urgencia: horario.urgente,
+    // La garantía real de CA-06 es la restricción de exclusión del motor (Fase 4):
+    // si otra petición ganó la carrera entre el findFirst y este INSERT, PostgreSQL
+    // rechaza con 23P01 y se responde el MISMO 409. El "return await" es necesario:
+    // sin await, el rechazo escaparía del try/catch.
+    try {
+      return await this.prisma.solicitud.create({
+        data: {
+          radicado: radicadoGenerado,
+          id_usuario: idUsuario,
+          categoria: createSolicitudeDto.categoria as CategoriaSolicitud,
+          proposito: createSolicitudeDto.proposito,
+          fecha_inicio: createSolicitudeDto.fecha_inicio,
+          fecha_fin: createSolicitudeDto.fecha_fin,
+          estado: 'Recibido',
+          es_urgencia: horario.urgente,
         
-        recursos: { 
-          create: createSolicitudeDto.recursos?.map(recurso => ({
-            id_recurso: recurso.id_recurso,
-            cantidad_solicitada: recurso.cantidad
-          })) || []
-        }
-      },
-    });
+          recursos: { 
+            create: createSolicitudeDto.recursos?.map(recurso => ({
+              id_recurso: recurso.id_recurso,
+              cantidad_solicitada: recurso.cantidad
+            })) || []
+          }
+        },
+      });
+    } catch (error: unknown) {
+      if (esViolacionDeTraslapeCa06(error)) {
+        // Métrica de concurrencia real. Solo el radicado PROPIO; nunca error.message
+        // (su DETAIL contiene la franja de la otra reserva).
+        this.logger.warn(
+          `CA-06 resuelto por la restricción del motor (carrera concurrente): ${radicadoGenerado} no se guardó.`,
+        );
+        throw new ConflictException(MENSAJE_CA06);
+      }
+      throw error; // Fail-closed: cualquier otro error sigue su camino (500).
+    }
   }
 
   async findMisSolicitudes(idUsuario: string) {

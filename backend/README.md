@@ -231,3 +231,13 @@ Una fecha sin zona (`2026-10-13T08:00:00`) o imposible (`2026-02-30…`) respond
 - Terminar **exactamente** a las 12:00 o a las 18:00 es válido.
 - Las reglas de horario se evalúan **antes** que el anti-traslape (CA-06): el mensaje `Error CA-06: …` solo aparece con una franja válida.
 - **201:** la solicitud creada incluye `es_urgencia`. Es `true` cuando la reserva cae antes del 6.º día hábil posterior a la radicación (5 días hábiles completos para el Staff, PRD §6). La urgencia **no bloquea** el envío: la UI debe avisar al solicitante que tiene que notificar al Staff por correo o WhatsApp.
+
+**Anti-traslape (CA-06).** Si la franja se cruza con otra solicitud activa (cualquier estado distinto de `Rechazado` y `Cancelado por el Usuario`), la respuesta es **409 Conflict** con este mensaje exacto:
+
+```
+Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.
+```
+
+- Es el **mismo** mensaje si el cruce lo detecta la consulta previa o si lo detecta PostgreSQL al guardar (dos peticiones simultáneas por la misma franja). El frontend no debe distinguirlos.
+- El mensaje **no incluye** el radicado, el horario ni ningún otro dato de la reserva con la que se cruza (minimización de datos).
+- Los intervalos son semiabiertos `[inicio, fin)`: una reserva de 10:00 a 11:00 y otra de 11:00 a 12:00 no se cruzan.
