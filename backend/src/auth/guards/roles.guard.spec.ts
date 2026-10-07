@@ -10,19 +10,21 @@ import {
 } from '../../../test/utils/contexto-http.mock';
 
 // Controladores de prueba con los decoradores REALES: se prueba decorador + guard juntos.
+// `this: void`: Nest entrega el handler sin ligar (getHandler) y Reflector solo
+// usa su identidad; estos métodos nunca usan `this` (unbound-method).
 class ControladorMixto {
-  publicoAutenticado(): void {}
+  publicoAutenticado(this: void): void {}
 
   @Roles(RolUsuario.STAFF)
-  soloStaff(): void {}
+  soloStaff(this: void): void {}
 }
 
 @Roles(RolUsuario.STAFF)
 class ControladorStaff {
-  heredaDeLaClase(): void {}
+  heredaDeLaClase(this: void): void {}
 
   @Roles(RolUsuario.SOLICITANTE)
-  sobrescritoEnMetodo(): void {}
+  sobrescritoEnMetodo(this: void): void {}
 }
 
 describe('RolesGuard', () => {

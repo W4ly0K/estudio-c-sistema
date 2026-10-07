@@ -211,7 +211,8 @@ describe('festivosDeColombia', () => {
 });
 
 describe('calendarioLaboralColombia.esDiaHabil', () => {
-  const { esDiaHabil } = calendarioLaboralColombia;
+  // Se invoca siempre como método: desestructurarlo perdería `this` (unbound-method).
+  const calendario = calendarioLaboralColombia;
 
   it.each([
     ['martes ordinario', '2026-10-13', true],
@@ -233,7 +234,7 @@ describe('calendarioLaboralColombia.esDiaHabil', () => {
       false,
     ],
   ])('%s (%s) → %s', (_caso, iso, esperado) => {
-    expect(esDiaHabil(f(iso))).toBe(esperado);
+    expect(calendario.esDiaHabil(f(iso))).toBe(esperado);
   });
 
   it('hábil ⇔ lunes a viernes y no festivo, día por día (2026–2030)', () => {
@@ -244,7 +245,7 @@ describe('calendarioLaboralColombia.esDiaHabil', () => {
     ) {
       const dia = diaDeLaSemana(fecha);
       const finDeSemana = dia === DiaSemana.SABADO || dia === DiaSemana.DOMINGO;
-      expect(esDiaHabil(fecha)).toBe(
+      expect(calendario.esDiaHabil(fecha)).toBe(
         !finDeSemana && !esFestivoEnColombia(fecha),
       );
     }
@@ -257,7 +258,7 @@ describe('calendarioLaboralColombia.esDiaHabil', () => {
       fecha.anio === 2026;
       fecha = sumarDias(fecha, 1)
     ) {
-      if (esDiaHabil(fecha)) habiles++;
+      if (calendario.esDiaHabil(fecha)) habiles++;
     }
     expect(habiles).toBe(243);
   });
@@ -271,7 +272,7 @@ describe('calendarioLaboralColombia.esDiaHabil', () => {
   ])(
     'falla cerrado (RangeError) con una fecha inválida: %s',
     (_caso, fecha) => {
-      expect(() => esDiaHabil(fecha)).toThrow(RangeError);
+      expect(() => calendario.esDiaHabil(fecha)).toThrow(RangeError);
     },
   );
 });

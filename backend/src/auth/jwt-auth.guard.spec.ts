@@ -5,22 +5,31 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { crearContextoHttp, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 
+// `this: void`: Nest entrega el handler sin ligar (getHandler) y Reflector solo
+// usa su identidad; estos métodos nunca usan `this` (unbound-method).
 class ControladorPrueba {
   @Public()
-  login(): void {}
+  login(this: void): void {}
 
-  protegido(): void {}
+  protegido(this: void): void {}
 }
 
 // AuthGuard('jwt') está memoizado en @nestjs/passport: es la MISMA clase padre de JwtAuthGuard.
 const GuardPassport = AuthGuard('jwt');
 
+// Silencia Logger.warn y devuelve el espía: las aserciones van sobre el espía y no
+// sobre Logger.prototype.warn, que es un método sin `this` ligado (unbound-method).
+function silenciarWarn() {
+  return jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+}
+
 describe('JwtAuthGuard', () => {
   let guard: JwtAuthGuard;
+  let warn: ReturnType<typeof silenciarWarn>;
 
   beforeEach(() => {
     guard = new JwtAuthGuard(new Reflector());
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    warn = silenciarWarn();
   });
 
   afterEach(() => {
@@ -46,7 +55,7 @@ describe('JwtAuthGuard', () => {
         clase: ControladorPrueba,
       });
 
-      guard.canActivate(ctx);
+      expect(guard.canActivate(ctx)).toBe(true);
       expect(passport).toHaveBeenCalledTimes(1);
       expect(passport).toHaveBeenCalledWith(ctx);
     });
@@ -71,14 +80,14 @@ describe('JwtAuthGuard', () => {
       }
 
       expect(capturado).toBe(errorOriginal);
-      expect(Logger.prototype.warn).toHaveBeenCalledWith('Fallo de autenticación: Error');
+      expect(warn).toHaveBeenCalledWith('Fallo de autenticación: Error');
     });
 
     it('nunca lanza valores crudos: un error que no es Error se convierte en 401', () => {
       expect(() => guard.handleRequest('fallo-crudo', false, undefined)).toThrow(
         UnauthorizedException,
       );
-      expect(Logger.prototype.warn).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 });
