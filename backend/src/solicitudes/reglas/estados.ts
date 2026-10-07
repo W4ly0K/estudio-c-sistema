@@ -1,3 +1,5 @@
+import type { Estado } from './maquina-estados';
+
 /**
  * Estados que LIBERAN la franja: una solicitud en ellos no cuenta para CA-06.
  *
@@ -6,8 +8,10 @@
  * Esa migración ya está aplicada y no se edita (su checksum está registrado):
  * si esta lista cambia, hace falta una migración NUEVA que recree la
  * restricción. estados.spec.ts lee el SQL y falla si ambas listas divergen.
+ * `satisfies`: solo admite nombres de la máquina de estados (maquina-estados.ts),
+ * y maquina-estados.spec.ts exige que todos sean estados finales.
  */
-export const ESTADOS_QUE_LIBERAN_FRANJA = ['Rechazado', 'Cancelado por el Usuario'] as const;
+export const ESTADOS_QUE_LIBERAN_FRANJA = ['Rechazado', 'Cancelado por el Usuario'] as const satisfies readonly Estado[];
 
 /**
  * ¿Una solicitud en este estado ocupa su franja horaria (cuenta para CA-06)?
