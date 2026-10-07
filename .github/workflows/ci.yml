@@ -36,7 +36,7 @@ jobs:
 
       # Node 24: NestJS 12 es ESM puro y Jest 30 solo permite require(esm)
       # desde Node 24.9 (vm.SourceTextModule#hasAsyncGraph). Con Node 22 fallan
-      # todas las suites que importan @nestjs/* (incidente del paso 5.6).
+      # todas las suites que importan @nestjs/*.
       - name: Node 24 (LTS)
         uses: actions/setup-node@v4
         with:
