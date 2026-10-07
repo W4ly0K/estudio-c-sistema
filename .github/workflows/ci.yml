@@ -1,0 +1,73 @@
+# CI mínimo del backend (Fase 5, paso 0).
+# Única verificación del lint: el PC de oficina bloquea tsgolint.exe y la VM no
+# tiene acceso a npm. Las baterías con base de datos (test:integracion) y
+# test:tz quedan para el workflow de infraestructura del backlog.
+name: CI
+
+on:
+  push:
+    branches: [develop, main, 'feat/**', 'fix/**', 'chore/**', 'refactor/**', 'test/**', 'docs/**']
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# Mínimo privilegio: el job solo lee el código.
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tsc · lint · test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Node 24: NestJS 12 es ESM puro y Jest 30 solo permite require(esm)
+      # desde Node 24.9 (vm.SourceTextModule#hasAsyncGraph). Con Node 22 fallan
+      # todas las suites que importan @nestjs/* (incidente del paso 5.6).
+      - name: Node 24 (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # Se verifica la capacidad que Jest necesita, no el número de versión.
+      - name: Verificar soporte de require(esm) para Jest
+        run: >-
+          node --experimental-vm-modules --no-warnings -e
+          "const vm = require('node:vm');
+          if (typeof vm.SourceTextModule?.prototype.hasAsyncGraph !== 'function') {
+          console.error('Node ' + process.version + ' no soporta require(esm) en Jest 30: se requiere Node >= 24.9');
+          process.exit(1); }
+          console.log('Node ' + process.version + ': require(esm) disponible para Jest');"
+
+      # npm ci respeta el lockfile al pie de la letra; su postinstall ejecuta prisma generate.
+      - name: Instalar dependencias
+        id: deps
+        run: npm ci
+
+      - name: Tipos (tsc --noEmit)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # Las tres verificaciones se ejecutan aunque una falle, para que cada
+      # ejecución entregue el diagnóstico completo y no solo el primer error.
+      - name: Lint (oxlint --type-aware)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run lint
+
+      - name: Pruebas unitarias
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm test -- --ci
