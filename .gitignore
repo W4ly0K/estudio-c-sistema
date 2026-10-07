@@ -1,0 +1,3 @@
+# Artefactos y respaldos locales de las sesiones de trabajo (bitácoras, borradores).
+# Las versiones oficiales viven en docs/adr/.
+/sesiones_locales/
