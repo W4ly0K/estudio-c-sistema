@@ -128,6 +128,10 @@ function crearPrismaMock() {
       updateMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 1 })),
       // Relectura dentro de la transacción: lo que el servicio devuelve tras escribir.
       findUniqueOrThrow: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
+      // Relectura con proyección dentro de la transacción (cancelar, Fase 5.3).
+      findFirstOrThrow: jest.fn(
+        async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Cancelado por el Usuario' }),
+      ),
     },
     solicitud_Recurso: {
       deleteMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 0 })),

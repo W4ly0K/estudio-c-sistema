@@ -16,7 +16,8 @@ type MetodoControlador =
   | 'findAll'
   | 'findOne'
   | 'update'
-  | 'remove';
+  | 'remove'
+  | 'cancelar';
 
 const reflector = new Reflector();
 const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined =>
@@ -34,6 +35,10 @@ describe('SolicitudesController', () => {
       },
     );
 
+    it('cancelar exige el rol SOLICITANTE (PRD §5.5: el Staff nunca cancela por el usuario)', () => {
+      expect(metadatoDe<RolUsuario[]>(ROLES_KEY, 'cancelar')).toEqual([RolUsuario.SOLICITANTE]);
+    });
+
     // findOne dejó de exigir STAFF en la Fase 2.2: la propiedad se aplica en el servicio (ADR-002)
     it.each<MetodoControlador>(['create', 'findMisSolicitudes', 'findOne'])(
       '%s no exige rol (basta con estar autenticado)',
@@ -50,6 +55,7 @@ describe('SolicitudesController', () => {
         'findOne',
         'update',
         'remove',
+        'cancelar',
       ];
       for (const metodo of metodos) {
         expect(metadatoDe<boolean>(IS_PUBLIC_KEY, metodo)).toBeUndefined();
@@ -65,6 +71,7 @@ describe('SolicitudesController', () => {
         [string, UpdateSolicitudeDto, string]
       >(),
       findOne: jest.fn<Promise<DetalleSolicitud | null>, [string, UsuarioAutenticado]>(),
+      cancelar: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -97,6 +104,14 @@ describe('SolicitudesController', () => {
       await controller.findOne('EC-2099-0001', USUARIO_SOLICITANTE);
 
       expect(serviceMock.findOne).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
+    });
+
+    it('cancelar() entrega al servicio el usuario COMPLETO del token (propiedad y rol se deciden allí)', async () => {
+      serviceMock.cancelar.mockResolvedValue(null);
+
+      await controller.cancelar('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      expect(serviceMock.cancelar).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
     });
   });
 });

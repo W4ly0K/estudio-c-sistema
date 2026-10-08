@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UsuarioActual } from '../auth/decorators/usuario-actual.decorator';
@@ -45,6 +45,15 @@ export class SolicitudesController {
     @UsuarioActual() usuario: UsuarioAutenticado,
   ) {
     return this.solicitudesService.update(radicado, dto, usuario.id);
+  }
+
+  // Fase 5.3 · T3/T6 (G1): solo el DUEÑO cancela; el Staff nunca cancela por el usuario
+  // (PRD §5.5). Sin cuerpo: la identidad sale del JWT. 200 y no 201: no se crea nada.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/cancelar')
+  @HttpCode(HttpStatus.OK)
+  cancelar(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.cancelar(radicado, usuario);
   }
 
   @Roles(RolUsuario.STAFF)

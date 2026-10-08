@@ -23,6 +23,7 @@ import {
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
 import {
   ESTADO_INICIAL,
+  evaluarAccion,
   evaluarTransicion,
   type Accion,
   type MotivoTransicionInvalida,
@@ -31,6 +32,7 @@ import { aMomentoLocal } from './reglas/zona-horaria';
 import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from './errores/traslape-ca06';
 import {
   DetalleSolicitud,
+  type DetalleSolicitudSolicitante,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
 } from './proyecciones/detalle-solicitud.proyeccion';
@@ -72,6 +74,31 @@ export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
  */
 export const MENSAJE_CAMBIO_CONCURRENTE =
   'La solicitud fue modificada por otra operación mientras se procesaba este cambio. Recargue y vuelva a intentarlo.';
+
+/** Fase 5.3 · T3/T6: respuesta del comando /cancelar. */
+export const MENSAJE_SOLICITUD_CANCELADA = 'Solicitud cancelada correctamente.';
+
+/** G5: cancelar exige que la actividad no haya comenzado (PRD §4: "antes de En Producción"). */
+export const MENSAJE_CANCELAR_EN_PRODUCCION =
+  'La actividad ya comenzó ("En Producción") y la solicitud ya no puede cancelarse.';
+
+/** G5: con una propuesta de reprogramación pendiente (CA-10), la salida es aceptarla o rechazarla. */
+export const MENSAJE_CANCELAR_CON_PROPUESTA =
+  'La solicitud tiene una propuesta de reprogramación pendiente: acéptela o recházela.';
+
+/** G7: lo que una escritura con compare-and-set necesita saber. */
+interface OperacionCompareAndSet<T> {
+  radicado: string;
+  /** Condiciones del CAS además del radicado: la fila TAL COMO SE VALIDÓ. */
+  esperado: Prisma.SolicitudWhereInput;
+  data: Prisma.SolicitudUpdateManyMutationInput;
+  /** R1: si viene, los recursos se reemplazan dentro de la misma transacción. */
+  recursos?: ReadonlyArray<{ id_recurso: number; cantidad: number }>;
+  /** CA-09: si viene, se registra el log en la misma transacción. */
+  log?: Omit<Prisma.Log_AuditoriaUncheckedCreateInput, 'radicado_solicitud'>;
+  /** Relectura dentro de la transacción (con la proyección que corresponda). */
+  releer: (tx: Prisma.TransactionClient) => Promise<T>;
+}
 
 /** E1: las únicas acciones del STAFF que se ejecutan desde el tablero (PATCH). */
 const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
@@ -333,64 +360,135 @@ export class SolicitudesService {
       return { mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)', solicitud: existente };
     }
 
-    // --- 8. Persistencia en UNA transacción interactiva con compare-and-set (D5 · F1, F2).
-    // El WHERE exige la fila TAL COMO SE VALIDÓ (estado y franja guardados): si otra
-    // petición la cambió entre la lectura y esta escritura, se actualizan 0 filas → 409.
-    // En READ COMMITTED, un UPDATE concurrente espera el bloqueo de fila y re-evalúa su
-    // WHERE sobre la versión confirmada (medido en la integración I-10). El 23P01 de
-    // CA-06 lanzado dentro de esta transacción conserva clase y firma (I-9).
+    // --- 8. Persistencia: compare-and-set sobre la fila TAL COMO SE VALIDÓ (D5 · F1, F2):
+    // estado y franja guardados, porque sobre ellos se calcularon D2, horario, D7 y CA-06.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: {
+        estado: existente.estado,
+        fecha_inicio: existente.fecha_inicio,
+        fecha_fin: existente.fecha_fin,
+      },
+      data,
+      recursos,
+      // CA-09: hay log si y solo si cambió el estado.
+      log: cambiaEstado
+        ? {
+            estado_anterior: existente.estado,
+            estado_nuevo: estadoFinal,
+            modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
+            motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+          }
+        : undefined,
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
+    });
+    return {
+      mensaje: cambiaEstado
+        ? 'Estado actualizado y auditado correctamente en la bitácora'
+        : 'Solicitud actualizada correctamente (sin cambio de estado)',
+      solicitud,
+    };
+  }
+
+  /**
+   * Fase 5.3 · T3/T6: el SOLICITANTE cancela su PROPIA solicitud (PRD §4 y §5.5).
+   * Orden G2: primero la propiedad (404 uniforme), después el estado (409). Así un
+   * radicado ajeno nunca revela en qué estado está (ADR-002, anti-enumeración).
+   * G4: regla de estado únicamente (Recibido o Validado), sin regla de tiempo.
+   */
+  async cancelar(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    // Decisión G (Fase 2): la propiedad va DENTRO del WHERE; nunca se leen filas ajenas.
+    const propia: Prisma.SolicitudWhereInput = { radicado, ...filtroDeAcceso(usuario) };
+    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: { estado: true } });
+    if (!existente) {
+      // G2: ajeno o inexistente → el mismo 404 (ADR-002), antes de mirar el estado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+
+    // El rol también se verifica aquí (defensa en profundidad, además de @Roles).
+    const resultado = evaluarAccion('CANCELAR', existente.estado, usuario.rol);
+    if (!resultado.permitida) {
+      throw this.errorDeCancelacion(resultado.motivo, existente.estado);
+    }
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      // G3: la propiedad también va en la ESCRITURA; el estado esperado es el leído.
+      esperado: { id_usuario: usuario.id, estado: existente.estado },
+      data: { estado: resultado.transicion.destino },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: resultado.transicion.destino,
+        modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+      },
+      // G8: proyección mínima del solicitante (sin la identidad del Staff en los logs).
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_SOLICITUD_CANCELADA, solicitud };
+  }
+
+  /** G5: el error de cancelación según el motivo de la máquina y el estado actual. */
+  private errorDeCancelacion(
+    motivo: MotivoTransicionInvalida,
+    estado: string,
+  ): ConflictException | ForbiddenException {
+    if (motivo === 'ROL_NO_AUTORIZADO') {
+      return new ForbiddenException(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'En Producción') {
+      return new ConflictException(MENSAJE_CANCELAR_EN_PRODUCCION);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'Pendiente de Reprogramación') {
+      return new ConflictException(MENSAJE_CANCELAR_CON_PROPUESTA);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+  }
+
+  /**
+   * G7 · D5: ÚNICO mecanismo de escritura sobre una solicitud existente, en UNA
+   * transacción interactiva: compare-and-set (0 filas → 409), reemplazo de recursos
+   * (R1), log de auditoría (CA-09) y relectura.
+   * En READ COMMITTED, un UPDATE concurrente espera el bloqueo de fila y re-evalúa su
+   * WHERE sobre la versión confirmada (integración I-10). El 23P01 de CA-06 lanzado
+   * dentro de la transacción conserva clase y firma (I-9) y se traduce al mismo 409.
+   */
+  private async escribirConCompareAndSet<T>(op: OperacionCompareAndSet<T>): Promise<T> {
     try {
-      const solicitud = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         const { count } = await tx.solicitud.updateMany({
-          where: {
-            radicado,
-            estado: existente.estado,
-            fecha_inicio: existente.fecha_inicio,
-            fecha_fin: existente.fecha_fin,
-          },
-          data,
+          where: { radicado: op.radicado, ...op.esperado },
+          data: op.data,
         });
         if (count !== 1) {
           // Métrica de concurrencia real (como en CA-06): solo el radicado propio.
-          this.logger.warn(`Compare-and-set perdido en update(): ${radicado} cambió durante la petición.`);
+          this.logger.warn(`Compare-and-set perdido: ${op.radicado} cambió durante la petición.`);
           throw new ConflictException(MENSAJE_CAMBIO_CONCURRENTE);
         }
 
         // R1: updateMany no admite escrituras anidadas; los recursos se reemplazan aquí.
-        if (recursos !== undefined) {
-          await tx.solicitud_Recurso.deleteMany({ where: { radicado_solicitud: radicado } });
+        if (op.recursos !== undefined) {
+          await tx.solicitud_Recurso.deleteMany({ where: { radicado_solicitud: op.radicado } });
           await tx.solicitud_Recurso.createMany({
-            data: recursos.map((r) => ({
-              radicado_solicitud: radicado,
+            data: op.recursos.map((r) => ({
+              radicado_solicitud: op.radicado,
               id_recurso: r.id_recurso,
               cantidad_solicitada: r.cantidad,
             })),
           });
         }
 
-        // CA-09: hay log si y solo si cambió el estado, en la MISMA transacción.
-        if (cambiaEstado) {
-          await tx.log_Auditoria.create({
-            data: {
-              radicado_solicitud: radicado,
-              estado_anterior: existente.estado,
-              estado_nuevo: estadoFinal,
-              modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
-              motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
-            },
-          });
+        // CA-09: el log va en la MISMA transacción que el cambio de estado.
+        if (op.log !== undefined) {
+          await tx.log_Auditoria.create({ data: { radicado_solicitud: op.radicado, ...op.log } });
         }
 
-        return tx.solicitud.findUniqueOrThrow({ where: { radicado } });
+        return op.releer(tx);
       });
-      return {
-        mensaje: cambiaEstado
-          ? 'Estado actualizado y auditado correctamente en la bitácora'
-          : 'Solicitud actualizada correctamente (sin cambio de estado)',
-        solicitud,
-      };
     } catch (error: unknown) {
-      return this.relanzarComoConflictoSiCa06(error, radicado);
+      return this.relanzarComoConflictoSiCa06(error, op.radicado);
     }
   }
 
@@ -420,7 +518,7 @@ export class SolicitudesService {
     }
 
     throw new NotImplementedException(
-      'El borrado físico de radicados está prohibido por política de auditoría. Use PATCH para cambiar estado a cancelación.'
+      'El borrado físico de radicados está prohibido por política de auditoría. Para cancelar, el solicitante usa POST /solicitudes/:radicado/cancelar.'
     );
   }
 }
