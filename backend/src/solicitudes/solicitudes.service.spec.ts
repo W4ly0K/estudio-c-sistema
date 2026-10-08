@@ -17,10 +17,16 @@ import {
   MENSAJE_PROPUESTA_YA_PENDIENTE,
   MENSAJE_REPROGRAMACION_PROPUESTA,
   MENSAJE_REPROGRAMAR_EN_RECIBIDO,
+  MENSAJE_PROPUESTA_NO_DISPONIBLE,
+  MENSAJE_PROPUESTA_VENCIDA,
+  MENSAJE_REPROGRAMACION_ACEPTADA,
+  MENSAJE_REPROGRAMACION_RECHAZADA,
+  MENSAJE_SIN_PROPUESTA_PENDIENTE,
   MENSAJE_SOLICITUD_CANCELADA,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
+  SELECT_COMANDO_SOLICITANTE,
   SolicitudesService,
 } from './solicitudes.service';
 import {
@@ -882,7 +888,7 @@ describe('SolicitudesService', () => {
     it('C-2 · G2/G8: lectura con la propiedad DENTRO del WHERE y relectura con la proyección del solicitante', async () => {
       await service.cancelar(RADICADO, USUARIO_SOLICITANTE);
 
-      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith({ where: PROPIA, select: { estado: true } });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith({ where: PROPIA, select: SELECT_COMANDO_SOLICITANTE });
       expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({
         where: PROPIA,
         select: SELECT_DETALLE_SOLICITANTE,
@@ -1186,6 +1192,327 @@ describe('SolicitudesService', () => {
       await proponer();
 
       expect(espia).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('aceptar/rechazar la reprogramación — T7/T8 del SOLICITANTE (Fase 5.5a · L1–L9)', () => {
+    const RADICADO = 'EC-2099-0001';
+    const PROPIA = { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id };
+    /** Propuesta guardada: miércoles 28 de octubre de 2026, 9:00–10:00 en Bogotá. */
+    const PROPUESTA = { inicio: new Date('2026-10-28T09:00:00-05:00'), fin: new Date('2026-10-28T10:00:00-05:00') };
+    const DETALLE = { radicado: RADICADO, estado: 'Validado' };
+    const pendiente = (cambios: Partial<Solicitud> = {}): Solicitud => ({
+      ...solicitudBase,
+      estado: 'Pendiente de Reprogramación',
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+      fecha_propuesta_inicio: PROPUESTA.inicio,
+      fecha_propuesta_fin: PROPUESTA.fin,
+      es_urgencia: true, // L6: aceptar debe dejarla en false
+      ...cambios,
+    });
+    let avisos: jest.SpyInstance;
+
+    /** La 1.ª lectura (propiedad) devuelve `fila`; las siguientes (consulta de CA-06), null. */
+    const leer = (fila: Solicitud | null) => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(fila).mockResolvedValue(null);
+    };
+
+    beforeEach(() => {
+      leer(pendiente());
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue(DETALLE);
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    const aceptar = (usuario = USUARIO_SOLICITANTE) => service.aceptarReprogramacion(RADICADO, usuario);
+    const rechazar = (usuario = USUARIO_SOLICITANTE) => service.rechazarReprogramacion(RADICADO, usuario);
+
+    /** Devuelve lo que rechazó la operación; si se resolviera, la prueba falla. */
+    const capturar = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('La operación debía rechazar');
+    };
+
+    const sinEscrituras = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    // ── T7 · aceptar ──
+
+    it('A-1 · T7 · L6/L7/L8: acepta EXACTAMENTE la propuesta validada, que pasa a ser la franja oficial; urgencia en false', async () => {
+      const resultado = await aceptar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          id_usuario: USUARIO_SOLICITANTE.id,
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: PROPUESTA.inicio,
+          fecha_propuesta_fin: PROPUESTA.fin,
+        },
+        data: {
+          estado: 'Validado',
+          fecha_inicio: PROPUESTA.inicio,
+          fecha_fin: PROPUESTA.fin,
+          fecha_propuesta_inicio: null,
+          fecha_propuesta_fin: null,
+          es_urgencia: false,
+        },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Pendiente de Reprogramación',
+          estado_nuevo: 'Validado',
+          modificado_por: USUARIO_SOLICITANTE.id,
+        },
+      });
+      expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({
+        where: PROPIA,
+        select: SELECT_DETALLE_SOLICITANTE,
+      });
+      expect(resultado).toEqual({ mensaje: MENSAJE_REPROGRAMACION_ACEPTADA, solicitud: DETALLE });
+    });
+
+    it('A-2 · L3/L4: lee con la propiedad en el WHERE y consulta CA-06 sobre la PROPUESTA sin auto-colisión', async () => {
+      await aceptar();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(1, {
+        where: PROPIA,
+        select: SELECT_COMANDO_SOLICITANTE,
+      });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [{ fecha_inicio: { lt: PROPUESTA.fin } }, { fecha_fin: { gt: PROPUESTA.inicio } }],
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+    });
+
+    it('A-3 · G2/ADR-002: ajeno o inexistente → 404 uniforme sin escribir', async () => {
+      leer(null);
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it('A-4 · G2: una propuesta AJENA pendiente responde 404, nunca un 409 que revelaría su estado', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst.mockImplementation((args) =>
+        Promise.resolve(
+          (args as { where: { id_usuario?: string } }).where.id_usuario === undefined ? pendiente() : null,
+        ),
+      );
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      sinEscrituras();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción'])(
+      'A-5 · L5: desde %s no hay propuesta que aceptar → 409',
+      async (estado) => {
+        leer(pendiente({ estado, fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+        const error = await capturar(aceptar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+        sinEscrituras();
+      },
+    );
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'A-6 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        leer(pendiente({ estado }));
+
+        const error = await capturar(aceptar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('A-7 · defensa en profundidad: el STAFF que llegue al servicio recibe 403', async () => {
+      const error = await capturar(aceptar(USUARIO_STAFF));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['ya inició (lunes 5, 8:00, antes de "ahora")', '2026-10-05T08:00:00-05:00', '2026-10-05T09:00:00-05:00'],
+      ['cae en sábado', '2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'],
+    ])('A-8 · L4/L5: la propuesta %s → 409 "ya no es válida", sin consultar CA-06 ni escribir', async (_caso, inicio, fin) => {
+      leer(pendiente({ fecha_propuesta_inicio: new Date(inicio), fecha_propuesta_fin: new Date(fin) }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_VENCIDA);
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+      sinEscrituras();
+    });
+
+    it('A-9 · L4: la propuesta ya fue ocupada (consulta previa) → 409 de CA-06 sin fugas', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst
+        .mockResolvedValueOnce(pendiente())
+        .mockResolvedValueOnce({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('A-10 · L4: la ocupó una carrera (23P01 real del motor) → el MISMO 409 y un aviso', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(avisos).toHaveBeenCalledTimes(1);
+    });
+
+    it('A-11 · L4 fail-closed: "Pendiente" sin propuesta guardada → 409 y aviso, sin escribir', async () => {
+      leer(pendiente({ fecha_propuesta_inicio: null }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('A-12 · D5: el estado cambió entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('A-13 · D-U: consulta el Reloj UNA sola vez por petición', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await aceptar();
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+
+    // ── T8 · rechazar ──
+
+    it('X-1 · T8 · L9: cancela, limpia la propuesta, conserva la franja oficial y no consulta CA-06', async () => {
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue({ radicado: RADICADO, estado: 'Cancelado por el Usuario' });
+
+      const resultado = await rechazar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id, estado: 'Pendiente de Reprogramación' },
+        data: { estado: 'Cancelado por el Usuario', fecha_propuesta_inicio: null, fecha_propuesta_fin: null },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Pendiente de Reprogramación',
+          estado_nuevo: 'Cancelado por el Usuario',
+          modificado_por: USUARIO_SOLICITANTE.id,
+        },
+      });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+      expect(resultado.mensaje).toBe(MENSAJE_REPROGRAMACION_RECHAZADA);
+    });
+
+    it('X-2 · G2/ADR-002: ajeno o inexistente → 404 uniforme sin escribir', async () => {
+      leer(null);
+
+      const error = await capturar(rechazar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción'])(
+      'X-3 · L5: desde %s no hay propuesta que rechazar → 409',
+      async (estado) => {
+        leer(pendiente({ estado, fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+        const error = await capturar(rechazar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+        sinEscrituras();
+      },
+    );
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'X-4 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        leer(pendiente({ estado }));
+
+        const error = await capturar(rechazar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('X-5 · defensa en profundidad: el STAFF que llegue al servicio recibe 403', async () => {
+      const error = await capturar(rechazar(USUARIO_STAFF));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      sinEscrituras();
+    });
+
+    it('X-6 · rechazar no necesita la propuesta: "Pendiente" sin propuesta guardada igual se cancela', async () => {
+      leer(pendiente({ fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+      await rechazar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('X-7 · D5: el estado cambió entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await capturar(rechazar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
     });
   });
 

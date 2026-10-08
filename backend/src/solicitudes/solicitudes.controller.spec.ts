@@ -19,7 +19,9 @@ type MetodoControlador =
   | 'update'
   | 'remove'
   | 'cancelar'
-  | 'proponerReprogramacion';
+  | 'proponerReprogramacion'
+  | 'aceptarReprogramacion'
+  | 'rechazarReprogramacion';
 
 const reflector = new Reflector();
 const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined =>
@@ -41,6 +43,13 @@ describe('SolicitudesController', () => {
       expect(metadatoDe<RolUsuario[]>(ROLES_KEY, 'cancelar')).toEqual([RolUsuario.SOLICITANTE]);
     });
 
+    it.each<MetodoControlador>(['aceptarReprogramacion', 'rechazarReprogramacion'])(
+      '%s exige el rol SOLICITANTE (solo el dueño responde una propuesta, CA-10)',
+      (metodo) => {
+        expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toEqual([RolUsuario.SOLICITANTE]);
+      },
+    );
+
     // findOne dejó de exigir STAFF en la Fase 2.2: la propiedad se aplica en el servicio (ADR-002)
     it.each<MetodoControlador>(['create', 'findMisSolicitudes', 'findOne'])(
       '%s no exige rol (basta con estar autenticado)',
@@ -59,6 +68,8 @@ describe('SolicitudesController', () => {
         'remove',
         'cancelar',
         'proponerReprogramacion',
+        'aceptarReprogramacion',
+        'rechazarReprogramacion',
       ];
       for (const metodo of metodos) {
         expect(metadatoDe<boolean>(IS_PUBLIC_KEY, metodo)).toBeUndefined();
@@ -76,6 +87,8 @@ describe('SolicitudesController', () => {
       findOne: jest.fn<Promise<DetalleSolicitud | null>, [string, UsuarioAutenticado]>(),
       cancelar: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
       proponerReprogramacion: jest.fn<Promise<null>, [string, ProponerReprogramacionDto, string]>(),
+      aceptarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
+      rechazarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -128,6 +141,22 @@ describe('SolicitudesController', () => {
       await controller.proponerReprogramacion('EC-2099-0001', dto, USUARIO_STAFF);
 
       expect(serviceMock.proponerReprogramacion).toHaveBeenCalledWith('EC-2099-0001', dto, USUARIO_STAFF.id);
+    });
+
+    it('aceptarReprogramacion() entrega al servicio el usuario COMPLETO del token', async () => {
+      serviceMock.aceptarReprogramacion.mockResolvedValue(null);
+
+      await controller.aceptarReprogramacion('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      expect(serviceMock.aceptarReprogramacion).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
+    });
+
+    it('rechazarReprogramacion() entrega al servicio el usuario COMPLETO del token', async () => {
+      serviceMock.rechazarReprogramacion.mockResolvedValue(null);
+
+      await controller.rechazarReprogramacion('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      expect(serviceMock.rechazarReprogramacion).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
     });
   });
 });

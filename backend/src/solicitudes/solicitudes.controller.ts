@@ -70,6 +70,22 @@ export class SolicitudesController {
     return this.solicitudesService.cancelar(radicado, usuario);
   }
 
+  // Fase 5.5a · CA-10 · T7 (L1): el DUEÑO acepta la propuesta guardada; no envía fechas.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/aceptar')
+  @HttpCode(HttpStatus.OK)
+  aceptarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.aceptarReprogramacion(radicado, usuario);
+  }
+
+  // Fase 5.5a · CA-10 · T8 (L1): el DUEÑO rechaza la propuesta; la solicitud se cancela (PRD §5.5).
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/rechazar')
+  @HttpCode(HttpStatus.OK)
+  rechazarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.rechazarReprogramacion(radicado, usuario);
+  }
+
   @Roles(RolUsuario.STAFF)
   @Delete(':radicado')
   remove(@Param('radicado') radicado: string) {

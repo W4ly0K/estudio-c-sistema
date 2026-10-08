@@ -27,6 +27,7 @@ import {
   evaluarAccion,
   evaluarTransicion,
   type Accion,
+  type Transicion,
   type MotivoTransicionInvalida,
 } from './reglas/maquina-estados';
 import { aMomentoLocal } from './reglas/zona-horaria';
@@ -103,6 +104,40 @@ export const MENSAJE_PROPUESTA_YA_PENDIENTE =
 /** K4: proponer la franja actual no es una reprogramación. */
 export const MENSAJE_PROPUESTA_SIN_CAMBIOS =
   'La franja propuesta es igual a la actual: no hay nada que reprogramar.';
+
+/** Fase 5.5a · CA-10 · T7: respuesta del comando /reprogramacion/aceptar. */
+export const MENSAJE_REPROGRAMACION_ACEPTADA =
+  'Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.';
+
+/** Fase 5.5a · CA-10 · T8: respuesta del comando /reprogramacion/rechazar (PRD §5.5). */
+export const MENSAJE_REPROGRAMACION_RECHAZADA =
+  'Reprogramación rechazada: la solicitud quedó cancelada y su franja liberada.';
+
+/** L5: aceptar o rechazar solo tiene sentido con una propuesta pendiente. */
+export const MENSAJE_SIN_PROPUESTA_PENDIENTE =
+  'La solicitud no tiene una propuesta de reprogramación pendiente.';
+
+/**
+ * L5 · opción (a): la propuesta venció mientras esperaba respuesta. La máquina aprobada no
+ * da salida al Staff desde "Pendiente" (ADR-005): se remite al Estudio C.
+ */
+export const MENSAJE_PROPUESTA_VENCIDA =
+  'La propuesta ya no es válida: su franja ya inició o no cumple el horario de atención. Puede rechazarla o comunicarse con el Estudio C.';
+
+/** L4 · fail-closed: "Pendiente" sin propuesta guardada (dato inconsistente; CHECK en 5.5b). */
+export const MENSAJE_PROPUESTA_NO_DISPONIBLE =
+  'La propuesta de reprogramación no está disponible. Comuníquese con el Estudio C.';
+
+/** L3: lo mínimo que leen los comandos del solicitante (sin datos de terceros). */
+export const SELECT_COMANDO_SOLICITANTE = {
+  estado: true,
+  fecha_inicio: true,
+  fecha_fin: true,
+  fecha_propuesta_inicio: true,
+  fecha_propuesta_fin: true,
+} satisfies Prisma.SolicitudSelect;
+
+type LecturaComando = Prisma.SolicitudGetPayload<{ select: typeof SELECT_COMANDO_SOLICITANTE }>;
 
 /** G7: lo que una escritura con compare-and-set necesita saber. */
 interface OperacionCompareAndSet<T> {
@@ -418,34 +453,157 @@ export class SolicitudesService {
     radicado: string,
     usuario: UsuarioAutenticado,
   ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
-    // Decisión G (Fase 2): la propiedad va DENTRO del WHERE; nunca se leen filas ajenas.
-    const propia: Prisma.SolicitudWhereInput = { radicado, ...filtroDeAcceso(usuario) };
-    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: { estado: true } });
-    if (!existente) {
-      // G2: ajeno o inexistente → el mismo 404 (ADR-002), antes de mirar el estado.
-      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
-    }
-
-    // El rol también se verifica aquí (defensa en profundidad, además de @Roles).
-    const resultado = evaluarAccion('CANCELAR', existente.estado, usuario.rol);
-    if (!resultado.permitida) {
-      throw this.errorDeCancelacion(resultado.motivo, existente.estado);
-    }
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'CANCELAR',
+      (motivo, estado) => this.errorDeCancelacion(motivo, estado),
+    );
 
     const solicitud = await this.escribirConCompareAndSet({
       radicado,
       // G3: la propiedad también va en la ESCRITURA; el estado esperado es el leído.
       esperado: { id_usuario: usuario.id, estado: existente.estado },
-      data: { estado: resultado.transicion.destino },
+      data: { estado: transicion.destino },
       log: {
         estado_anterior: existente.estado,
-        estado_nuevo: resultado.transicion.destino,
+        estado_nuevo: transicion.destino,
         modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
       },
       // G8: proyección mínima del solicitante (sin la identidad del Staff en los logs).
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
     return { mensaje: MENSAJE_SOLICITUD_CANCELADA, solicitud };
+  }
+
+  /**
+   * Fase 5.5a · CA-10 · T7: el SOLICITANTE acepta la propuesta GUARDADA (no envía fechas).
+   * L4: la propuesta se revalida ahora (CA-04 con el Reloj de esta petición y CA-06), porque
+   * pudo vencer u ocuparse mientras esperaba (D3). L6: es_urgencia queda en false, porque la
+   * fecha la eligió el Staff. L7: el CAS exige EXACTAMENTE la propuesta que se validó.
+   */
+  async aceptarReprogramacion(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    // Decisión D-U: un único "ahora" por petición.
+    const ahora = this.reloj.ahora();
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'ACEPTAR_REPROGRAMACION',
+      (motivo) => this.errorDeRespuestaAPropuesta(motivo),
+    );
+
+    // L4 · fail-closed: "Pendiente" sin propuesta guardada es un dato inconsistente.
+    if (existente.fecha_propuesta_inicio === null || existente.fecha_propuesta_fin === null) {
+      this.logger.warn(`Solicitud pendiente sin propuesta guardada: ${radicado}.`);
+      throw new ConflictException(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+    }
+    const propuesta: FranjaSolicitada = {
+      inicio: existente.fecha_propuesta_inicio,
+      fin: existente.fecha_propuesta_fin,
+    };
+
+    // L4/L5: CA-04 otra vez, con el Reloj de ESTA petición (la propuesta pudo vencer).
+    if (!evaluarHorario(propuesta, ahora, calendarioLaboralColombia).valido) {
+      throw new ConflictException(MENSAJE_PROPUESTA_VENCIDA);
+    }
+
+    // L4: CA-06 de la propuesta (consulta previa); el motor la confirma al escribir.
+    if (await this.hayTraslape(propuesta, radicado)) {
+      throw new ConflictException(MENSAJE_CA06);
+    }
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      // L7: CAS estricto: dueño, estado leído y EXACTAMENTE la propuesta validada.
+      esperado: { id_usuario: usuario.id, estado: existente.estado, fecha_propuesta_inicio: propuesta.inicio, fecha_propuesta_fin: propuesta.fin },
+      // L8 · L6: la propuesta pasa a ser la franja oficial y se limpia.
+      data: {
+        estado: transicion.destino,
+        fecha_inicio: propuesta.inicio,
+        fecha_fin: propuesta.fin,
+        fecha_propuesta_inicio: null,
+        fecha_propuesta_fin: null,
+        es_urgencia: false,
+      },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: transicion.destino,
+        modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
+      },
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_ACEPTADA, solicitud };
+  }
+
+  /**
+   * Fase 5.5a · CA-10 · T8: el SOLICITANTE rechaza la propuesta; la solicitud se cancela y
+   * la franja se libera (PRD §5.5). L9: la franja oficial se conserva como registro; la
+   * propuesta se limpia. No hay revalidación: rechazar no ocupa ninguna franja.
+   */
+  async rechazarReprogramacion(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'RECHAZAR_REPROGRAMACION',
+      (motivo) => this.errorDeRespuestaAPropuesta(motivo),
+    );
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { id_usuario: usuario.id, estado: existente.estado },
+      data: { estado: transicion.destino, fecha_propuesta_inicio: null, fecha_propuesta_fin: null },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: transicion.destino,
+        modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+      },
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_RECHAZADA, solicitud };
+  }
+
+  /**
+   * L3 · G2: lectura común de los comandos del SOLICITANTE. Primero la propiedad (404
+   * uniforme, ADR-002), después la máquina (403/409 según `traducirError`): un radicado
+   * ajeno nunca revela en qué estado está.
+   */
+  private async leerPropiaYAutorizar(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+    accion: Accion,
+    traducirError: (motivo: MotivoTransicionInvalida, estado: string) => ConflictException | ForbiddenException,
+  ): Promise<{ propia: Prisma.SolicitudWhereInput; existente: LecturaComando; transicion: Transicion }> {
+    // Decisión G (Fase 2): la propiedad va DENTRO del WHERE; nunca se leen filas ajenas.
+    const propia: Prisma.SolicitudWhereInput = { radicado, ...filtroDeAcceso(usuario) };
+    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_COMANDO_SOLICITANTE });
+    if (!existente) {
+      // G2: ajeno o inexistente → el mismo 404 (ADR-002), antes de mirar el estado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+
+    // El rol también se verifica aquí (defensa en profundidad, además de @Roles).
+    const resultado = evaluarAccion(accion, existente.estado, usuario.rol);
+    if (!resultado.permitida) {
+      throw traducirError(resultado.motivo, existente.estado);
+    }
+    return { propia, existente, transicion: resultado.transicion };
+  }
+
+  /** L5: el error al responder una propuesta según el motivo de la máquina. */
+  private errorDeRespuestaAPropuesta(motivo: MotivoTransicionInvalida): ConflictException | ForbiddenException {
+    if (motivo === 'ROL_NO_AUTORIZADO') {
+      return new ForbiddenException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA') {
+      return new ConflictException(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
   }
 
   /**
