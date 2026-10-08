@@ -3,6 +3,7 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
   NotFoundException,
   NotImplementedException,
@@ -20,6 +21,12 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
+import {
+  ESTADO_INICIAL,
+  evaluarTransicion,
+  type Accion,
+  type MotivoTransicionInvalida,
+} from './reglas/maquina-estados';
 import { aMomentoLocal } from './reglas/zona-horaria';
 import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from './errores/traslape-ca06';
 import {
@@ -30,6 +37,42 @@ import {
 
 /** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
 export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
+
+/**
+ * Fase 5 · E2: un mensaje por cada motivo de la máquina de estados. Record sobre la
+ * unión: si la máquina gana un motivo nuevo sin mensaje aquí, tsc falla.
+ */
+export const MENSAJES_TRANSICION_INVALIDA: Record<MotivoTransicionInvalida, string> = {
+  ESTADO_DESCONOCIDO: 'El estado registrado de la solicitud no es válido; no se aplican cambios.',
+  MISMO_ESTADO: 'La solicitud ya se encuentra en ese estado.',
+  ESTADO_FINAL: 'La solicitud está en un estado final y no admite cambios de estado.',
+  TRANSICION_NO_DEFINIDA: 'Transición de estado no permitida desde el estado actual.',
+  ROL_NO_AUTORIZADO: 'Esta transición le corresponde al solicitante.',
+};
+
+/** E1: proponer una nueva franja necesita su propio endpoint (CA-10), no el tablero. */
+export const MENSAJE_USAR_REPROGRAMACION =
+  'Para proponer una nueva fecha use la reprogramación: POST /solicitudes/:radicado/reprogramacion.';
+
+/** D2: fuera de "Recibido", la franja solo cambia por mutuo acuerdo (CA-10). */
+export const MENSAJE_FECHAS_SOLO_EN_RECIBIDO =
+  'Las fechas solo se editan mientras la solicitud está en "Recibido". Para una solicitud validada, proponga una reprogramación.';
+
+/** D7: fail-closed, no se aprueba una franja que ya comenzó. */
+export const MENSAJE_FRANJA_VENCIDA =
+  'No se puede aprobar una solicitud cuya franja ya inició o pasó. Reprográmela antes de aprobarla.';
+
+/** E5: el log nunca guarda motivos de rechazo huérfanos. */
+export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
+  'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
+
+/** E1: las únicas acciones del STAFF que se ejecutan desde el tablero (PATCH). */
+const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
+  'APROBAR',
+  'RECHAZAR',
+  'INICIAR_PRODUCCION',
+  'FINALIZAR',
+]);
 
 @Injectable()
 export class SolicitudesService {
@@ -88,7 +131,7 @@ export class SolicitudesService {
           proposito: createSolicitudeDto.proposito,
           fecha_inicio: createSolicitudeDto.fecha_inicio,
           fecha_fin: createSolicitudeDto.fecha_fin,
-          estado: 'Recibido',
+          estado: ESTADO_INICIAL,
           es_urgencia: horario.urgente,
         
           recursos: { 
@@ -211,7 +254,8 @@ export class SolicitudesService {
 
     const existente = await this.prisma.solicitud.findUnique({ where: { radicado } });
     if (!existente) {
-      throw new BadRequestException(`El radicado ${radicado} no existe en el sistema.`);
+      // H8 · ADR-002: el mismo 404 que findOne(), sin eco del radicado consultado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
     }
 
     // Franja y estado EFECTIVOS: lo que quedará guardado. Una edición parcial se
@@ -225,7 +269,25 @@ export class SolicitudesService {
     const cambianFechas =
       updateSolicitudeDto.fecha_inicio !== undefined || updateSolicitudeDto.fecha_fin !== undefined;
 
-    // --- 1. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
+    // --- 1. E5: el motivo de rechazo solo acompaña un rechazo real.
+    if (
+      updateSolicitudeDto.motivo_rechazo !== undefined &&
+      !(cambiaEstado && estadoFinal === 'Rechazado')
+    ) {
+      throw new BadRequestException(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+    }
+
+    // --- 2. Máquina de estados (Fase 5): solo transiciones legales del STAFF y solo
+    // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
+    const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal) : undefined;
+
+    // --- 3. D2: la franja se edita solo mientras la solicitud sigue en "Recibido" (estado
+    // GUARDADO). Permite el rescate atómico: fechas nuevas + aprobación en un solo PATCH.
+    if (cambianFechas && existente.estado !== ESTADO_INICIAL) {
+      throw new ConflictException(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+    }
+
+    // --- 4. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
     // reserva que ya ocurrió no debe fallar con EN_EL_PASADO (U1).
     let cambiosDeFranja: Prisma.SolicitudUpdateInput = {};
     if (cambianFechas) {
@@ -237,19 +299,20 @@ export class SolicitudesService {
       cambiosDeFranja = { fecha_inicio: franja.inicio, fecha_fin: franja.fin, es_urgencia: horario.urgente };
     }
 
-    // --- 2. CA-06, capa amable: solo si el resultado ocupa la franja y algo puede
-    // crear un cruce NUEVO: fechas movidas o reactivación desde un estado que la
-    // libera (U3, U4). Se excluye la propia solicitud (sin auto-colisión).
-    const reactiva = cambiaEstado && !ocupaFranja(existente.estado) && ocupaFranja(estadoFinal);
-    if (
-      ocupaFranja(estadoFinal) &&
-      (cambianFechas || reactiva) &&
-      (await this.hayTraslape(franja, radicado))
-    ) {
+    // --- 5. D7: fail-closed, no se aprueba una franja EFECTIVA que ya comenzó. Con fechas
+    // nuevas, evaluarHorario ya exigió el futuro; sin ellas, esta es la única defensa.
+    if (accion === 'APROBAR' && franja.inicio.getTime() <= ahora.getTime()) {
+      throw new ConflictException(MENSAJE_FRANJA_VENCIDA);
+    }
+
+    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas se
+    // movieron. D1 eliminó la reactivación: los estados que liberan la franja son finales,
+    // así que un cambio de estado ya no puede volver a ocuparla. Sin auto-colisión.
+    if (ocupaFranja(estadoFinal) && cambianFechas && (await this.hayTraslape(franja, radicado))) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
-    // --- 3. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
+    // --- 7. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
     const { recursos } = updateSolicitudeDto;
     const data: Prisma.SolicitudUpdateInput = {
       ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
@@ -269,7 +332,7 @@ export class SolicitudesService {
         : {}),
     };
 
-    // --- 4. Persistencia. Con cambio de estado: actualización + log en UNA
+    // --- 8. Persistencia. Con cambio de estado: actualización + log en UNA
     // transacción (CA-09: hay log si y solo si cambió el estado). Sin cambio de
     // estado: una sola sentencia, ya atómica (también con los recursos anidados).
     try {
@@ -294,6 +357,25 @@ export class SolicitudesService {
     } catch (error: unknown) {
       return this.relanzarComoConflictoSiCa06(error, radicado);
     }
+  }
+
+  /**
+   * Fase 5 · E1/E2: valida un cambio de estado pedido por el STAFF desde el tablero.
+   * Devuelve la acción autorizada o lanza: 403 si la transición es del solicitante;
+   * 409 si el estado no la permite o si debe ir por su endpoint de comando (CA-10).
+   */
+  private autorizarTransicionDelStaff(origen: string, destino: string): Accion {
+    const resultado = evaluarTransicion(origen, destino, RolUsuario.STAFF);
+    if (!resultado.permitida) {
+      if (resultado.motivo === 'ROL_NO_AUTORIZADO') {
+        throw new ForbiddenException(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      }
+      throw new ConflictException(MENSAJES_TRANSICION_INVALIDA[resultado.motivo]);
+    }
+    if (!ACCIONES_DEL_TABLERO.has(resultado.transicion.accion)) {
+      throw new ConflictException(MENSAJE_USAR_REPROGRAMACION);
+    }
+    return resultado.transicion.accion;
   }
 
   async remove(radicado: string) {

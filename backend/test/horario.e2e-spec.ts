@@ -5,6 +5,12 @@ import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
 import {
+  MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_USAR_REPROGRAMACION,
+  MENSAJES_TRANSICION_INVALIDA,
+} from '../src/solicitudes/solicitudes.service';
+import {
   crearAppE2E,
   PrismaMockE2E,
   SOLICITUD_AJENA_E2E,
@@ -168,13 +174,15 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       expect(prisma.solicitud.update).not.toHaveBeenCalled();
     });
 
-    it('28. el motor rechaza la reactivación (23P01 real en $transaction) → el MISMO 409', async () => {
+    it('28. rescate atómico (fechas + Validado): el motor rechaza en $transaction (23P01 real) → el MISMO 409', async () => {
       const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       try {
-        prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Rechazado' });
         prisma.$transaction.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION));
 
-        const respuesta = await editar({ estado: 'Recibido' }).expect(409);
+        const respuesta = await editar({
+          estado: 'Validado',
+          ...cuerpo('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+        }).expect(409);
 
         expect(respuesta.body.message).toBe(MENSAJE_CA06);
         expect(JSON.stringify(respuesta.body)).not.toContain('23P01');
@@ -183,9 +191,10 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       }
     });
 
-    it('29. marcar "Entregado" una reserva que ya ocurrió → 200 (sin reglas de horario)', async () => {
+    it('29. marcar "Entregado" (T9) una reserva que ya ocurrió → 200 (sin reglas de horario)', async () => {
       prisma.solicitud.findUnique.mockResolvedValueOnce({
         ...SOLICITUD_E2E,
+        estado: 'En Producción',
         fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
         fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
       });
@@ -194,6 +203,43 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('30. PRD §5.5: el STAFF no puede cancelar en nombre del usuario → 403 sin escribir', async () => {
+      const respuesta = await editar({ estado: 'Cancelado por el Usuario' }).expect(403);
+
+      expect(respuesta.body.message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('31. E1: proponer reprogramación desde el tablero → 409 que remite a /reprogramacion', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+      const respuesta = await editar({ estado: 'Pendiente de Reprogramación' }).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_USAR_REPROGRAMACION);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('32. D2: mover las fechas de una solicitud Validada → 409 sin consultar CA-06', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+      const respuesta = await editar(
+        cuerpo('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+      ).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+    });
+
+    it('33. H8: radicado inexistente → 404 uniforme', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce(null);
+
+      const respuesta = await editar({ estado: 'Validado' }).expect(404);
+
+      expect(respuesta.body.message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
     });
   });
 });

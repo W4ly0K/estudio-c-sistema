@@ -1,6 +1,20 @@
-import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
-import { MENSAJE_SOLICITUD_NO_ENCONTRADA, SolicitudesService } from './solicitudes.service';
+import {
+  MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_FRANJA_VENCIDA,
+  MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_USAR_REPROGRAMACION,
+  MENSAJES_TRANSICION_INVALIDA,
+  SolicitudesService,
+} from './solicitudes.service';
 import {
   DetalleSolicitudSolicitante,
   SELECT_DETALLE_SOLICITANTE,
@@ -412,9 +426,10 @@ describe('SolicitudesService', () => {
       },
     );
 
-    it('U-3 · marcar "Entregado" una reserva PASADA solo cambia el estado (sin reglas de horario)', async () => {
+    it('U-3 · marcar "Entregado" (T9) una reserva PASADA solo cambia el estado (sin reglas de horario)', async () => {
       prismaMock.solicitud.findUnique.mockResolvedValue(
         guardada({
+          estado: 'En Producción',
           fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
           fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
         }),
@@ -458,35 +473,37 @@ describe('SolicitudesService', () => {
       sinEscrituras();
     });
 
-    it('U-7 · reactivar (Rechazado → Recibido) SIN mover fechas también consulta CA-06 → 409', async () => {
+    it('U-7 · D1: reactivar (Rechazado → Recibido) → 409 ESTADO_FINAL, sin consultar CA-06 ni escribir', async () => {
       prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Rechazado' }));
-      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
 
       const error = await rechazo({ estado: 'Recibido' });
 
       expect(error).toBeInstanceOf(ConflictException);
-      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
       sinEscrituras();
     });
 
     it.each([
       ['Recibido → Validado (sigue ocupando la misma franja)', 'Recibido', 'Validado'],
       ['Recibido → Rechazado (libera la franja)', 'Recibido', 'Rechazado'],
-      ['Rechazado → Cancelado por el Usuario (nunca la ocupa)', 'Rechazado', 'Cancelado por el Usuario'],
+      ['Validado → En Producción (sigue ocupando la misma franja)', 'Validado', 'En Producción'],
     ])('U-8 · %s no consulta CA-06', async (_caso, desde, hacia) => {
       prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
 
-      await actualizar({ estado: hacia, motivo_rechazo: 'Motivo suficientemente detallado' });
+      await actualizar({
+        estado: hacia,
+        ...(hacia === 'Rechazado' ? { motivo_rechazo: 'Motivo suficientemente detallado' } : {}),
+      });
 
       expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('U-9 · el motor rechaza la reactivación dentro de $transaction (23P01 real) → 409 y un aviso', async () => {
-      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Rechazado' }));
+    it('U-9 · rescate atómico (fechas + Validado): el motor rechaza dentro de $transaction (23P01 real) → 409 y un aviso', async () => {
       prismaMock.$transaction.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION));
 
-      const error = await rechazo({ estado: 'Recibido' });
+      const error = await rechazo({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
 
       expect(error).toBeInstanceOf(ConflictException);
       expect((error as ConflictException).message).toBe(MENSAJE_CA06);
@@ -554,6 +571,175 @@ describe('SolicitudesService', () => {
       expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(dataDelUpdate()).toEqual({ proposito: 'Nuevo propósito de la grabación' });
+    });
+
+    // ── Fase 5.2a · máquina de estados en el tablero del STAFF (E1–E6, D1, D2, D7, H8) ──
+
+    it('U-15 · E1: Validado → Pendiente de Reprogramación desde el tablero → 409 que remite a /reprogramacion', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Validado' }));
+
+      const error = await rechazo({ estado: 'Pendiente de Reprogramación' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_USAR_REPROGRAMACION);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['Recibido', 'Cancelado por el Usuario'],
+      ['Validado', 'Cancelado por el Usuario'],
+      ['Pendiente de Reprogramación', 'Validado'],
+      ['Pendiente de Reprogramación', 'Cancelado por el Usuario'],
+    ])('U-16 · E2/PRD §5.5: el STAFF no ejecuta transiciones del solicitante (%s → %s) → 403', async (desde, hacia) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
+
+      const error = await rechazo({ estado: hacia });
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['Recibido', 'En Producción'],
+      ['Recibido', 'Entregado'],
+      ['Validado', 'Recibido'],
+      ['En Producción', 'Validado'],
+    ])('U-17 · E2: transición no definida (%s → %s) → 409', async (desde, hacia) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
+
+      const error = await rechazo({ estado: hacia });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'U-18 · E2/D1: desde el estado final %s no hay salida → 409 ESTADO_FINAL',
+      async (final) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: final }));
+
+        const error = await rechazo({ estado: 'Validado' });
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('U-19 · E2 fail-closed: un estado GUARDADO fuera de la máquina (dato sucio) → 409 sin tocar la fila', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Aprobado' }));
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_DESCONOCIDO);
+      sinEscrituras();
+    });
+
+    it('U-20 · E2: pedir el estado actual no es una transición (sin log ni $transaction)', async () => {
+      const resultado = await actualizar({ estado: 'Recibido' });
+
+      expect(resultado.mensaje).toBe('Solicitud actualizada correctamente (sin cambio de estado)');
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      expect(dataDelUpdate()).toEqual({});
+    });
+
+    it.each(['Validado', 'En Producción', 'Pendiente de Reprogramación'])(
+      'U-21 · D2: mover fechas con la solicitud en %s → 409 sin evaluar CA-06 ni escribir',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado }));
+
+        const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        sinEscrituras();
+      },
+    );
+
+    it('U-22 · D7: aprobar una franja vencida → 409 sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_FRANJA_VENCIDA);
+      sinEscrituras();
+    });
+
+    it('U-23 · D7 frontera: una franja que comienza EXACTAMENTE ahora ya no se aprueba', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({ fecha_inicio: AHORA, fecha_fin: new Date(AHORA.getTime() + 60 * 60 * 1000) }),
+      );
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_FRANJA_VENCIDA);
+    });
+
+    it('U-24 · D2+D7 rescate: franja vencida + fechas nuevas + Validado en un solo PATCH → aprobada y auditada', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      await actualizar({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(dataDelUpdate()).toMatchObject({
+        estado: 'Validado',
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+      });
+    });
+
+    it('U-25 · D7 solo aplica a la aprobación: rechazar una franja vencida sigue permitido', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      await actualizar({ estado: 'Rechazado', motivo_rechazo: 'La fecha solicitada ya pasó sin respuesta' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    const MOTIVOS_HUERFANOS: Array<[string, UpdateSolicitudeDto]> = [
+      ['con un destino distinto de Rechazado', { estado: 'Validado', motivo_rechazo: 'Motivo suficientemente detallado' }],
+      ['sin cambio de estado', { motivo_rechazo: 'Motivo suficientemente detallado' }],
+    ];
+
+    it.each(MOTIVOS_HUERFANOS)('U-26 · E5: motivo_rechazo %s → 400 sin escribir', async (_caso, dto) => {
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+    });
+
+    it('U-27 · H8/ADR-002: radicado inexistente → 404 uniforme, sin eco del radicado', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain(RADICADO);
+      sinEscrituras();
     });
   });
 
