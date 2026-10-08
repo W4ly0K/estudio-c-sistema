@@ -20,7 +20,7 @@ import {
   errorDesconocidoDePrisma,
   MENSAJE_23514_CHECK,
   MENSAJE_23P01_CREATE,
-  MENSAJE_23P01_TRANSACCION,
+  MENSAJE_23P01_TX_INTERACTIVA,
 } from './utils/errores-postgres.fixture';
 
 /**
@@ -159,7 +159,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
       expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
-      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
     });
 
     it('27. la reprogramación se cruza con otra → 409 con el mensaje mínimo', async () => {
@@ -171,13 +171,13 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(respuesta.body.message).toBe(MENSAJE_CA06);
       expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
-      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
     });
 
     it('28. rescate atómico (fechas + Validado): el motor rechaza en $transaction (23P01 real) → el MISMO 409', async () => {
       const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       try {
-        prisma.$transaction.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION));
+        prisma.solicitud.updateMany.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
 
         const respuesta = await editar({
           estado: 'Validado',
@@ -209,7 +209,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       const respuesta = await editar({ estado: 'Cancelado por el Usuario' }).expect(403);
 
       expect(respuesta.body.message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
-      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -231,7 +231,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(respuesta.body.message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
       expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
-      expect(prisma.solicitud.update).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
     });
 
     it('33. H8: radicado inexistente → 404 uniforme', async () => {

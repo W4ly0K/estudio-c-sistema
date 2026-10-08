@@ -87,7 +87,7 @@ interface ArgsFindUniqueUsuario {
 }
 
 function crearPrismaMock() {
-  return {
+  const mock = {
     usuario: {
       findUnique: jest.fn(
         async (args: ArgsFindUniqueUsuario): Promise<UsuarioBD | null> =>
@@ -124,18 +124,24 @@ function crearPrismaMock() {
           es_urgencia: args.data.es_urgencia,
         }),
       ),
-      update: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
+      // Compare-and-set de update() (Fase 5.2b): por defecto gana (1 fila).
+      updateMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 1 })),
+      // Relectura dentro de la transacción: lo que el servicio devuelve tras escribir.
+      findUniqueOrThrow: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
+    },
+    solicitud_Recurso: {
+      deleteMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 0 })),
+      createMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 0 })),
     },
     log_Auditoria: {
       create: jest.fn(async (): Promise<Log_Auditoria> => LOG_E2E),
     },
+    // Transacción interactiva: el callback recibe este mismo mock como `tx`.
     $transaction: jest.fn(
-      async (): Promise<[Solicitud, Log_Auditoria]> => [
-        { ...SOLICITUD_E2E, estado: 'Validado' },
-        LOG_E2E,
-      ],
+      async (operacion: (tx: unknown) => Promise<unknown>): Promise<unknown> => operacion(mock),
     ),
   };
+  return mock;
 }
 
 export type PrismaMockE2E = ReturnType<typeof crearPrismaMock>;

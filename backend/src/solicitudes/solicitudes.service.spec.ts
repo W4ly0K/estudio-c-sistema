@@ -8,6 +8,7 @@ import {
 import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_FRANJA_VENCIDA,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
@@ -31,8 +32,7 @@ import {
   errorDesconocidoDePrisma,
   MENSAJE_23514_CHECK,
   MENSAJE_23P01_CREATE,
-  MENSAJE_23P01_TRANSACCION,
-  MENSAJE_23P01_UPDATE,
+  MENSAJE_23P01_TX_INTERACTIVA,
 } from '../../test/utils/errores-postgres.fixture';
 
 /** "Ahora" fijo: lunes 5 de octubre de 2026, 10:00 en Bogotá. Mínima sin urgencia: miércoles 14. */
@@ -75,10 +75,16 @@ describe('SolicitudesService', () => {
       findUnique: jest.fn<Promise<Solicitud | null>, [unknown]>(),
       findMany: jest.fn<Promise<Solicitud[]>, [unknown]>(),
       create: jest.fn<Promise<Solicitud>, [unknown]>(),
-      update: jest.fn<Promise<Solicitud>, [unknown]>(),
+      updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+      findUniqueOrThrow: jest.fn<Promise<Solicitud>, [unknown]>(),
+    },
+    solicitud_Recurso: {
+      deleteMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+      createMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
     },
     log_Auditoria: { create: jest.fn<Promise<Log_Auditoria>, [unknown]>() },
-    $transaction: jest.fn<Promise<[Solicitud, Log_Auditoria]>, [unknown]>(),
+    // F4: transacción interactiva; el callback recibe este mismo mock como `tx`.
+    $transaction: jest.fn<Promise<unknown>, [(tx: unknown) => Promise<unknown>]>(),
   };
 
   let service: SolicitudesService;
@@ -89,9 +95,12 @@ describe('SolicitudesService', () => {
     prismaMock.solicitud.findUnique.mockReset();
     prismaMock.solicitud.findMany.mockReset();
     prismaMock.solicitud.create.mockReset();
-    prismaMock.solicitud.update.mockReset();
+    prismaMock.solicitud.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.solicitud.findUniqueOrThrow.mockReset().mockResolvedValue(solicitudBase);
+    prismaMock.solicitud_Recurso.deleteMany.mockReset().mockResolvedValue({ count: 0 });
+    prismaMock.solicitud_Recurso.createMany.mockReset().mockResolvedValue({ count: 0 });
     prismaMock.log_Auditoria.create.mockReset();
-    prismaMock.$transaction.mockReset();
+    prismaMock.$transaction.mockReset().mockImplementation((operacion) => operacion(prismaMock));
     reloj = new RelojFijo(AHORA);
     service = new SolicitudesService(prismaMock as unknown as PrismaService, reloj);
   });
@@ -296,12 +305,8 @@ describe('SolicitudesService', () => {
   describe('update() con cambio de estado (auditoría CA-09)', () => {
     beforeEach(() => {
       prismaMock.solicitud.findUnique.mockResolvedValue(solicitudBase);
-      prismaMock.solicitud.update.mockResolvedValue({ ...solicitudBase, estado: 'Rechazado' });
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue({ ...solicitudBase, estado: 'Rechazado' });
       prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
-      prismaMock.$transaction.mockResolvedValue([
-        { ...solicitudBase, estado: 'Rechazado' },
-        logBase,
-      ]);
     });
 
     it('registra como autor el idStaff verificado, con estados y motivo correctos', async () => {
@@ -355,9 +360,8 @@ describe('SolicitudesService', () => {
     beforeEach(() => {
       prismaMock.solicitud.findUnique.mockResolvedValue(guardada());
       prismaMock.solicitud.findFirst.mockResolvedValue(null);
-      prismaMock.solicitud.update.mockResolvedValue(guardada());
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(guardada());
       prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
-      prismaMock.$transaction.mockResolvedValue([guardada(), logBase]);
       avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     });
 
@@ -377,9 +381,9 @@ describe('SolicitudesService', () => {
       throw new Error('update() debía rechazar');
     };
 
-    /** El "data" que recibió solicitud.update (también dentro de $transaction). */
+    /** El "data" que recibió el compare-and-set (updateMany dentro de la transacción). */
     const dataDelUpdate = (): Record<string, unknown> =>
-      (prismaMock.solicitud.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
 
     // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
     const franjaDel = (
@@ -392,7 +396,7 @@ describe('SolicitudesService', () => {
     });
 
     const sinEscrituras = () => {
-      expect(prismaMock.solicitud.update).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     };
 
@@ -500,8 +504,8 @@ describe('SolicitudesService', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('U-9 · rescate atómico (fechas + Validado): el motor rechaza dentro de $transaction (23P01 real) → 409 y un aviso', async () => {
-      prismaMock.$transaction.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION));
+    it('U-9 · rescate atómico (fechas + Validado): el motor rechaza dentro de la transacción interactiva (23P01 real) → 409 y un aviso', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
 
       const error = await rechazo({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
 
@@ -513,8 +517,8 @@ describe('SolicitudesService', () => {
       expect(texto).not.toContain('23P01');
     });
 
-    it('U-10 · el motor rechaza la reprogramación (23P01 real en update) → el MISMO 409', async () => {
-      prismaMock.solicitud.update.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_UPDATE));
+    it('U-10 · el motor rechaza la reprogramación (23P01 real en updateMany) → el MISMO 409', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
 
       const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
 
@@ -528,7 +532,7 @@ describe('SolicitudesService', () => {
 
     it('U-11 · un 23514 real se relanza como la MISMA instancia (no es un 409)', async () => {
       const original = errorDesconocidoDePrisma(MENSAJE_23514_CHECK);
-      prismaMock.solicitud.update.mockRejectedValue(original);
+      prismaMock.solicitud.updateMany.mockRejectedValue(original);
 
       expect(await rechazo(franjaDel('2026-10-28', '09:00', '10:00'))).toBe(original);
       expect(avisos).not.toHaveBeenCalled();
@@ -569,7 +573,7 @@ describe('SolicitudesService', () => {
 
       expect(resultado.mensaje).toBe('Solicitud actualizada correctamente (sin cambio de estado)');
       expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
-      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
       expect(dataDelUpdate()).toEqual({ proposito: 'Nuevo propósito de la grabación' });
     });
 
@@ -638,13 +642,13 @@ describe('SolicitudesService', () => {
       sinEscrituras();
     });
 
-    it('U-20 · E2: pedir el estado actual no es una transición (sin log ni $transaction)', async () => {
+    it('U-20 · E2: pedir el estado actual no es una transición (sin escrituras, sin transacción)', async () => {
       const resultado = await actualizar({ estado: 'Recibido' });
 
       expect(resultado.mensaje).toBe('Solicitud actualizada correctamente (sin cambio de estado)');
-      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(resultado.solicitud).toEqual(guardada());
       expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
-      expect(dataDelUpdate()).toEqual({});
+      sinEscrituras();
     });
 
     it.each(['Validado', 'En Producción', 'Pendiente de Reprogramación'])(
@@ -740,6 +744,72 @@ describe('SolicitudesService', () => {
       expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
       expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain(RADICADO);
       sinEscrituras();
+    });
+
+    // ── Fase 5.2b · compare-and-set en una sola transacción interactiva (D5 · F1–F4 · R1) ──
+
+    it('U-28 · F1: el CAS exige el estado y la franja GUARDADOS (exactamente lo que se validó)', async () => {
+      await actualizar({ estado: 'Validado' });
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          estado: 'Recibido',
+          fecha_inicio: guardada().fecha_inicio,
+          fecha_fin: guardada().fecha_fin,
+        },
+        data: { estado: 'Validado' },
+      });
+    });
+
+    it('U-29 · D5/F3: carrera perdida en una transición (0 filas) → 409 propio, sin log ni recursos, con aviso', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazo({ estado: 'Validado', recursos: [{ id_recurso: 7, cantidad: 2 }] });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud_Recurso.deleteMany).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud_Recurso.createMany).not.toHaveBeenCalled();
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+    });
+
+    it('U-30 · F2/R3: una edición SIN cambio de estado también pierde la carrera con 409 (las fechas no se pisan)', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+    });
+
+    it('U-31 · R1: los recursos se reemplazan dentro de la misma transacción, después del CAS', async () => {
+      await actualizar({ recursos: [{ id_recurso: 7, cantidad: 2 }] });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud_Recurso.deleteMany).toHaveBeenCalledWith({ where: { radicado_solicitud: RADICADO } });
+      expect(prismaMock.solicitud_Recurso.createMany).toHaveBeenCalledWith({
+        data: [{ radicado_solicitud: RADICADO, id_recurso: 7, cantidad_solicitada: 2 }],
+      });
+      expect(prismaMock.solicitud.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.solicitud_Recurso.deleteMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('U-32 · el log va después del CAS ganado y la respuesta es la fila releída dentro de la transacción', async () => {
+      const releida = guardada({ estado: 'Validado' });
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(releida);
+
+      const resultado = await actualizar({ estado: 'Validado' });
+
+      expect(prismaMock.solicitud.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.log_Auditoria.create.mock.invocationCallOrder[0],
+      );
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({ where: { radicado: RADICADO } });
+      expect(resultado.solicitud).toBe(releida);
     });
   });
 

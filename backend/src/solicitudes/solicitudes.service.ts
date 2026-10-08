@@ -66,6 +66,13 @@ export const MENSAJE_FRANJA_VENCIDA =
 export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
   'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
 
+/**
+ * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
+ * cambió entre la lectura y la escritura). Distinto de CA-06: no es un cruce de franjas.
+ */
+export const MENSAJE_CAMBIO_CONCURRENTE =
+  'La solicitud fue modificada por otra operación mientras se procesaba este cambio. Recargue y vuelva a intentarlo.';
+
 /** E1: las únicas acciones del STAFF que se ejecutan desde el tablero (PATCH). */
 const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
   'APROBAR',
@@ -289,7 +296,7 @@ export class SolicitudesService {
 
     // --- 4. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
     // reserva que ya ocurrió no debe fallar con EN_EL_PASADO (U1).
-    let cambiosDeFranja: Prisma.SolicitudUpdateInput = {};
+    let cambiosDeFranja: Prisma.SolicitudUpdateManyMutationInput = {};
     if (cambianFechas) {
       const horario = evaluarHorario(franja, ahora, calendarioLaboralColombia);
       if (!horario.valido) {
@@ -314,46 +321,74 @@ export class SolicitudesService {
 
     // --- 7. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
     const { recursos } = updateSolicitudeDto;
-    const data: Prisma.SolicitudUpdateInput = {
+    const data: Prisma.SolicitudUpdateManyMutationInput = {
       ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
-      ...(recursos !== undefined
-        ? {
-            recursos: {
-              deleteMany: {},
-              create: recursos.map((r) => ({
-                id_recurso: r.id_recurso,
-                cantidad_solicitada: r.cantidad,
-              })),
-            },
-          }
-        : {}),
     };
 
-    // --- 8. Persistencia. Con cambio de estado: actualización + log en UNA
-    // transacción (CA-09: hay log si y solo si cambió el estado). Sin cambio de
-    // estado: una sola sentencia, ya atómica (también con los recursos anidados).
-    try {
-      if (!cambiaEstado) {
-        const solicitud = await this.prisma.solicitud.update({ where: { radicado }, data });
-        return { mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)', solicitud };
-      }
+    // Nada que escribir (por ejemplo, pedir el estado actual): sin transacción ni bloqueos.
+    if (Object.keys(data).length === 0 && recursos === undefined) {
+      return { mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)', solicitud: existente };
+    }
 
-      const [solicitud] = await this.prisma.$transaction([
-        this.prisma.solicitud.update({ where: { radicado }, data }),
-        this.prisma.log_Auditoria.create({
-          data: {
-            radicado_solicitud: radicado,
-            estado_anterior: existente.estado,
-            estado_nuevo: estadoFinal,
-            modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
-            motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+    // --- 8. Persistencia en UNA transacción interactiva con compare-and-set (D5 · F1, F2).
+    // El WHERE exige la fila TAL COMO SE VALIDÓ (estado y franja guardados): si otra
+    // petición la cambió entre la lectura y esta escritura, se actualizan 0 filas → 409.
+    // En READ COMMITTED, un UPDATE concurrente espera el bloqueo de fila y re-evalúa su
+    // WHERE sobre la versión confirmada (medido en la integración I-10). El 23P01 de
+    // CA-06 lanzado dentro de esta transacción conserva clase y firma (I-9).
+    try {
+      const solicitud = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.solicitud.updateMany({
+          where: {
+            radicado,
+            estado: existente.estado,
+            fecha_inicio: existente.fecha_inicio,
+            fecha_fin: existente.fecha_fin,
           },
-        }),
-      ]);
-      return { mensaje: 'Estado actualizado y auditado correctamente en la bitácora', solicitud };
+          data,
+        });
+        if (count !== 1) {
+          // Métrica de concurrencia real (como en CA-06): solo el radicado propio.
+          this.logger.warn(`Compare-and-set perdido en update(): ${radicado} cambió durante la petición.`);
+          throw new ConflictException(MENSAJE_CAMBIO_CONCURRENTE);
+        }
+
+        // R1: updateMany no admite escrituras anidadas; los recursos se reemplazan aquí.
+        if (recursos !== undefined) {
+          await tx.solicitud_Recurso.deleteMany({ where: { radicado_solicitud: radicado } });
+          await tx.solicitud_Recurso.createMany({
+            data: recursos.map((r) => ({
+              radicado_solicitud: radicado,
+              id_recurso: r.id_recurso,
+              cantidad_solicitada: r.cantidad,
+            })),
+          });
+        }
+
+        // CA-09: hay log si y solo si cambió el estado, en la MISMA transacción.
+        if (cambiaEstado) {
+          await tx.log_Auditoria.create({
+            data: {
+              radicado_solicitud: radicado,
+              estado_anterior: existente.estado,
+              estado_nuevo: estadoFinal,
+              modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
+              motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+            },
+          });
+        }
+
+        return tx.solicitud.findUniqueOrThrow({ where: { radicado } });
+      });
+      return {
+        mensaje: cambiaEstado
+          ? 'Estado actualizado y auditado correctamente en la bitácora'
+          : 'Solicitud actualizada correctamente (sin cambio de estado)',
+        solicitud,
+      };
     } catch (error: unknown) {
       return this.relanzarComoConflictoSiCa06(error, radicado);
     }

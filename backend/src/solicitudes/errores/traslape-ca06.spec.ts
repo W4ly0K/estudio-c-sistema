@@ -6,6 +6,7 @@ import {
   MENSAJE_23514_CHECK,
   MENSAJE_23P01_CREATE,
   MENSAJE_23P01_TRANSACCION,
+  MENSAJE_23P01_TX_INTERACTIVA,
   MENSAJE_23P01_UPDATE,
   reemplazarUnaVez,
   VERSION_PRISMA_DEL_SONDEO,
@@ -26,6 +27,7 @@ describe('esViolacionDeTraslapeCa06 (detector del 23P01 de CA-06)', () => {
       ['1 · mensaje real de create() (sondeo 4.2)', MENSAJE_23P01_CREATE],
       ['2 · mensaje real de update() (sondeo 4.2)', MENSAJE_23P01_UPDATE],
       ['2b · mensaje real de $transaction en update() (sondeo 4.2)', MENSAJE_23P01_TRANSACCION],
+      ['2c · mensaje real de updateMany en una $transaction interactiva (integración I-9)', MENSAJE_23P01_TX_INTERACTIVA],
       [
         '3 · PostgreSQL con mensajes en español (lc_messages)',
         reemplazarUnaVez(

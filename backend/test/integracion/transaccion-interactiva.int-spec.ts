@@ -1,5 +1,6 @@
 import { CategoriaSolicitud, Prisma, PrismaClient } from '@prisma/client';
 import { esViolacionDeTraslapeCa06 } from '../../src/solicitudes/errores/traslape-ca06';
+import { MENSAJE_23P01_TX_INTERACTIVA } from '../utils/errores-postgres.fixture';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 
 /**
@@ -85,6 +86,8 @@ describe('Transacción interactiva y compare-and-set contra PostgreSQL real (int
     );
     expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
     expect(esViolacionDeTraslapeCa06(error)).toBe(true);
+    // El oráculo del fixture ES este mensaje: si Prisma o PostgreSQL cambian el formato, falla aquí.
+    expect((error as Prisma.PrismaClientUnknownRequestError).message).toBe(MENSAJE_23P01_TX_INTERACTIVA);
     expect(await prisma.log_Auditoria.count()).toBe(0);
     expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-B' } })).toMatchObject({
       estado: 'Recibido',
