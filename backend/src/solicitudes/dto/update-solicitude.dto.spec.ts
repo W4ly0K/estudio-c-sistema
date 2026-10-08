@@ -3,6 +3,7 @@ import { CategoriaSolicitud } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { UpdateSolicitudeDto } from './update-solicitude.dto';
+import { ProponerReprogramacionDto } from './proponer-reprogramacion.dto';
 
 // Mismo pipe que main.ts (fuente única): si alguien cambia la configuración real, estos tests lo notan.
 const pipe = crearValidationPipe();
@@ -93,6 +94,34 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(errores).toEqual(
         expect.arrayContaining([expect.stringContaining('motivo de rechazo es obligatorio')]),
       );
+    });
+  });
+
+  describe('ProponerReprogramacionDto (Fase 5.4 · K1)', () => {
+    const propuesta = { fecha_inicio: inicio.toISOString(), fecha_fin: fin.toISOString() };
+
+    it('acepta solo la franja propuesta con zona horaria', async () => {
+      expect(await erroresDe(propuesta, ProponerReprogramacionDto)).toEqual([]);
+    });
+
+    it('rechaza con 400 un estado o un id_usuario colados en el comando', async () => {
+      const errores = await erroresDe(
+        { ...propuesta, estado: 'Validado', id_usuario: 'uuid-ajeno' },
+        ProponerReprogramacionDto,
+      );
+      expect(errores).toEqual(
+        expect.arrayContaining(['property estado should not exist', 'property id_usuario should not exist']),
+      );
+    });
+
+    it('rechaza una fecha sin zona horaria (D-W)', async () => {
+      const errores = await erroresDe({ ...propuesta, fecha_inicio: '2026-10-28T09:00:00' }, ProponerReprogramacionDto);
+      expect(errores.join(' ')).toContain('fecha_inicio debe ser una fecha ISO 8601 real con zona horaria');
+    });
+
+    it('exige las dos fechas de la propuesta', async () => {
+      const errores = await erroresDe({ fecha_inicio: propuesta.fecha_inicio }, ProponerReprogramacionDto);
+      expect(errores.join(' ')).toContain('fecha_fin');
     });
   });
 });

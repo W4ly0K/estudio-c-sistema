@@ -6,6 +6,8 @@ import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.valida
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_REPROGRAMACION_PROPUESTA,
+  MENSAJE_REPROGRAMAR_EN_RECIBIDO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
@@ -240,6 +242,80 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       const respuesta = await editar({ estado: 'Validado' }).expect(404);
 
       expect(respuesta.body.message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    });
+  });
+
+  describe('POST /solicitudes/:radicado/reprogramacion · CA-10 (Fase 5.4 · K1–K9)', () => {
+    const PROPUESTA = { fecha_inicio: '2026-10-28T09:00:00-05:00', fecha_fin: '2026-10-28T10:00:00-05:00' };
+    const proponer = (body: object, bearer: string = tokenStaff) =>
+      request(app.getHttpServer())
+        .post(`/solicitudes/${SOLICITUD_E2E.radicado}/reprogramacion`)
+        .set('Authorization', `Bearer ${bearer}`)
+        .send(body);
+    const validada = () => prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+    it('34. SOLICITANTE → 403: solo el Staff propone reprogramaciones', async () => {
+      await proponer(PROPUESTA, token).expect(403);
+
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('35. STAFF + Validada → 200: queda Pendiente con la propuesta y el log del token', async () => {
+      validada();
+
+      const respuesta = await proponer(PROPUESTA).expect(200);
+
+      expect(respuesta.body.mensaje).toBe(MENSAJE_REPROGRAMACION_PROPUESTA);
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            estado: 'Pendiente de Reprogramación',
+            fecha_propuesta_inicio: new Date(PROPUESTA.fecha_inicio),
+            fecha_propuesta_fin: new Date(PROPUESTA.fecha_fin),
+          },
+        }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ estado_nuevo: 'Pendiente de Reprogramación', modificado_por: 'uuid-staff' }),
+      });
+    });
+
+    it('36. propuesta en sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
+      validada();
+
+      const respuesta = await proponer({
+        fecha_inicio: '2026-10-31T09:00:00-05:00',
+        fecha_fin: '2026-10-31T10:00:00-05:00',
+      }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('37. K3: en Recibido → 409 que remite al PATCH', async () => {
+      const respuesta = await proponer(PROPUESTA).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('38. K5: la propuesta choca con otra reserva → 409 con el mensaje mínimo', async () => {
+      validada();
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await proponer(PROPUESTA).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('39. K1: un estado colado en el comando → 400 del pipe, sin llegar al servicio', async () => {
+      const respuesta = await proponer({ ...PROPUESTA, estado: 'Validado' }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain('property estado should not exist');
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
     });
   });
 });

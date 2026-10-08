@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
@@ -33,6 +34,7 @@ import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from './errores/traslape-ca06
 import {
   DetalleSolicitud,
   type DetalleSolicitudSolicitante,
+  type DetalleSolicitudStaff,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
 } from './proyecciones/detalle-solicitud.proyeccion';
@@ -85,6 +87,22 @@ export const MENSAJE_CANCELAR_EN_PRODUCCION =
 /** G5: con una propuesta de reprogramación pendiente (CA-10), la salida es aceptarla o rechazarla. */
 export const MENSAJE_CANCELAR_CON_PROPUESTA =
   'La solicitud tiene una propuesta de reprogramación pendiente: acéptela o recházela.';
+
+/** Fase 5.4 · CA-10 · T5: respuesta del comando /reprogramacion. */
+export const MENSAJE_REPROGRAMACION_PROPUESTA =
+  'Propuesta de reprogramación registrada: queda pendiente de la respuesta del solicitante.';
+
+/** K3: en "Recibido" la franja se edita directamente (D2); CA-10 aplica a solicitudes validadas. */
+export const MENSAJE_REPROGRAMAR_EN_RECIBIDO =
+  'La solicitud aún está en "Recibido": edite sus fechas directamente (PATCH /solicitudes/:radicado). La reprogramación por mutuo acuerdo aplica a solicitudes validadas.';
+
+/** K3: "Pendiente de Reprogramación" queda congelada hasta que el solicitante responda. */
+export const MENSAJE_PROPUESTA_YA_PENDIENTE =
+  'La solicitud ya tiene una propuesta de reprogramación pendiente de respuesta del solicitante.';
+
+/** K4: proponer la franja actual no es una reprogramación. */
+export const MENSAJE_PROPUESTA_SIN_CAMBIOS =
+  'La franja propuesta es igual a la actual: no hay nada que reprogramar.';
 
 /** G7: lo que una escritura con compare-and-set necesita saber. */
 interface OperacionCompareAndSet<T> {
@@ -428,6 +446,86 @@ export class SolicitudesService {
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
     return { mensaje: MENSAJE_SOLICITUD_CANCELADA, solicitud };
+  }
+
+  /**
+   * Fase 5.4 · CA-10 · T5: el STAFF propone una nueva franja para una solicitud Validada.
+   * Orden K2: existencia (404) → estado (409) → forma (400) → CA-04 (400) → CA-06 (409).
+   * La franja oficial NO cambia y sigue ocupada (D3); el EXCLUDE no protege la propuesta,
+   * por eso la aceptación (T7, paso 5.5) la vuelve a validar.
+   */
+  async proponerReprogramacion(
+    radicado: string,
+    dto: ProponerReprogramacionDto,
+    idStaff: string,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudStaff }> {
+    // Decisión D-U: un único "ahora" por petición.
+    const ahora = this.reloj.ahora();
+
+    const existente = await this.prisma.solicitud.findUnique({ where: { radicado } });
+    if (!existente) {
+      // H8 · ADR-002: el mismo 404 que findOne() y update().
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+
+    // K2/K3: el estado va ANTES que la forma de la propuesta (en Recibido, la respuesta
+    // útil es "use el PATCH", aunque la propuesta también traiga un error de horario).
+    const resultado = evaluarAccion('PROPONER_REPROGRAMACION', existente.estado, RolUsuario.STAFF);
+    if (!resultado.permitida) {
+      throw this.errorDeReprogramacion(resultado.motivo, existente.estado);
+    }
+
+    const propuesta: FranjaSolicitada = { inicio: dto.fecha_inicio, fin: dto.fecha_fin };
+
+    // K4: proponer la misma franja no es una reprogramación.
+    if (
+      propuesta.inicio.getTime() === existente.fecha_inicio.getTime() &&
+      propuesta.fin.getTime() === existente.fecha_fin.getTime()
+    ) {
+      throw new BadRequestException(MENSAJE_PROPUESTA_SIN_CAMBIOS);
+    }
+
+    // K4: la propuesta pasa por las MISMAS reglas que una solicitud nueva (CA-04 y Fase 3).
+    const horario = evaluarHorario(propuesta, ahora, calendarioLaboralColombia);
+    if (!horario.valido) {
+      throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
+    }
+
+    // K5 · D3: CA-06 de la franja PROPUESTA (capa amable), sin auto-colisión: la franja
+    // oficial de esta misma solicitud sigue ocupada mientras la propuesta esté pendiente.
+    if (await this.hayTraslape(propuesta, radicado)) {
+      throw new ConflictException(MENSAJE_CA06);
+    }
+
+    // K6: la franja oficial y es_urgencia NO cambian; solo el estado y la propuesta.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { estado: existente.estado, fecha_inicio: existente.fecha_inicio, fecha_fin: existente.fecha_fin },
+      data: {
+        estado: resultado.transicion.destino,
+        fecha_propuesta_inicio: propuesta.inicio,
+        fecha_propuesta_fin: propuesta.fin,
+      },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: resultado.transicion.destino,
+        modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
+      },
+      // K8: proyección del Staff (franja oficial y propuesta), releída en la transacción.
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_PROPUESTA, solicitud };
+  }
+
+  /** K3: el error de la propuesta según el motivo de la máquina y el estado actual. */
+  private errorDeReprogramacion(motivo: MotivoTransicionInvalida, estado: string): ConflictException {
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === ESTADO_INICIAL) {
+      return new ConflictException(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'Pendiente de Reprogramación') {
+      return new ConflictException(MENSAJE_PROPUESTA_YA_PENDIENTE);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
   }
 
   /** G5: el error de cancelación según el motivo de la máquina y el estado actual. */

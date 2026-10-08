@@ -13,6 +13,10 @@ import {
   MENSAJE_CANCELAR_EN_PRODUCCION,
   MENSAJE_FRANJA_VENCIDA,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
+  MENSAJE_PROPUESTA_SIN_CAMBIOS,
+  MENSAJE_PROPUESTA_YA_PENDIENTE,
+  MENSAJE_REPROGRAMACION_PROPUESTA,
+  MENSAJE_REPROGRAMAR_EN_RECIBIDO,
   MENSAJE_SOLICITUD_CANCELADA,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
   MENSAJE_USAR_REPROGRAMACION,
@@ -28,6 +32,7 @@ import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-ht
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import type { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { type ErrorHorario, MENSAJES_ERROR_HORARIO } from './reglas/horario.validator';
 import { RelojFijo } from '../../test/utils/reloj-fijo';
 import { MENSAJE_CA06 } from './errores/traslape-ca06';
@@ -973,6 +978,214 @@ describe('SolicitudesService', () => {
       expect(avisos).toHaveBeenCalledTimes(1);
       const [texto] = avisos.mock.calls[0] as [string];
       expect(texto).toContain(RADICADO);
+    });
+  });
+
+  describe('proponerReprogramacion() — CA-10 · T5 del STAFF (Fase 5.4 · K1–K9)', () => {
+    const RADICADO = 'EC-2099-0001';
+    /** Franja OFICIAL: martes 27 de octubre de 2026, 9:00–10:00 en Bogotá. */
+    const OFICIAL = {
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+    };
+    const guardada = (cambios: Partial<Solicitud> = {}): Solicitud => ({
+      ...solicitudBase,
+      ...OFICIAL,
+      estado: 'Validado',
+      ...cambios,
+    });
+    const franja = (inicio: string, fin: string): ProponerReprogramacionDto => ({
+      fecha_inicio: new Date(inicio),
+      fecha_fin: new Date(fin),
+    });
+    /** Propuesta válida: miércoles 28 de octubre de 2026, 9:00–10:00. */
+    const PROPUESTA = franja('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00');
+    const DETALLE = { radicado: RADICADO, estado: 'Pendiente de Reprogramación' };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada());
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(DETALLE as unknown as Solicitud);
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+    });
+
+    const proponer = (dto: ProponerReprogramacionDto = PROPUESTA) =>
+      service.proponerReprogramacion(RADICADO, dto, 'uuid-staff');
+
+    /** Ejecuta proponerReprogramacion() y devuelve lo que rechazó; si se resolviera, falla. */
+    const rechazo = async (dto: ProponerReprogramacionDto = PROPUESTA): Promise<unknown> => {
+      try {
+        await proponer(dto);
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('proponerReprogramacion() debía rechazar');
+    };
+
+    const sinEscrituras = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it('R-1 · K6: Validado → Pendiente con la propuesta; franja oficial y es_urgencia intactas; log del Staff', async () => {
+      const resultado = await proponer();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: RADICADO, estado: 'Validado', ...OFICIAL },
+        data: {
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: PROPUESTA.fecha_inicio,
+          fecha_propuesta_fin: PROPUESTA.fecha_fin,
+        },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Validado',
+          estado_nuevo: 'Pendiente de Reprogramación',
+          modificado_por: 'uuid-staff',
+        },
+      });
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { radicado: RADICADO },
+        select: SELECT_DETALLE_STAFF,
+      });
+      expect(resultado).toEqual({ mensaje: MENSAJE_REPROGRAMACION_PROPUESTA, solicitud: DETALLE });
+    });
+
+    it('R-2 · H8: radicado inexistente → 404 uniforme sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it('R-3 · K3: en Recibido → 409 que remite al PATCH (D2), sin consultar CA-06', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Recibido' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('R-4 · K3: con una propuesta ya pendiente → 409 (la solicitud está congelada)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Pendiente de Reprogramación' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_YA_PENDIENTE);
+      sinEscrituras();
+    });
+
+    it('R-5 · en producción → 409 TRANSICION_NO_DEFINIDA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'En Producción' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'R-6 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado }));
+
+        const error = await rechazo();
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    /** Record sobre la unión: un código de error nuevo sin caso aquí rompe tsc. */
+    const PROPUESTA_INVALIDA: Record<ErrorHorario, readonly [string, string]> = {
+      FIN_NO_POSTERIOR: ['2026-10-28T10:00:00-05:00', '2026-10-28T09:00:00-05:00'],
+      EN_EL_PASADO: ['2026-10-05T08:00:00-05:00', '2026-10-05T09:00:00-05:00'],
+      MULTIPLES_DIAS: ['2026-10-28T17:00:00-05:00', '2026-10-29T09:00:00-05:00'],
+      DIA_NO_HABIL: ['2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'],
+      FUERA_DE_BLOQUE: ['2026-10-28T12:30:00-05:00', '2026-10-28T13:30:00-05:00'],
+    };
+
+    it.each(Object.entries(PROPUESTA_INVALIDA) as [ErrorHorario, readonly [string, string]][])(
+      'R-7 · K4: propuesta con %s → 400 con su mensaje, sin consultar CA-06 ni escribir',
+      async (codigo, [inicio, fin]) => {
+        const error = await rechazo(franja(inicio, fin));
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).message).toBe(MENSAJES_ERROR_HORARIO[codigo]);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        sinEscrituras();
+      },
+    );
+
+    it('R-8 · K4: proponer la franja actual → 400 sin evaluar nada más', async () => {
+      const error = await rechazo({ ...OFICIAL });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_PROPUESTA_SIN_CAMBIOS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('R-9 · K5: CA-06 se evalúa sobre la PROPUESTA, excluyendo la propia solicitud → 409 sin fugas', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [{ fecha_inicio: { lt: PROPUESTA.fecha_fin } }, { fecha_fin: { gt: PROPUESTA.fecha_inicio } }],
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('R-10 · K2: en Recibido con una propuesta inválida gana el 409 del estado (orden de validación)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Recibido' }));
+
+      const error = await rechazo(franja('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+    });
+
+    it('R-11 · D5: el solicitante canceló entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const error = await rechazo();
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+        expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('R-12 · D-U: consulta el Reloj UNA sola vez por petición', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await proponer();
+
+      expect(espia).toHaveBeenCalledTimes(1);
     });
   });
 

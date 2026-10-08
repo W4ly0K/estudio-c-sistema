@@ -4,6 +4,7 @@ import { SolicitudesController } from './solicitudes.controller';
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
@@ -17,7 +18,8 @@ type MetodoControlador =
   | 'findOne'
   | 'update'
   | 'remove'
-  | 'cancelar';
+  | 'cancelar'
+  | 'proponerReprogramacion';
 
 const reflector = new Reflector();
 const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined =>
@@ -28,7 +30,7 @@ const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined 
 
 describe('SolicitudesController', () => {
   describe('Autorización declarada (@Roles / @Public)', () => {
-    it.each<MetodoControlador>(['findAll', 'update', 'remove'])(
+    it.each<MetodoControlador>(['findAll', 'update', 'remove', 'proponerReprogramacion'])(
       '%s exige el rol STAFF',
       (metodo) => {
         expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toEqual([RolUsuario.STAFF]);
@@ -56,6 +58,7 @@ describe('SolicitudesController', () => {
         'update',
         'remove',
         'cancelar',
+        'proponerReprogramacion',
       ];
       for (const metodo of metodos) {
         expect(metadatoDe<boolean>(IS_PUBLIC_KEY, metodo)).toBeUndefined();
@@ -72,6 +75,7 @@ describe('SolicitudesController', () => {
       >(),
       findOne: jest.fn<Promise<DetalleSolicitud | null>, [string, UsuarioAutenticado]>(),
       cancelar: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
+      proponerReprogramacion: jest.fn<Promise<null>, [string, ProponerReprogramacionDto, string]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -112,6 +116,18 @@ describe('SolicitudesController', () => {
       await controller.cancelar('EC-2099-0001', USUARIO_SOLICITANTE);
 
       expect(serviceMock.cancelar).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
+    });
+
+    it('proponerReprogramacion() entrega al servicio el id del Staff autenticado como autor', async () => {
+      serviceMock.proponerReprogramacion.mockResolvedValue(null);
+      const dto: ProponerReprogramacionDto = {
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+      };
+
+      await controller.proponerReprogramacion('EC-2099-0001', dto, USUARIO_STAFF);
+
+      expect(serviceMock.proponerReprogramacion).toHaveBeenCalledWith('EC-2099-0001', dto, USUARIO_STAFF.id);
     });
   });
 });
