@@ -3,7 +3,22 @@ import { JwtService } from '@nestjs/jwt';
 import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { crearAppE2E, JWT_SECRET_E2E, PrismaMockE2E } from './utils/crear-app-e2e';
+import {
+  crearAppE2E,
+  JWT_SECRET_E2E,
+  PrismaMockE2E,
+  SOLICITUD_AJENA_E2E,
+  SOLICITUD_E2E,
+} from './utils/crear-app-e2e';
+import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
+import {
+  MENSAJE_CANCELAR_EN_PRODUCCION,
+  MENSAJE_REPROGRAMACION_ACEPTADA,
+  MENSAJE_REPROGRAMACION_RECHAZADA,
+  MENSAJE_SIN_PROPUESTA_PENDIENTE,
+  MENSAJE_SOLICITUD_CANCELADA,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
+} from '../src/solicitudes/solicitudes.service';
 import {
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
@@ -220,6 +235,152 @@ describe('Cadena de seguridad Zero Trust (e2e)', () => {
         .get('/solicitudes/EC-2099-9999')
         .set('Authorization', tokenStaff())
         .expect(404);
+    });
+  });
+
+  describe('Cancelación por el solicitante — Fase 5.3 (G1–G8)', () => {
+    const cancelar = (radicado: string) =>
+      request(app.getHttpServer()).post(`/solicitudes/${radicado}/cancelar`);
+    const tokenSolicitante = (): string => bearer(firmar('uuid-solicitante', RolUsuario.SOLICITANTE));
+
+    it('19. sin token → 401 (denegar por defecto)', () => {
+      return cancelar('EC-2099-0001').expect(401);
+    });
+
+    it('20. STAFF → 403: el Staff nunca cancela en nombre del usuario (PRD §5.5)', async () => {
+      await cancelar('EC-2099-0001')
+        .set('Authorization', bearer(firmar('uuid-staff', RolUsuario.STAFF)))
+        .expect(403);
+
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('21. dueño → 200; la escritura y el log llevan la identidad del token', async () => {
+      const respuesta = await cancelar('EC-2099-0001').set('Authorization', tokenSolicitante()).expect(200);
+
+      expect(respuesta.body.mensaje).toBe(MENSAJE_SOLICITUD_CANCELADA);
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ radicado: 'EC-2099-0001', id_usuario: 'uuid-solicitante' }),
+        }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          modificado_por: 'uuid-solicitante',
+          estado_nuevo: 'Cancelado por el Usuario',
+        }),
+      });
+    });
+
+    it('22. ajeno e inexistente → 404 con cuerpo IDÉNTICO y sin escribir (anti-enumeración)', async () => {
+      const ajeno = await cancelar('EC-2099-0002').set('Authorization', tokenSolicitante()).expect(404);
+      const inexistente = await cancelar('EC-2099-9999').set('Authorization', tokenSolicitante()).expect(404);
+
+      expect(inexistente.body).toEqual(ajeno.body);
+      expect(ajeno.body.message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('23. un id_usuario en el cuerpo no cambia la identidad (Zero Trust)', async () => {
+      await cancelar('EC-2099-0001')
+        .set('Authorization', tokenSolicitante())
+        .send({ id_usuario: 'uuid-otro' })
+        .expect(200);
+
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id_usuario: 'uuid-solicitante' }) }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ modificado_por: 'uuid-solicitante' }),
+      });
+    });
+
+    it('24. la propia ya en producción → 409 con el mensaje G5 y sin escribir', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'En Producción' });
+
+      const respuesta = await cancelar('EC-2099-0001').set('Authorization', tokenSolicitante()).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CANCELAR_EN_PRODUCCION);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Respuesta a la reprogramación — Fase 5.5a (T7/T8 · L1–L9)', () => {
+    const responder = (radicado: string, accion: 'aceptar' | 'rechazar') =>
+      request(app.getHttpServer()).post(`/solicitudes/${radicado}/reprogramacion/${accion}`);
+    const tokenSolicitante = (): string => bearer(firmar('uuid-solicitante', RolUsuario.SOLICITANTE));
+    /** Propia, pendiente, con propuesta el miércoles 28 de octubre de 2026, 9:00–10:00. */
+    const PENDIENTE_E2E = {
+      ...SOLICITUD_E2E,
+      estado: 'Pendiente de Reprogramación',
+      fecha_propuesta_inicio: new Date('2026-10-28T09:00:00-05:00'),
+      fecha_propuesta_fin: new Date('2026-10-28T10:00:00-05:00'),
+    };
+
+    it.each(['aceptar', 'rechazar'] as const)('25. STAFF → %s → 403 (solo el dueño responde)', async (accion) => {
+      await responder('EC-2099-0001', accion)
+        .set('Authorization', bearer(firmar('uuid-staff', RolUsuario.STAFF)))
+        .expect(403);
+
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('26. dueño acepta → 200; Validado con la nueva franja, urgencia en false y log del token', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(PENDIENTE_E2E);
+
+      const respuesta = await responder('EC-2099-0001', 'aceptar').set('Authorization', tokenSolicitante()).expect(200);
+
+      expect(respuesta.body.mensaje).toBe(MENSAJE_REPROGRAMACION_ACEPTADA);
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id_usuario: 'uuid-solicitante' }),
+          data: expect.objectContaining({ estado: 'Validado', es_urgencia: false, fecha_propuesta_inicio: null }),
+        }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ modificado_por: 'uuid-solicitante', estado_nuevo: 'Validado' }),
+      });
+    });
+
+    it('27. dueño rechaza → 200; la solicitud queda cancelada y sin propuesta', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(PENDIENTE_E2E);
+
+      const respuesta = await responder('EC-2099-0001', 'rechazar').set('Authorization', tokenSolicitante()).expect(200);
+
+      expect(respuesta.body.mensaje).toBe(MENSAJE_REPROGRAMACION_RECHAZADA);
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ estado: 'Cancelado por el Usuario', fecha_propuesta_inicio: null }),
+        }),
+      );
+    });
+
+    it('28. ajeno e inexistente → 404 con cuerpo IDÉNTICO (anti-enumeración)', async () => {
+      const ajeno = await responder('EC-2099-0002', 'aceptar').set('Authorization', tokenSolicitante()).expect(404);
+      const inexistente = await responder('EC-2099-9999', 'aceptar').set('Authorization', tokenSolicitante()).expect(404);
+
+      expect(inexistente.body).toEqual(ajeno.body);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('29. la propuesta ya fue ocupada → 409 de CA-06 sin fugas', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(PENDIENTE_E2E).mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await responder('EC-2099-0001', 'aceptar').set('Authorization', tokenSolicitante()).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('30. sin propuesta pendiente (Recibido) → 409', async () => {
+      const respuesta = await responder('EC-2099-0001', 'aceptar').set('Authorization', tokenSolicitante()).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+    });
+
+    it('31. sin token → 401 (denegar por defecto)', () => {
+      return responder('EC-2099-0001', 'rechazar').expect(401);
     });
   });
 });

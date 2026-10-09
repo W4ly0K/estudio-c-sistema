@@ -3,12 +3,14 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
@@ -20,16 +22,144 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
+import {
+  ESTADO_INICIAL,
+  evaluarAccion,
+  evaluarTransicion,
+  type Accion,
+  type Transicion,
+  type MotivoTransicionInvalida,
+} from './reglas/maquina-estados';
 import { aMomentoLocal } from './reglas/zona-horaria';
 import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from './errores/traslape-ca06';
 import {
   DetalleSolicitud,
+  type DetalleSolicitudSolicitante,
+  type DetalleSolicitudStaff,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
 } from './proyecciones/detalle-solicitud.proyeccion';
 
 /** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
 export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
+
+/**
+ * Fase 5 · E2: un mensaje por cada motivo de la máquina de estados. Record sobre la
+ * unión: si la máquina gana un motivo nuevo sin mensaje aquí, tsc falla.
+ */
+export const MENSAJES_TRANSICION_INVALIDA: Record<MotivoTransicionInvalida, string> = {
+  ESTADO_DESCONOCIDO: 'El estado registrado de la solicitud no es válido; no se aplican cambios.',
+  MISMO_ESTADO: 'La solicitud ya se encuentra en ese estado.',
+  ESTADO_FINAL: 'La solicitud está en un estado final y no admite cambios de estado.',
+  TRANSICION_NO_DEFINIDA: 'Transición de estado no permitida desde el estado actual.',
+  ROL_NO_AUTORIZADO: 'Esta transición le corresponde al solicitante.',
+};
+
+/** E1: proponer una nueva franja necesita su propio endpoint (CA-10), no el tablero. */
+export const MENSAJE_USAR_REPROGRAMACION =
+  'Para proponer una nueva fecha use la reprogramación: POST /solicitudes/:radicado/reprogramacion.';
+
+/** D2: fuera de "Recibido", la franja solo cambia por mutuo acuerdo (CA-10). */
+export const MENSAJE_FECHAS_SOLO_EN_RECIBIDO =
+  'Las fechas solo se editan mientras la solicitud está en "Recibido". Para una solicitud validada, proponga una reprogramación.';
+
+/** D7: fail-closed, no se aprueba una franja que ya comenzó. */
+export const MENSAJE_FRANJA_VENCIDA =
+  'No se puede aprobar una solicitud cuya franja ya inició o pasó. Reprográmela antes de aprobarla.';
+
+/** E5: el log nunca guarda motivos de rechazo huérfanos. */
+export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
+  'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
+
+/**
+ * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
+ * cambió entre la lectura y la escritura). Distinto de CA-06: no es un cruce de franjas.
+ */
+export const MENSAJE_CAMBIO_CONCURRENTE =
+  'La solicitud fue modificada por otra operación mientras se procesaba este cambio. Recargue y vuelva a intentarlo.';
+
+/** Fase 5.3 · T3/T6: respuesta del comando /cancelar. */
+export const MENSAJE_SOLICITUD_CANCELADA = 'Solicitud cancelada correctamente.';
+
+/** G5: cancelar exige que la actividad no haya comenzado (PRD §4: "antes de En Producción"). */
+export const MENSAJE_CANCELAR_EN_PRODUCCION =
+  'La actividad ya comenzó ("En Producción") y la solicitud ya no puede cancelarse.';
+
+/** G5: con una propuesta de reprogramación pendiente (CA-10), la salida es aceptarla o rechazarla. */
+export const MENSAJE_CANCELAR_CON_PROPUESTA =
+  'La solicitud tiene una propuesta de reprogramación pendiente: acéptela o recházela.';
+
+/** Fase 5.4 · CA-10 · T5: respuesta del comando /reprogramacion. */
+export const MENSAJE_REPROGRAMACION_PROPUESTA =
+  'Propuesta de reprogramación registrada: queda pendiente de la respuesta del solicitante.';
+
+/** K3: en "Recibido" la franja se edita directamente (D2); CA-10 aplica a solicitudes validadas. */
+export const MENSAJE_REPROGRAMAR_EN_RECIBIDO =
+  'La solicitud aún está en "Recibido": edite sus fechas directamente (PATCH /solicitudes/:radicado). La reprogramación por mutuo acuerdo aplica a solicitudes validadas.';
+
+/** K3: "Pendiente de Reprogramación" queda congelada hasta que el solicitante responda. */
+export const MENSAJE_PROPUESTA_YA_PENDIENTE =
+  'La solicitud ya tiene una propuesta de reprogramación pendiente de respuesta del solicitante.';
+
+/** K4: proponer la franja actual no es una reprogramación. */
+export const MENSAJE_PROPUESTA_SIN_CAMBIOS =
+  'La franja propuesta es igual a la actual: no hay nada que reprogramar.';
+
+/** Fase 5.5a · CA-10 · T7: respuesta del comando /reprogramacion/aceptar. */
+export const MENSAJE_REPROGRAMACION_ACEPTADA =
+  'Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.';
+
+/** Fase 5.5a · CA-10 · T8: respuesta del comando /reprogramacion/rechazar (PRD §5.5). */
+export const MENSAJE_REPROGRAMACION_RECHAZADA =
+  'Reprogramación rechazada: la solicitud quedó cancelada y su franja liberada.';
+
+/** L5: aceptar o rechazar solo tiene sentido con una propuesta pendiente. */
+export const MENSAJE_SIN_PROPUESTA_PENDIENTE =
+  'La solicitud no tiene una propuesta de reprogramación pendiente.';
+
+/**
+ * L5 · opción (a): la propuesta venció mientras esperaba respuesta. La máquina aprobada no
+ * da salida al Staff desde "Pendiente" (ADR-005): se remite al Estudio C.
+ */
+export const MENSAJE_PROPUESTA_VENCIDA =
+  'La propuesta ya no es válida: su franja ya inició o no cumple el horario de atención. Puede rechazarla o comunicarse con el Estudio C.';
+
+/** L4 · fail-closed: "Pendiente" sin propuesta guardada (dato inconsistente; CHECK en 5.5b). */
+export const MENSAJE_PROPUESTA_NO_DISPONIBLE =
+  'La propuesta de reprogramación no está disponible. Comuníquese con el Estudio C.';
+
+/** L3: lo mínimo que leen los comandos del solicitante (sin datos de terceros). */
+export const SELECT_COMANDO_SOLICITANTE = {
+  estado: true,
+  fecha_inicio: true,
+  fecha_fin: true,
+  fecha_propuesta_inicio: true,
+  fecha_propuesta_fin: true,
+} satisfies Prisma.SolicitudSelect;
+
+type LecturaComando = Prisma.SolicitudGetPayload<{ select: typeof SELECT_COMANDO_SOLICITANTE }>;
+
+/** G7: lo que una escritura con compare-and-set necesita saber. */
+interface OperacionCompareAndSet<T> {
+  radicado: string;
+  /** Condiciones del CAS además del radicado: la fila TAL COMO SE VALIDÓ. */
+  esperado: Prisma.SolicitudWhereInput;
+  data: Prisma.SolicitudUpdateManyMutationInput;
+  /** R1: si viene, los recursos se reemplazan dentro de la misma transacción. */
+  recursos?: ReadonlyArray<{ id_recurso: number; cantidad: number }>;
+  /** CA-09: si viene, se registra el log en la misma transacción. */
+  log?: Omit<Prisma.Log_AuditoriaUncheckedCreateInput, 'radicado_solicitud'>;
+  /** Relectura dentro de la transacción (con la proyección que corresponda). */
+  releer: (tx: Prisma.TransactionClient) => Promise<T>;
+}
+
+/** E1: las únicas acciones del STAFF que se ejecutan desde el tablero (PATCH). */
+const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
+  'APROBAR',
+  'RECHAZAR',
+  'INICIAR_PRODUCCION',
+  'FINALIZAR',
+]);
 
 @Injectable()
 export class SolicitudesService {
@@ -88,7 +218,7 @@ export class SolicitudesService {
           proposito: createSolicitudeDto.proposito,
           fecha_inicio: createSolicitudeDto.fecha_inicio,
           fecha_fin: createSolicitudeDto.fecha_fin,
-          estado: 'Recibido',
+          estado: ESTADO_INICIAL,
           es_urgencia: horario.urgente,
         
           recursos: { 
@@ -211,7 +341,8 @@ export class SolicitudesService {
 
     const existente = await this.prisma.solicitud.findUnique({ where: { radicado } });
     if (!existente) {
-      throw new BadRequestException(`El radicado ${radicado} no existe en el sistema.`);
+      // H8 · ADR-002: el mismo 404 que findOne(), sin eco del radicado consultado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
     }
 
     // Franja y estado EFECTIVOS: lo que quedará guardado. Una edición parcial se
@@ -225,9 +356,27 @@ export class SolicitudesService {
     const cambianFechas =
       updateSolicitudeDto.fecha_inicio !== undefined || updateSolicitudeDto.fecha_fin !== undefined;
 
-    // --- 1. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
+    // --- 1. E5: el motivo de rechazo solo acompaña un rechazo real.
+    if (
+      updateSolicitudeDto.motivo_rechazo !== undefined &&
+      !(cambiaEstado && estadoFinal === 'Rechazado')
+    ) {
+      throw new BadRequestException(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+    }
+
+    // --- 2. Máquina de estados (Fase 5): solo transiciones legales del STAFF y solo
+    // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
+    const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal) : undefined;
+
+    // --- 3. D2: la franja se edita solo mientras la solicitud sigue en "Recibido" (estado
+    // GUARDADO). Permite el rescate atómico: fechas nuevas + aprobación en un solo PATCH.
+    if (cambianFechas && existente.estado !== ESTADO_INICIAL) {
+      throw new ConflictException(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+    }
+
+    // --- 4. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
     // reserva que ya ocurrió no debe fallar con EN_EL_PASADO (U1).
-    let cambiosDeFranja: Prisma.SolicitudUpdateInput = {};
+    let cambiosDeFranja: Prisma.SolicitudUpdateManyMutationInput = {};
     if (cambianFechas) {
       const horario = evaluarHorario(franja, ahora, calendarioLaboralColombia);
       if (!horario.valido) {
@@ -237,63 +386,385 @@ export class SolicitudesService {
       cambiosDeFranja = { fecha_inicio: franja.inicio, fecha_fin: franja.fin, es_urgencia: horario.urgente };
     }
 
-    // --- 2. CA-06, capa amable: solo si el resultado ocupa la franja y algo puede
-    // crear un cruce NUEVO: fechas movidas o reactivación desde un estado que la
-    // libera (U3, U4). Se excluye la propia solicitud (sin auto-colisión).
-    const reactiva = cambiaEstado && !ocupaFranja(existente.estado) && ocupaFranja(estadoFinal);
-    if (
-      ocupaFranja(estadoFinal) &&
-      (cambianFechas || reactiva) &&
-      (await this.hayTraslape(franja, radicado))
-    ) {
+    // --- 5. D7: fail-closed, no se aprueba una franja EFECTIVA que ya comenzó. Con fechas
+    // nuevas, evaluarHorario ya exigió el futuro; sin ellas, esta es la única defensa.
+    if (accion === 'APROBAR' && franja.inicio.getTime() <= ahora.getTime()) {
+      throw new ConflictException(MENSAJE_FRANJA_VENCIDA);
+    }
+
+    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas se
+    // movieron. D1 eliminó la reactivación: los estados que liberan la franja son finales,
+    // así que un cambio de estado ya no puede volver a ocuparla. Sin auto-colisión.
+    if (ocupaFranja(estadoFinal) && cambianFechas && (await this.hayTraslape(franja, radicado))) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
-    // --- 3. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
+    // --- 7. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
     const { recursos } = updateSolicitudeDto;
-    const data: Prisma.SolicitudUpdateInput = {
+    const data: Prisma.SolicitudUpdateManyMutationInput = {
       ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
-      ...(recursos !== undefined
-        ? {
-            recursos: {
-              deleteMany: {},
-              create: recursos.map((r) => ({
-                id_recurso: r.id_recurso,
-                cantidad_solicitada: r.cantidad,
-              })),
-            },
-          }
-        : {}),
     };
 
-    // --- 4. Persistencia. Con cambio de estado: actualización + log en UNA
-    // transacción (CA-09: hay log si y solo si cambió el estado). Sin cambio de
-    // estado: una sola sentencia, ya atómica (también con los recursos anidados).
-    try {
-      if (!cambiaEstado) {
-        const solicitud = await this.prisma.solicitud.update({ where: { radicado }, data });
-        return { mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)', solicitud };
-      }
+    // Nada que escribir (por ejemplo, pedir el estado actual): sin transacción ni bloqueos.
+    if (Object.keys(data).length === 0 && recursos === undefined) {
+      return { mensaje: 'Solicitud actualizada correctamente (sin cambio de estado)', solicitud: existente };
+    }
 
-      const [solicitud] = await this.prisma.$transaction([
-        this.prisma.solicitud.update({ where: { radicado }, data }),
-        this.prisma.log_Auditoria.create({
-          data: {
-            radicado_solicitud: radicado,
+    // --- 8. Persistencia: compare-and-set sobre la fila TAL COMO SE VALIDÓ (D5 · F1, F2):
+    // estado y franja guardados, porque sobre ellos se calcularon D2, horario, D7 y CA-06.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: {
+        estado: existente.estado,
+        fecha_inicio: existente.fecha_inicio,
+        fecha_fin: existente.fecha_fin,
+      },
+      data,
+      recursos,
+      // CA-09: hay log si y solo si cambió el estado.
+      log: cambiaEstado
+        ? {
             estado_anterior: existente.estado,
             estado_nuevo: estadoFinal,
             modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
             motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
-          },
-        }),
-      ]);
-      return { mensaje: 'Estado actualizado y auditado correctamente en la bitácora', solicitud };
-    } catch (error: unknown) {
-      return this.relanzarComoConflictoSiCa06(error, radicado);
+          }
+        : undefined,
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
+    });
+    return {
+      mensaje: cambiaEstado
+        ? 'Estado actualizado y auditado correctamente en la bitácora'
+        : 'Solicitud actualizada correctamente (sin cambio de estado)',
+      solicitud,
+    };
+  }
+
+  /**
+   * Fase 5.3 · T3/T6: el SOLICITANTE cancela su PROPIA solicitud (PRD §4 y §5.5).
+   * Orden G2: primero la propiedad (404 uniforme), después el estado (409). Así un
+   * radicado ajeno nunca revela en qué estado está (ADR-002, anti-enumeración).
+   * G4: regla de estado únicamente (Recibido o Validado), sin regla de tiempo.
+   */
+  async cancelar(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'CANCELAR',
+      (motivo, estado) => this.errorDeCancelacion(motivo, estado),
+    );
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      // G3: la propiedad también va en la ESCRITURA; el estado esperado es el leído.
+      esperado: { id_usuario: usuario.id, estado: existente.estado },
+      data: { estado: transicion.destino },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: transicion.destino,
+        modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+      },
+      // G8: proyección mínima del solicitante (sin la identidad del Staff en los logs).
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_SOLICITUD_CANCELADA, solicitud };
+  }
+
+  /**
+   * Fase 5.5a · CA-10 · T7: el SOLICITANTE acepta la propuesta GUARDADA (no envía fechas).
+   * L4: la propuesta se revalida ahora (CA-04 con el Reloj de esta petición y CA-06), porque
+   * pudo vencer u ocuparse mientras esperaba (D3). L6: es_urgencia queda en false, porque la
+   * fecha la eligió el Staff. L7: el CAS exige EXACTAMENTE la propuesta que se validó.
+   */
+  async aceptarReprogramacion(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    // Decisión D-U: un único "ahora" por petición.
+    const ahora = this.reloj.ahora();
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'ACEPTAR_REPROGRAMACION',
+      (motivo) => this.errorDeRespuestaAPropuesta(motivo),
+    );
+
+    // L4 · fail-closed: "Pendiente" sin propuesta guardada es un dato inconsistente.
+    if (existente.fecha_propuesta_inicio === null || existente.fecha_propuesta_fin === null) {
+      this.logger.warn(`Solicitud pendiente sin propuesta guardada: ${radicado}.`);
+      throw new ConflictException(MENSAJE_PROPUESTA_NO_DISPONIBLE);
     }
+    const propuesta: FranjaSolicitada = {
+      inicio: existente.fecha_propuesta_inicio,
+      fin: existente.fecha_propuesta_fin,
+    };
+
+    // L4/L5: CA-04 otra vez, con el Reloj de ESTA petición (la propuesta pudo vencer).
+    if (!evaluarHorario(propuesta, ahora, calendarioLaboralColombia).valido) {
+      throw new ConflictException(MENSAJE_PROPUESTA_VENCIDA);
+    }
+
+    // L4: CA-06 de la propuesta (consulta previa); el motor la confirma al escribir.
+    if (await this.hayTraslape(propuesta, radicado)) {
+      throw new ConflictException(MENSAJE_CA06);
+    }
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      // L7: CAS estricto: dueño, estado leído y EXACTAMENTE la propuesta validada.
+      esperado: { id_usuario: usuario.id, estado: existente.estado, fecha_propuesta_inicio: propuesta.inicio, fecha_propuesta_fin: propuesta.fin },
+      // L8 · L6: la propuesta pasa a ser la franja oficial y se limpia.
+      data: {
+        estado: transicion.destino,
+        fecha_inicio: propuesta.inicio,
+        fecha_fin: propuesta.fin,
+        fecha_propuesta_inicio: null,
+        fecha_propuesta_fin: null,
+        es_urgencia: false,
+      },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: transicion.destino,
+        modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
+      },
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_ACEPTADA, solicitud };
+  }
+
+  /**
+   * Fase 5.5a · CA-10 · T8: el SOLICITANTE rechaza la propuesta; la solicitud se cancela y
+   * la franja se libera (PRD §5.5). L9: la franja oficial se conserva como registro; la
+   * propuesta se limpia. No hay revalidación: rechazar no ocupa ninguna franja.
+   */
+  async rechazarReprogramacion(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudSolicitante }> {
+    const { propia, existente, transicion } = await this.leerPropiaYAutorizar(
+      radicado,
+      usuario,
+      'RECHAZAR_REPROGRAMACION',
+      (motivo) => this.errorDeRespuestaAPropuesta(motivo),
+    );
+
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { id_usuario: usuario.id, estado: existente.estado },
+      data: { estado: transicion.destino, fecha_propuesta_inicio: null, fecha_propuesta_fin: null },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: transicion.destino,
+        modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+      },
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_RECHAZADA, solicitud };
+  }
+
+  /**
+   * L3 · G2: lectura común de los comandos del SOLICITANTE. Primero la propiedad (404
+   * uniforme, ADR-002), después la máquina (403/409 según `traducirError`): un radicado
+   * ajeno nunca revela en qué estado está.
+   */
+  private async leerPropiaYAutorizar(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+    accion: Accion,
+    traducirError: (motivo: MotivoTransicionInvalida, estado: string) => ConflictException | ForbiddenException,
+  ): Promise<{ propia: Prisma.SolicitudWhereInput; existente: LecturaComando; transicion: Transicion }> {
+    // Decisión G (Fase 2): la propiedad va DENTRO del WHERE; nunca se leen filas ajenas.
+    const propia: Prisma.SolicitudWhereInput = { radicado, ...filtroDeAcceso(usuario) };
+    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_COMANDO_SOLICITANTE });
+    if (!existente) {
+      // G2: ajeno o inexistente → el mismo 404 (ADR-002), antes de mirar el estado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+
+    // El rol también se verifica aquí (defensa en profundidad, además de @Roles).
+    const resultado = evaluarAccion(accion, existente.estado, usuario.rol);
+    if (!resultado.permitida) {
+      throw traducirError(resultado.motivo, existente.estado);
+    }
+    return { propia, existente, transicion: resultado.transicion };
+  }
+
+  /** L5: el error al responder una propuesta según el motivo de la máquina. */
+  private errorDeRespuestaAPropuesta(motivo: MotivoTransicionInvalida): ConflictException | ForbiddenException {
+    if (motivo === 'ROL_NO_AUTORIZADO') {
+      return new ForbiddenException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA') {
+      return new ConflictException(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+  }
+
+  /**
+   * Fase 5.4 · CA-10 · T5: el STAFF propone una nueva franja para una solicitud Validada.
+   * Orden K2: existencia (404) → estado (409) → forma (400) → CA-04 (400) → CA-06 (409).
+   * La franja oficial NO cambia y sigue ocupada (D3); el EXCLUDE no protege la propuesta,
+   * por eso la aceptación (T7, paso 5.5) la vuelve a validar.
+   */
+  async proponerReprogramacion(
+    radicado: string,
+    dto: ProponerReprogramacionDto,
+    idStaff: string,
+  ): Promise<{ mensaje: string; solicitud: DetalleSolicitudStaff }> {
+    // Decisión D-U: un único "ahora" por petición.
+    const ahora = this.reloj.ahora();
+
+    const existente = await this.prisma.solicitud.findUnique({ where: { radicado } });
+    if (!existente) {
+      // H8 · ADR-002: el mismo 404 que findOne() y update().
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+
+    // K2/K3: el estado va ANTES que la forma de la propuesta (en Recibido, la respuesta
+    // útil es "use el PATCH", aunque la propuesta también traiga un error de horario).
+    const resultado = evaluarAccion('PROPONER_REPROGRAMACION', existente.estado, RolUsuario.STAFF);
+    if (!resultado.permitida) {
+      throw this.errorDeReprogramacion(resultado.motivo, existente.estado);
+    }
+
+    const propuesta: FranjaSolicitada = { inicio: dto.fecha_inicio, fin: dto.fecha_fin };
+
+    // K4: proponer la misma franja no es una reprogramación.
+    if (
+      propuesta.inicio.getTime() === existente.fecha_inicio.getTime() &&
+      propuesta.fin.getTime() === existente.fecha_fin.getTime()
+    ) {
+      throw new BadRequestException(MENSAJE_PROPUESTA_SIN_CAMBIOS);
+    }
+
+    // K4: la propuesta pasa por las MISMAS reglas que una solicitud nueva (CA-04 y Fase 3).
+    const horario = evaluarHorario(propuesta, ahora, calendarioLaboralColombia);
+    if (!horario.valido) {
+      throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
+    }
+
+    // K5 · D3: CA-06 de la franja PROPUESTA (capa amable), sin auto-colisión: la franja
+    // oficial de esta misma solicitud sigue ocupada mientras la propuesta esté pendiente.
+    if (await this.hayTraslape(propuesta, radicado)) {
+      throw new ConflictException(MENSAJE_CA06);
+    }
+
+    // K6: la franja oficial y es_urgencia NO cambian; solo el estado y la propuesta.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { estado: existente.estado, fecha_inicio: existente.fecha_inicio, fecha_fin: existente.fecha_fin },
+      data: {
+        estado: resultado.transicion.destino,
+        fecha_propuesta_inicio: propuesta.inicio,
+        fecha_propuesta_fin: propuesta.fin,
+      },
+      log: {
+        estado_anterior: existente.estado,
+        estado_nuevo: resultado.transicion.destino,
+        modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
+      },
+      // K8: proyección del Staff (franja oficial y propuesta), releída en la transacción.
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
+    });
+    return { mensaje: MENSAJE_REPROGRAMACION_PROPUESTA, solicitud };
+  }
+
+  /** K3: el error de la propuesta según el motivo de la máquina y el estado actual. */
+  private errorDeReprogramacion(motivo: MotivoTransicionInvalida, estado: string): ConflictException {
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === ESTADO_INICIAL) {
+      return new ConflictException(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'Pendiente de Reprogramación') {
+      return new ConflictException(MENSAJE_PROPUESTA_YA_PENDIENTE);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+  }
+
+  /** G5: el error de cancelación según el motivo de la máquina y el estado actual. */
+  private errorDeCancelacion(
+    motivo: MotivoTransicionInvalida,
+    estado: string,
+  ): ConflictException | ForbiddenException {
+    if (motivo === 'ROL_NO_AUTORIZADO') {
+      return new ForbiddenException(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'En Producción') {
+      return new ConflictException(MENSAJE_CANCELAR_EN_PRODUCCION);
+    }
+    if (motivo === 'TRANSICION_NO_DEFINIDA' && estado === 'Pendiente de Reprogramación') {
+      return new ConflictException(MENSAJE_CANCELAR_CON_PROPUESTA);
+    }
+    return new ConflictException(MENSAJES_TRANSICION_INVALIDA[motivo]);
+  }
+
+  /**
+   * G7 · D5: ÚNICO mecanismo de escritura sobre una solicitud existente, en UNA
+   * transacción interactiva: compare-and-set (0 filas → 409), reemplazo de recursos
+   * (R1), log de auditoría (CA-09) y relectura.
+   * En READ COMMITTED, un UPDATE concurrente espera el bloqueo de fila y re-evalúa su
+   * WHERE sobre la versión confirmada (integración I-10). El 23P01 de CA-06 lanzado
+   * dentro de la transacción conserva clase y firma (I-9) y se traduce al mismo 409.
+   */
+  private async escribirConCompareAndSet<T>(op: OperacionCompareAndSet<T>): Promise<T> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.solicitud.updateMany({
+          where: { radicado: op.radicado, ...op.esperado },
+          data: op.data,
+        });
+        if (count !== 1) {
+          // Métrica de concurrencia real (como en CA-06): solo el radicado propio.
+          this.logger.warn(`Compare-and-set perdido: ${op.radicado} cambió durante la petición.`);
+          throw new ConflictException(MENSAJE_CAMBIO_CONCURRENTE);
+        }
+
+        // R1: updateMany no admite escrituras anidadas; los recursos se reemplazan aquí.
+        if (op.recursos !== undefined) {
+          await tx.solicitud_Recurso.deleteMany({ where: { radicado_solicitud: op.radicado } });
+          await tx.solicitud_Recurso.createMany({
+            data: op.recursos.map((r) => ({
+              radicado_solicitud: op.radicado,
+              id_recurso: r.id_recurso,
+              cantidad_solicitada: r.cantidad,
+            })),
+          });
+        }
+
+        // CA-09: el log va en la MISMA transacción que el cambio de estado.
+        if (op.log !== undefined) {
+          await tx.log_Auditoria.create({ data: { radicado_solicitud: op.radicado, ...op.log } });
+        }
+
+        return op.releer(tx);
+      });
+    } catch (error: unknown) {
+      return this.relanzarComoConflictoSiCa06(error, op.radicado);
+    }
+  }
+
+  /**
+   * Fase 5 · E1/E2: valida un cambio de estado pedido por el STAFF desde el tablero.
+   * Devuelve la acción autorizada o lanza: 403 si la transición es del solicitante;
+   * 409 si el estado no la permite o si debe ir por su endpoint de comando (CA-10).
+   */
+  private autorizarTransicionDelStaff(origen: string, destino: string): Accion {
+    const resultado = evaluarTransicion(origen, destino, RolUsuario.STAFF);
+    if (!resultado.permitida) {
+      if (resultado.motivo === 'ROL_NO_AUTORIZADO') {
+        throw new ForbiddenException(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      }
+      throw new ConflictException(MENSAJES_TRANSICION_INVALIDA[resultado.motivo]);
+    }
+    if (!ACCIONES_DEL_TABLERO.has(resultado.transicion.accion)) {
+      throw new ConflictException(MENSAJE_USAR_REPROGRAMACION);
+    }
+    return resultado.transicion.accion;
   }
 
   async remove(radicado: string) {
@@ -303,7 +774,7 @@ export class SolicitudesService {
     }
 
     throw new NotImplementedException(
-      'El borrado físico de radicados está prohibido por política de auditoría. Use PATCH para cambiar estado a cancelación.'
+      'El borrado físico de radicados está prohibido por política de auditoría. Para cancelar, el solicitante usa POST /solicitudes/:radicado/cancelar.'
     );
   }
 }

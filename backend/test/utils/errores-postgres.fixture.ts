@@ -37,6 +37,20 @@ export const MENSAJE_23P01_TRANSACCION = [
   'ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23P01", message: "conflicting key value violates exclusion constraint \\"Solicitud_sin_traslape_ca06\\"", severity: "ERROR", detail: Some("Key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:15:00\\",\\"2026-10-14 15:45:00\\")) conflicts with existing key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-14 15:00:00\\",\\"2026-10-14 16:00:00\\"))."), column: None, hint: None }), transient: false })',
 ].join('\n');
 
+/**
+ * (5.2b) updateMany traslapado dentro de una $transaction INTERACTIVA → 23P01.
+ * Capturado por la integración I-9 (transaccion-interactiva.int-spec.ts), que lo
+ * compara carácter por carácter en cada ejecución: no se edita a mano.
+ */
+export const MENSAJE_23P01_TX_INTERACTIVA = [
+  '',
+  'Invalid `prisma.solicitud.updateMany()` invocation:',
+  '',
+  '',
+  'Error occurred during query execution:',
+  'ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23P01", message: "conflicting key value violates exclusion constraint \\"Solicitud_sin_traslape_ca06\\"", severity: "ERROR", detail: Some("Key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-27 14:30:00\\",\\"2026-10-27 15:30:00\\")) conflicts with existing key (tsrange(fecha_inicio, fecha_fin, \'[)\'::text))=([\\"2026-10-27 14:00:00\\",\\"2026-10-27 15:00:00\\"))."), column: None, hint: None }), transient: false })',
+].join('\n');
+
 /** (e) create con fin < inicio → 23514 de Solicitud_fechas_validas_check. */
 export const MENSAJE_23514_CHECK = [
   '',

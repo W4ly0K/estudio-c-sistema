@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UsuarioActual } from '../auth/decorators/usuario-actual.decorator';
@@ -6,6 +6,7 @@ import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 
 // Autenticación: APP_GUARD global. Autorización: @Roles por endpoint.
 @Controller('solicitudes')
@@ -45,6 +46,44 @@ export class SolicitudesController {
     @UsuarioActual() usuario: UsuarioAutenticado,
   ) {
     return this.solicitudesService.update(radicado, dto, usuario.id);
+  }
+
+  // Fase 5.4 · CA-10 · T5 (K1): solo el STAFF propone una nueva franja; la solicitud queda
+  // "Pendiente de Reprogramación" hasta que el solicitante acepte o rechace (paso 5.5).
+  @Roles(RolUsuario.STAFF)
+  @Post(':radicado/reprogramacion')
+  @HttpCode(HttpStatus.OK)
+  proponerReprogramacion(
+    @Param('radicado') radicado: string,
+    @Body() dto: ProponerReprogramacionDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.proponerReprogramacion(radicado, dto, usuario.id);
+  }
+
+  // Fase 5.3 · T3/T6 (G1): solo el DUEÑO cancela; el Staff nunca cancela por el usuario
+  // (PRD §5.5). Sin cuerpo: la identidad sale del JWT. 200 y no 201: no se crea nada.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/cancelar')
+  @HttpCode(HttpStatus.OK)
+  cancelar(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.cancelar(radicado, usuario);
+  }
+
+  // Fase 5.5a · CA-10 · T7 (L1): el DUEÑO acepta la propuesta guardada; no envía fechas.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/aceptar')
+  @HttpCode(HttpStatus.OK)
+  aceptarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.aceptarReprogramacion(radicado, usuario);
+  }
+
+  // Fase 5.5a · CA-10 · T8 (L1): el DUEÑO rechaza la propuesta; la solicitud se cancela (PRD §5.5).
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/rechazar')
+  @HttpCode(HttpStatus.OK)
+  rechazarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.rechazarReprogramacion(radicado, usuario);
   }
 
   @Roles(RolUsuario.STAFF)
