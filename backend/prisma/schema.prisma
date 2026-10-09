@@ -41,6 +41,11 @@ model Solicitud {
   num_participantes      Int?
   fecha_inicio           DateTime
   fecha_fin              DateTime
+  /// K9 (Fase 5.5b, ADR-005): las dos fechas de la propuesta existen juntas o ninguna
+  /// (Solicitud_propuesta_completa_check), solo en "Pendiente de Reprogramación"
+  /// (Solicitud_propuesta_segun_estado_check) y con fin > inicio
+  /// (Solicitud_propuesta_fechas_validas_check). Prisma no modela CHECK: ver la
+  /// migración 20261008120000_k9_propuesta_coherente.
   fecha_propuesta_inicio DateTime?          // Nullable
   fecha_propuesta_fin    DateTime?          // Nullable
   estado                 String
