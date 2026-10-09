@@ -1,8 +1,10 @@
 import { ConflictException, Logger } from '@nestjs/common';
-import { CategoriaSolicitud, Prisma, PrismaClient } from '@prisma/client';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario } from '@prisma/client';
 import { SolicitudesService } from '../../src/solicitudes/solicitudes.service';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import type { CreateSolicitudeDto } from '../../src/solicitudes/dto/create-solicitude.dto';
+import type { UsuarioAutenticado } from '../../src/auth/interfaces/usuario-autenticado.interface';
+import type { FranjaSolicitada } from '../../src/solicitudes/reglas/horario.validator';
 import {
   esViolacionDeTraslapeCa06,
   MENSAJE_CA06,
@@ -115,29 +117,60 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
     expect(esViolacionDeTraslapeCa06(error)).toBe(true);
   });
 
-  it('I-3 · CANARIO update y $transaction: reactivar una Rechazado traslapada es reconocible y no deja logs', async () => {
-    await insertar('EC-INT-A', '27', '09:00', '10:00');
-    await insertar('EC-INT-R', '27', '09:30', '10:30', 'Rechazado');
-    const reactivar = () =>
-      prisma.solicitud.update({ where: { radicado: 'EC-INT-R' }, data: { estado: 'Recibido' } });
+  it('I-3 · CANARIO T7 por el servicio: la propuesta se ocupa tras la consulta previa → 409 de CA-06 resuelto por el motor y sin logs', async () => {
+    // Fase 5.6 (N1): reemplaza el canario de la reactivación (D1 la eliminó) y de las
+    // escrituras update() y $transaction([...]), que el servicio ya no usa. Hoy toda
+    // escritura de estado pasa por la transacción interactiva con compare-and-set.
+    const solicitante: UsuarioAutenticado = {
+      id: 'uuid-solicitante-i3',
+      correo: 'solicitante-i3@prueba.local',
+      rol: RolUsuario.SOLICITANTE,
+    };
+    await prisma.usuario.create({
+      data: { id_usuario: solicitante.id, nombre: 'Solicitante I-3', correo: solicitante.correo, rol: RolUsuario.SOLICITANTE },
+    });
+    await prisma.solicitud.create({
+      data: {
+        radicado: 'EC-INT-P',
+        id_usuario: solicitante.id,
+        categoria: CategoriaSolicitud.VIDEO,
+        proposito: 'Canario T7',
+        fecha_inicio: bogota('27', '14:00'),
+        fecha_fin: bogota('27', '15:00'),
+        fecha_propuesta_inicio: bogota('28', '09:00'),
+        fecha_propuesta_fin: bogota('28', '10:00'),
+        estado: 'Pendiente de Reprogramación',
+      },
+    });
 
-    const viaUpdate = await capturar(reactivar());
-    const viaTransaccion = await capturar(
-      prisma.$transaction([
-        reactivar(),
-        prisma.log_Auditoria.create({
-          data: {
-            radicado_solicitud: 'EC-INT-R',
-            estado_anterior: 'Rechazado',
-            estado_nuevo: 'Recibido',
-            modificado_por: USUARIO,
-          },
-        }),
-      ]),
-    );
+    // Punto de prueba (tipado explícito, sin any): la consulta previa responde con la
+    // verdad ("libre") y JUSTO DESPUÉS otra solicitud confirma esa franja. Es el instante
+    // exacto entre la verificación y la escritura; solo el motor puede cerrarlo.
+    const capaAmable = service as unknown as {
+      hayTraslape: (franja: FranjaSolicitada, excluirRadicado?: string) => Promise<boolean>;
+    };
+    const consultaReal = capaAmable.hayTraslape.bind(service);
+    const respuestasPrevias: boolean[] = [];
+    jest.spyOn(capaAmable, 'hayTraslape').mockImplementationOnce(async (franja, excluirRadicado) => {
+      const ocupada = await consultaReal(franja, excluirRadicado);
+      respuestasPrevias.push(ocupada);
+      await insertar('EC-INT-O', '28', '09:30', '10:30');
+      return ocupada;
+    });
 
-    expect(esViolacionDeTraslapeCa06(viaUpdate)).toBe(true);
-    expect(esViolacionDeTraslapeCa06(viaTransaccion)).toBe(true);
+    const error = await capturar(service.aceptarReprogramacion('EC-INT-P', solicitante));
+
+    expect(respuestasPrevias).toEqual([false]);
+    expect(esConflictoCa06(error)).toBe(true);
+    expect(
+      avisos.mock.calls.some(([mensaje]: unknown[]) => String(mensaje).includes('restricción del motor')),
+    ).toBe(true);
+    expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-P' } })).toMatchObject({
+      estado: 'Pendiente de Reprogramación',
+      fecha_inicio: bogota('27', '14:00'),
+      fecha_propuesta_inicio: bogota('28', '09:00'),
+      fecha_propuesta_fin: bogota('28', '10:00'),
+    });
     expect(await prisma.log_Auditoria.count()).toBe(0);
   });
 
