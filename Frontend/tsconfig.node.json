@@ -10,6 +10,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "types": [],
+    // vitest.config.ts importa './vite.config.ts' con extensión, como pide Vite.
+    "allowImportingTsExtensions": true,
 
     "strict": true,
     "noUnusedLocals": true,

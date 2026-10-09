@@ -1,5 +1,5 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
-import viteConfig from './vite.config'
+import viteConfig from './vite.config.ts'
 
 // Configuración de pruebas separada de vite.config.ts: el build de producción no
 // carga nada de Vitest. mergeConfig reutiliza los mismos plugins (React, Tailwind).
