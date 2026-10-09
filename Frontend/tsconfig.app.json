@@ -1,0 +1,32 @@
+{
+  // Código de la aplicación (navegador). Vite compila; tsc solo verifica tipos.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    // TypeScript 6 ya no carga @types/* automáticamente: se declaran aquí.
+    // vite/client aporta import.meta.env y los módulos de recursos (*.png, *.css).
+    "types": ["vite/client"],
+
+    // Tipado estricto (regla del proyecto: sin any).
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // Sintaxis que el compilador de Vite puede borrar sin interpretar tipos.
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"]
+}

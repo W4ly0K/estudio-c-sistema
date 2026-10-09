@@ -1,8 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
+import { entorno } from './config/entorno';
 
-export default function Dashboard({ usuario, onLogout }) {
-  const [solicitudes, setSolicitudes] = useState([]);
+// Tipos mínimos para la migración (6.0.2b). El paso 6.1 los reemplaza por el
+// contrato tipado de src/api/ (estados, proyecciones y respuestas de error).
+export interface UsuarioSesion {
+  id: string;
+  nombre: string;
+  rol: 'SOLICITANTE' | 'STAFF';
+}
+
+interface SolicitudResumen {
+  radicado: string;
+  categoria: string;
+  proposito: string;
+  estado: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+}
+
+interface ErrorApi {
+  message?: string | string[];
+}
+
+interface DashboardProps {
+  usuario: UsuarioSesion;
+  onLogout: () => void;
+}
+
+export default function Dashboard({ usuario, onLogout }: DashboardProps) {
+  const [solicitudes, setSolicitudes] = useState<SolicitudResumen[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   
@@ -21,14 +48,14 @@ export default function Dashboard({ usuario, onLogout }) {
     const fetchSolicitudes = async () => {
       try {
         const token = localStorage.getItem('estudio_c_token');
-        const res = await fetch('http://localhost:3000/solicitudes/mis-solicitudes', {
+        const res = await fetch(`${entorno.apiUrl}/solicitudes/mis-solicitudes`, {
           headers: { 
               'Content-Type': 'application/json', 
               'Authorization': `Bearer ${token}` 
 }
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as SolicitudResumen[];
           setSolicitudes(data);
         }
       } catch (err) {
@@ -37,16 +64,16 @@ export default function Dashboard({ usuario, onLogout }) {
         setLoading(false);
       }
     };
-    fetchSolicitudes();
+    void fetchSolicitudes();
   }, []);
 
   // 2. Validación Shift-Left mejorada y envío al backend
-  const handleCrearSolicitud = async (e) => {
+  const handleCrearSolicitud = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorValidacion('');
 
-    const inicioNum = parseInt(form.horaInicio.replace(':', ''));
-    const finNum = parseInt(form.horaFin.replace(':', ''));
+    const inicioNum = parseInt(form.horaInicio.replace(':', ''), 10);
+    const finNum = parseInt(form.horaFin.replace(':', ''), 10);
 
     // Shift-Left A: Validar coherencia temporal
     if (inicioNum >= finNum) {
@@ -72,18 +99,20 @@ export default function Dashboard({ usuario, onLogout }) {
         fecha_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString()
       };
 
-      const res = await fetch('http://localhost:3000/solicitudes', {
+      const res = await fetch(`${entorno.apiUrl}/solicitudes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
       
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.message || 'Error al registrar la solicitud');
+        // El backend responde message como texto o, desde el ValidationPipe, como lista.
+        const errData = (await res.json()) as ErrorApi;
+        const mensaje = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message;
+        throw new Error(mensaje || 'Error al registrar la solicitud');
       }
       
-      const nuevaSolicitud = await res.json(); // <-- CORRECCIÓN 1: Renombramos la variable para mayor claridad
+      const nuevaSolicitud = (await res.json()) as SolicitudResumen; // <-- CORRECCIÓN 1: Renombramos la variable para mayor claridad
       
       // <-- CORRECCIÓN 2: Inyectamos 'nuevaSolicitud' directamente en lugar de 'respuesta.solicitud'
       setSolicitudes([nuevaSolicitud, ...solicitudes]); 
@@ -94,9 +123,8 @@ export default function Dashboard({ usuario, onLogout }) {
       setForm({ fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' });
       
     } catch (err) {
-      // Si pasa un error desde el backend (ej. Array de validaciones), lo mostramos
-      const mensajeError = Array.isArray(err.message) ? err.message.join(', ') : err.message;
-      setErrorValidacion(mensajeError);
+      // El mensaje del backend (ya unido si era una lista) se muestra tal cual.
+      setErrorValidacion(err instanceof Error ? err.message : 'Error al registrar la solicitud');
     }
   };
 
@@ -112,8 +140,8 @@ export default function Dashboard({ usuario, onLogout }) {
         </div>
         <div className="flex items-center gap-5">
           <div className="text-right">
-            <p className="text-sm font-bold text-primary">{usuario?.nombre}</p>
-            <p className="text-xs text-gray-500">Rol: <span className="font-semibold text-accent">{usuario?.rol}</span></p>
+            <p className="text-sm font-bold text-primary">{usuario.nombre}</p>
+            <p className="text-xs text-gray-500">Rol: <span className="font-semibold text-accent">{usuario.rol}</span></p>
           </div>
           <button onClick={onLogout} className="px-4 py-1.5 border border-outline rounded-sm text-sm font-medium hover:bg-gray-50 text-primary transition-colors">
             Salir
@@ -207,7 +235,7 @@ export default function Dashboard({ usuario, onLogout }) {
                 <label className="block text-gray-600 mb-1">Propósito de la reserva</label>
                 <textarea 
                   required 
-                  rows="2"
+                  rows={2}
                   className="w-full border border-outline rounded-sm p-2 text-primary resize-none" 
                   placeholder="Describe brevemente el uso..."
                   value={form.proposito}

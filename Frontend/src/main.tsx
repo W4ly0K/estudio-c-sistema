@@ -1,13 +1,19 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
 import App from './App'
-import './index.css' // <- ESTA LÍNEA ES CRÍTICA
+import { entorno } from './config/entorno'
+import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <GoogleOAuthProvider clientId="248777160383-7cea1m70ph6hukirat7e1v642avholkf.apps.googleusercontent.com">
+const contenedor = document.getElementById('root')
+if (!contenedor) {
+  throw new Error('No se encontró el elemento #root en index.html.')
+}
+
+createRoot(contenedor).render(
+  <StrictMode>
+    <GoogleOAuthProvider clientId={entorno.googleClientId}>
       <App />
     </GoogleOAuthProvider>
-  </React.StrictMode>,
+  </StrictMode>,
 )
