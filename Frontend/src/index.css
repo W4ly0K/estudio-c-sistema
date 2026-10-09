@@ -1,7 +1,49 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-body {
-  background-color: #f4f7f6;
+/*
+ * Tema del Estudio C (Tailwind v4). Cada variable --color-<nombre> genera las
+ * utilidades bg-<nombre>, text-<nombre>, border-<nombre>, etc.; --font-sans
+ * reemplaza la familia por defecto. Valores tomados del Manual de Identidad CESMAG.
+ */
+@theme {
+  /* Colores oficiales CESMAG */
+  --color-cesmag-azul-1: #1F5BA3;
+  --color-cesmag-azul-2: #2C3967;
+  --color-cesmag-rojo-1: #BA1828;
+  --color-cesmag-rojo-2: #E00F38;
+  --color-cesmag-blanco: #FFFFFF;
+
+  /* Mapeo semántico de la interfaz */
+  --color-primary: #2C3967;
+  --color-primary-hover: #1F5BA3;
+  --color-accent: #E00F38;
+  --color-accent-hover: #BA1828;
+
+  /* Fondos y bordes */
+  --color-background: #f4f7f6;
+  --color-surface: #ffffff;
+  --color-outline: #c6c6cd;
+
+  --font-sans: "Roboto", sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+  }
+
+  /*
+   * Compatibilidad con la v3 (guía oficial de actualización): la v4 cambió
+   * estos valores por defecto del preflight. Se conservan para que la migración
+   * no altere la interfaz.
+   */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
 }

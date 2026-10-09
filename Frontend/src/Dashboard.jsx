@@ -103,7 +103,7 @@ export default function Dashboard({ usuario, onLogout }) {
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
       {/* Header Institucional CESMAG - Intacto */}
-      <header className="w-full bg-surface border-b border-outline px-8 py-3 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+      <header className="w-full bg-surface border-b border-outline px-8 py-3 flex justify-between items-center sticky top-0 z-50 shadow-xs">
         <div className="flex items-center gap-4">
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-8" />
           <span className="font-bold text-primary border-l border-outline pl-4 tracking-wide">
@@ -115,7 +115,7 @@ export default function Dashboard({ usuario, onLogout }) {
             <p className="text-sm font-bold text-primary">{usuario?.nombre}</p>
             <p className="text-xs text-gray-500">Rol: <span className="font-semibold text-accent">{usuario?.rol}</span></p>
           </div>
-          <button onClick={onLogout} className="px-4 py-1.5 border border-outline rounded text-sm font-medium hover:bg-gray-50 text-primary transition-colors">
+          <button onClick={onLogout} className="px-4 py-1.5 border border-outline rounded-sm text-sm font-medium hover:bg-gray-50 text-primary transition-colors">
             Salir
           </button>
         </div>
@@ -130,7 +130,7 @@ export default function Dashboard({ usuario, onLogout }) {
           </div>
           <button 
             onClick={() => setShowModal(true)}
-            className="px-5 py-2.5 bg-accent text-white rounded shadow-sm text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"
+            className="px-5 py-2.5 bg-accent text-white rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"
           >
             <span className="text-lg">+</span> Nueva Solicitud
           </button>
@@ -145,14 +145,14 @@ export default function Dashboard({ usuario, onLogout }) {
         ) : (
           <div className="space-y-4">
             {solicitudes.map((sol) => (
-              <div key={sol.radicado} className="border border-outline rounded-lg p-6 bg-surface shadow-sm relative hover:shadow-md transition-shadow">
+              <div key={sol.radicado} className="border border-outline rounded-lg p-6 bg-surface shadow-xs relative hover:shadow-md transition-shadow">
                 <div className="flex justify-between items-start border-b border-outline pb-4 mb-4">
                   <div>
                     <div className="flex items-center gap-3 mb-1">
                       <span className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</span>
                       <span className="text-lg font-black text-primary">{sol.radicado}</span>
                     </div>
-                    <span className="inline-block px-2.5 py-1 rounded text-xs font-medium bg-gray-100 text-primary border border-gray-200">
+                    <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
                       {sol.categoria}
                     </span>
                   </div>
@@ -191,7 +191,7 @@ export default function Dashboard({ usuario, onLogout }) {
                 <label className="block text-gray-600 mb-1">Categoría</label>
                 <select 
                   required 
-                  className="w-full border border-outline rounded p-2 text-primary" 
+                  className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.categoria}
                   onChange={e => setForm({...form, categoria: e.target.value})}
                 >
@@ -208,7 +208,7 @@ export default function Dashboard({ usuario, onLogout }) {
                 <textarea 
                   required 
                   rows="2"
-                  className="w-full border border-outline rounded p-2 text-primary resize-none" 
+                  className="w-full border border-outline rounded-sm p-2 text-primary resize-none" 
                   placeholder="Describe brevemente el uso..."
                   value={form.proposito}
                   onChange={e => setForm({...form, proposito: e.target.value})}
@@ -221,7 +221,7 @@ export default function Dashboard({ usuario, onLogout }) {
                   type="date" 
                   required 
                   min={new Date().toISOString().split('T')[0]} // Bloquea días pasados en UI
-                  className="w-full border border-outline rounded p-2 text-primary" 
+                  className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.fecha}
                   onChange={e => setForm({...form, fecha: e.target.value})} 
                 />
@@ -230,23 +230,23 @@ export default function Dashboard({ usuario, onLogout }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-600 mb-1">Hora Inicio</label>
-                  <input type="time" required className="w-full border border-outline rounded p-2 text-primary" value={form.horaInicio} onChange={e => setForm({...form, horaInicio: e.target.value})} />
+                  <input type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaInicio} onChange={e => setForm({...form, horaInicio: e.target.value})} />
                 </div>
                 <div>
                   <label className="block text-gray-600 mb-1">Hora Fin</label>
-                  <input type="time" required className="w-full border border-outline rounded p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
+                  <input type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
                 </div>
               </div>
 
               {errorValidacion && (
-                <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded text-xs font-bold text-accent">
+                <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded-sm text-xs font-bold text-accent">
                   {errorValidacion}
                 </div>
               )}
 
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border border-outline rounded text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-primary text-white rounded font-bold hover:opacity-90">Enviar Radicado</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
               </div>
             </form>
           </div>
