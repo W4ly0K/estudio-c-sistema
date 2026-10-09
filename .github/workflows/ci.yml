@@ -1,7 +1,8 @@
-# CI mínimo del backend (Fase 5, paso 0).
-# Única verificación del lint: el PC de oficina bloquea tsgolint.exe y la VM no
-# tiene acceso a npm. Las baterías con base de datos (test:integracion) y
-# test:tz quedan para el workflow de infraestructura del backlog.
+# CI del backend (Fase 5, paso 0) y del frontend (Fase 6, paso 6.0.4).
+# Backend: única verificación del lint, porque el PC de oficina bloquea
+# tsgolint.exe y la VM no tiene acceso a npm. Las baterías con base de datos
+# (test:integracion) y test:tz quedan para el workflow de infraestructura del
+# backlog. Los dos jobs corren en paralelo y son independientes.
 name: CI
 
 on:
@@ -71,3 +72,52 @@ jobs:
       - name: Pruebas unitarias
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: npm test -- --ci
+
+  frontend:
+    name: Frontend (tsc · lint · test · build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Misma versión que el backend: un solo Node en todo el proyecto.
+      - name: Node 24 (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      # El lockfile incluye los binarios nativos de Linux (rolldown, oxlint,
+      # lightningcss, oxide de Tailwind), aunque se generó en Windows.
+      - name: Instalar dependencias
+        id: deps
+        run: npm ci
+
+      - name: Tipos (tsc -b)
+        run: npm run typecheck
+
+      # oxlint sin --type-aware: no-explicit-any es una regla sintáctica y no
+      # necesita tsgolint. Las tres verificaciones siguientes se ejecutan aunque
+      # una falle, para entregar el diagnóstico completo.
+      - name: Lint (oxlint, sin any)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run lint
+
+      # Las variables VITE_* de las pruebas son ficticias y viven en
+      # vitest.config.ts: el CI no necesita un .env.
+      - name: Pruebas (Vitest)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm test
+
+      # El build no valida las variables VITE_*: entorno.ts lo hace al cargar la
+      # app en el navegador. Aquí se comprueba que el bundle de producción compila.
+      - name: Build de producción
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run build
