@@ -80,6 +80,8 @@ const logBase: Log_Auditoria = {
   modificado_por: 'uuid-staff',
   fecha_modificacion: new Date(),
   motivo_rechazo: 'Equipo en mantenimiento preventivo',
+  // ... las demás propiedades
+  motivo_reprogramacion: null,
 };
 
 describe('SolicitudesService', () => {
@@ -1000,9 +1002,12 @@ describe('SolicitudesService', () => {
       estado: 'Validado',
       ...cambios,
     });
+    /** K7 · Fase 6.1b: el DTO ya llega recortado y validado por el pipe. */
+    const MOTIVO = 'Mantenimiento preventivo del set de grabación';
     const franja = (inicio: string, fin: string): ProponerReprogramacionDto => ({
       fecha_inicio: new Date(inicio),
       fecha_fin: new Date(fin),
+      motivo: MOTIVO,
     });
     /** Propuesta válida: miércoles 28 de octubre de 2026, 9:00–10:00. */
     const PROPUESTA = franja('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00');
@@ -1051,6 +1056,7 @@ describe('SolicitudesService', () => {
           estado_anterior: 'Validado',
           estado_nuevo: 'Pendiente de Reprogramación',
           modificado_por: 'uuid-staff',
+          motivo_reprogramacion: MOTIVO, // K7 · Fase 6.1b
         },
       });
       expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
@@ -1136,7 +1142,7 @@ describe('SolicitudesService', () => {
     );
 
     it('R-8 · K4: proponer la franja actual → 400 sin evaluar nada más', async () => {
-      const error = await rechazo({ ...OFICIAL });
+      const error = await rechazo({ ...OFICIAL, motivo: MOTIVO });
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).message).toBe(MENSAJE_PROPUESTA_SIN_CAMBIOS);

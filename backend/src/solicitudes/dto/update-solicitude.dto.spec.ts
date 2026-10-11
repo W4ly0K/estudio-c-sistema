@@ -3,7 +3,7 @@ import { CategoriaSolicitud } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { UpdateSolicitudeDto } from './update-solicitude.dto';
-import { ProponerReprogramacionDto } from './proponer-reprogramacion.dto';
+import { MENSAJE_MOTIVO_REPROGRAMACION, ProponerReprogramacionDto } from './proponer-reprogramacion.dto';
 
 // Mismo pipe que main.ts (fuente única): si alguien cambia la configuración real, estos tests lo notan.
 const pipe = crearValidationPipe();
@@ -98,9 +98,13 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
   });
 
   describe('ProponerReprogramacionDto (Fase 5.4 · K1)', () => {
-    const propuesta = { fecha_inicio: inicio.toISOString(), fecha_fin: fin.toISOString() };
+    const propuesta = {
+      fecha_inicio: inicio.toISOString(),
+      fecha_fin: fin.toISOString(),
+      motivo: 'Mantenimiento preventivo del set de grabación',
+    };
 
-    it('acepta solo la franja propuesta con zona horaria', async () => {
+    it('acepta la franja propuesta con zona horaria y el motivo', async () => {
       expect(await erroresDe(propuesta, ProponerReprogramacionDto)).toEqual([]);
     });
 
@@ -120,8 +124,43 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     });
 
     it('exige las dos fechas de la propuesta', async () => {
-      const errores = await erroresDe({ fecha_inicio: propuesta.fecha_inicio }, ProponerReprogramacionDto);
+      const errores = await erroresDe(
+        { fecha_inicio: propuesta.fecha_inicio, motivo: propuesta.motivo },
+        ProponerReprogramacionDto,
+      );
       expect(errores.join(' ')).toContain('fecha_fin');
+    });
+
+    describe('motivo (Fase 6.1b · K7, DB2 y DB3)', () => {
+      it('entrega el motivo recortado: el log guarda exactamente lo que se validó', async () => {
+        const dto = (await pipe.transform(
+          { ...propuesta, motivo: '   Mantenimiento del set   ' },
+          { type: 'body', metatype: ProponerReprogramacionDto },
+        )) as ProponerReprogramacionDto;
+        expect(dto.motivo).toBe('Mantenimiento del set');
+      });
+
+      it.each([
+        ['ausente', undefined],
+        ['null', null],
+        ['un número', 1234567890],
+        ['vacío', ''],
+        ['solo espacios', ' '.repeat(12)],
+        ['de 9 caracteres tras recortar', `   ${'x'.repeat(9)}   `],
+        ['de 9 emojis (18 unidades de JavaScript)', '🎬'.repeat(9)],
+        ['de 501 caracteres', 'x'.repeat(501)],
+      ])('rechaza un motivo %s con el mensaje del contrato', async (_caso, motivo) => {
+        const errores = await erroresDe({ ...propuesta, motivo }, ProponerReprogramacionDto);
+        expect(errores).toEqual([MENSAJE_MOTIVO_REPROGRAMACION]);
+      });
+
+      it.each([
+        ['de 10 caracteres', 'x'.repeat(10)],
+        ['de 500 caracteres', 'x'.repeat(500)],
+        ['de 10 emojis', '🎬'.repeat(10)],
+      ])('acepta un motivo %s (límites exactos, contados como el motor)', async (_caso, motivo) => {
+        expect(await erroresDe({ ...propuesta, motivo }, ProponerReprogramacionDto)).toEqual([]);
+      });
     });
   });
 });

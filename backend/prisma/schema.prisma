@@ -85,6 +85,13 @@ model Log_Auditoria {
   modificado_por     String
   fecha_modificacion DateTime @default(now())
   motivo_rechazo     String?  @db.Text
+  /// CA-10 · K7 (Fase 6.1b, Decisión DB1): justificación del Staff al proponer una
+  /// reprogramación. Existe si y solo si el log registra T5 (estado_nuevo = "Pendiente
+  /// de Reprogramación"; Log_Auditoria_motivo_reprogramacion_segun_estado_check) y mide
+  /// entre 10 y 500 caracteres sin los espacios de los extremos
+  /// (Log_Auditoria_motivo_reprogramacion_longitud_check). Prisma no modela CHECK: ver
+  /// la migración 20261009200000_motivo_reprogramacion.
+  motivo_reprogramacion String? @db.Text
 
   // Relaciones
   solicitud  Solicitud @relation(fields: [radicado_solicitud], references: [radicado])

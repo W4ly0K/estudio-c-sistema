@@ -179,8 +179,16 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
     const error = await capturar(
       prisma.$transaction(async (tx) => {
         // El log se escribe ANTES a propósito: la prueba exige que el 23514 lo revierta.
+        // Lleva un motivo válido (Fase 6.1b): así el log cumple su propia regla y el
+        // único rechazo posible es el de K9 sobre la solicitud.
         await tx.log_Auditoria.create({
-          data: { radicado_solicitud: 'EC-K9-H', estado_anterior: 'Validado', estado_nuevo: PENDIENTE, modificado_por: STAFF },
+          data: {
+            radicado_solicitud: 'EC-K9-H',
+            estado_anterior: 'Validado',
+            estado_nuevo: PENDIENTE,
+            modificado_por: STAFF,
+            motivo_reprogramacion: 'Motivo válido del ensayo de clasificación K9',
+          },
         });
         await tx.solicitud.updateMany({
           where: { radicado: 'EC-K9-H', estado: 'Validado' },
@@ -201,7 +209,11 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
 
   describe('I-18 · las rutas legales del servicio respetan K9 sobre la base real', () => {
     let service: SolicitudesService;
-    const propuesta = { fecha_inicio: bogota('28', '14:00'), fecha_fin: bogota('28', '15:00') };
+    const propuesta = {
+      fecha_inicio: bogota('28', '14:00'),
+      fecha_fin: bogota('28', '15:00'),
+      motivo: 'Mantenimiento preventivo del set de grabación', // K7 · Fase 6.1b
+    };
 
     beforeEach(async () => {
       // Mismo patrón que I-1 (ca06.int-spec.ts): el cliente de integración en lugar de PrismaService.

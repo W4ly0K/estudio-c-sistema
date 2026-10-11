@@ -76,6 +76,8 @@ const LOG_E2E: Log_Auditoria = {
   modificado_por: 'uuid-staff',
   fecha_modificacion: new Date(),
   motivo_rechazo: null,
+  // ... las demás propiedades
+  motivo_reprogramacion: null,
 };
 
 interface ArgsCreateSolicitud {

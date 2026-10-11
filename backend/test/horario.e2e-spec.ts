@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
+import { MENSAJE_MOTIVO_REPROGRAMACION } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_REPROGRAMACION_PROPUESTA,
@@ -246,7 +247,12 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
   });
 
   describe('POST /solicitudes/:radicado/reprogramacion · CA-10 (Fase 5.4 · K1–K9)', () => {
-    const PROPUESTA = { fecha_inicio: '2026-10-28T09:00:00-05:00', fecha_fin: '2026-10-28T10:00:00-05:00' };
+    const MOTIVO = 'Mantenimiento preventivo del set de grabación';
+    const PROPUESTA = {
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      motivo: MOTIVO,
+    };
     const proponer = (body: object, bearer: string = tokenStaff) =>
       request(app.getHttpServer())
         .post(`/solicitudes/${SOLICITUD_E2E.radicado}/reprogramacion`)
@@ -276,7 +282,11 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
         }),
       );
       expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ estado_nuevo: 'Pendiente de Reprogramación', modificado_por: 'uuid-staff' }),
+        data: expect.objectContaining({
+          estado_nuevo: 'Pendiente de Reprogramación',
+          modificado_por: 'uuid-staff',
+          motivo_reprogramacion: MOTIVO, // K7 · Fase 6.1b
+        }),
       });
     });
 
@@ -286,6 +296,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       const respuesta = await proponer({
         fecha_inicio: '2026-10-31T09:00:00-05:00',
         fecha_fin: '2026-10-31T10:00:00-05:00',
+        motivo: MOTIVO,
       }).expect(400);
 
       expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
@@ -316,6 +327,16 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(JSON.stringify(respuesta.body)).toContain('property estado should not exist');
       expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('40. K7: sin motivo → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async () => {
+      const sinMotivo = { fecha_inicio: PROPUESTA.fecha_inicio, fecha_fin: PROPUESTA.fecha_fin };
+
+      const respuesta = await proponer(sinMotivo).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_REPROGRAMACION]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
     });
   });
 });
