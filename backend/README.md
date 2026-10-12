@@ -215,6 +215,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-003 — Reglas de horario, días hábiles y zona horaria](../docs/adr/ADR-003-reglas-de-horario.md)
 - [ADR-004 — Concurrencia y anti-traslape (CA-06) garantizados por el motor](../docs/adr/ADR-004-concurrencia-ca06.md)
 - [ADR-005 — Máquina de estados y reprogramación por mutuo acuerdo (CA-10)](../docs/adr/ADR-005-maquina-de-estados-ca10.md)
+- [ADR-006 — Bases del frontend y contrato tipado con la API](../docs/adr/ADR-006-frontend-contrato-tipado.md) (el consumidor de este contrato; ver también el [README del frontend](../Frontend/README.md))
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
