@@ -2,8 +2,9 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado (pasos 6.0 y 6.1; la Fase 6 lo amplía en 6.2 a 6.5) |
+| **Estado** | ✅ Aceptado (pasos 6.0 a 6.2; la Fase 6 lo amplía en 6.3 a 6.5) |
 | **Fecha** | 2026-10-11 |
+| **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -22,6 +23,8 @@ El diagnóstico de la Fase 6 (solo lectura) encontró un frontend de unas 330 l�
 5. **F7 · Sin pruebas ni CI.**
 
 F2 (zona horaria), F3 (validación local que contradice CA-04) y F5 (vistas por rol) se resuelven en los pasos 6.3 a 6.5.
+
+El paso 6.2 partió de dos hechos más del backend: `app.enableCors()` sin opciones permitía **cualquier** origen, y no existía un endpoint que dijera "quién soy": el nombre del usuario solo llegaba en la respuesta del login, así que al recargar no había con qué reconstruir la sesión (F4).
 
 **Principio rector de la fase:** *el frontend refleja; el backend decide.* La UI puede saber qué botones mostrar, pero la legalidad de cada acción la decide el servidor.
 
@@ -90,6 +93,45 @@ type ErrorApi =
 - Se verifica con `@ts-expect-error`: si una de esas líneas compilara, `tsc` la reportaría como "expect-error sin usar".
 - Los radicados van con `encodeURIComponent` y los filtros con `URLSearchParams`: un radicado como `EC-1/../cancelar` no puede cambiar la ruta.
 
+### 2.7 CORS con lista blanca (paso 6.2.1 · Decisión DS2)
+
+- `CORS_ORIGENES` lista los orígenes permitidos, separados por comas. **Obligatoria (*fail-fast*)**, como `JWT_SECRET`: si falta o es inválida, la API no arranca y el mensaje dice cómo corregirla.
+- `leerOrigenesCors()` es una función pura: rechaza `*`, URL inválidas, esquemas distintos de `http(s)` y cualquier origen que no sea **exacto**. La comparación es contra `URL.origin`, la forma canónica que usa el navegador, así que una ruta, una barra final, mayúsculas o el puerto por defecto dan error con la forma correcta sugerida.
+- Opciones explícitas: `GET`, `POST`, `PATCH` y `DELETE`; encabezados `Authorization`, `Content-Type` y `Accept`; `credentials: false` (no hay cookies) y *preflight* reutilizable 10 minutos.
+- `aplicarCors()` es la **única** forma de configurarlo: la usan `main.ts` y la app de los e2e, igual que `crearValidationPipe()`.
+- **Lo que CORS protege, sin exagerarlo:** es una barrera del navegador, no del servidor. Una petición desde un origen ajeno **sí llega** a la API (la prueba C-3 lo demuestra con un 401 del JWT); el navegador solo impide leer la respuesta. Como el token viaja en un encabezado y no en una cookie, CSRF no aplica: CORS es defensa en profundidad, no el control de acceso.
+
+### 2.8 `GET /auth/perfil` (paso 6.2.2 · Decisión DS1)
+
+- Responde `{ id, nombre, rol }`: la **misma forma** que el `usuario` del login, validada en el frontend con un único esquema. Sin el correo (minimización), y sin `@Public()` ni `@Roles()`: cualquier usuario autenticado consulta **su propio** perfil, con la identidad tomada del token.
+- **No se decodifica el JWT en el frontend:** el payload no trae el nombre, y leer un token sin verificar su firma es confiar en algo que cualquiera puede alterar. El perfil se lee de la base de datos en cada consulta: si el Staff degrada o elimina a alguien, el perfil lo refleja de inmediato (prueba e2e PE-4: un Staff degradado, con un token que todavía dice `STAFF`, se ve como `SOLICITANTE`).
+- `SELECT_PERFIL` (lista blanca de columnas) y `perfilDe()` son la única traducción de una fila al perfil público. El login se refactorizó para usar la misma función: así el login y el perfil no pueden divergir.
+- Si el usuario se elimina entre la validación del token y la consulta, responde 401 (*fail-closed*, mismo mensaje que `JwtStrategy`).
+
+### 2.9 La sesión del frontend como máquina de estados (paso 6.2.3 · Decisión DS3)
+
+```ts
+type Sesion =
+  | { estado: 'verificando' }                        // hay token; se confirma con GET /auth/perfil
+  | { estado: 'anonima'; aviso: string | null }
+  | { estado: 'autenticada'; usuario: UsuarioSesion }
+  | { estado: 'sin-conexion' };                      // no se pudo verificar: el token se CONSERVA
+```
+
+- **Estados con nombre en lugar de banderas booleanas.** Cada estado lleva solo los datos que tienen sentido en él: no existe un `usuario` mientras se verifica.
+- **Una máquina pura y un hook que la conecta** (el patrón del backend: `maquina-estados.ts` y el servicio). `reducirSesion()` en `maquina-sesion.ts` se prueba con una tabla de transiciones, sin React. `useSesion()` conecta la máquina con el token guardado, `GET /auth/perfil` y el 401 de cualquier ruta privada, y crea la api una sola vez.
+- **Un evento que no corresponde al estado actual se ignora** y se devuelve el **mismo objeto** (React no vuelve a renderizar). Es la defensa contra las respuestas tardías: un perfil que llega después de cerrar la sesión no la reabre, y un 401 tardío sin sesión no muestra "tu sesión expiró". Es el mismo principio del *compare-and-set*: un cambio solo se aplica si el estado sigue siendo el que se validó.
+
+| Al recargar | `GET /auth/perfil` | Estado |
+|---|---|---|
+| Sin token | No se llama | `anonima` |
+| Con token | 200 | `autenticada`, sin volver a pedir login |
+| Con token | 401 (vencido o usuario eliminado) | `anonima` con "Tu sesión expiró"; el token se borra |
+| Con token | Red caída, 5xx o contrato roto | `sin-conexion`, con **Reintentar**. El token **no** se borra: una caída del servidor no debe cerrar la sesión |
+
+- La App es un `switch` sobre el estado: ninguno queda sin pantalla. Mientras dura `verificando` se muestra *"Verificando tu sesión…"*, así que el login no parpadea antes de saltar al panel.
+- **Fuera de alcance (DS4):** cerrar la sesión en todas las pestañas a la vez, cerrarla de forma proactiva al vencer el JWT, revocar tokens en el servidor y la cookie `httpOnly` (DF2). Están en la §5.
+
 ---
 
 ## 3. Verificación
@@ -102,6 +144,9 @@ type ErrorApi =
 | DC4 | `contrato.test.ts` (6) · `maquina-estados.test.ts` (oráculo de las 14 combinaciones de estado y rol) |
 | §2.6 | `solicitudes.test.ts` (rutas, codificación y 4 `@ts-expect-error`) · `auth.test.ts` |
 | Integración en la UI | `App.test.tsx` (login, dominio rechazado y 401 que cierra la sesión, con un servidor falso por ruta) · `Dashboard.test.tsx` (api falsa inyectada) |
+| DS2 (backend) | `configurar-cors.spec.ts` (14) · e2e C-1 a C-4 (*preflight* permitido y ajeno, petición ajena que llega pero no se lee, `Vary: Origin`) |
+| DS1 (backend) | `auth.service.spec.ts` P-1 a P-3 · `auth.controller.spec.ts` · e2e PE-1 a PE-5 |
+| DS3 | `maquina-sesion.test.ts` (8 transiciones y 6 eventos ignorados, con `toBe`) · `use-sesion.test.ts` (10) · `App.test.tsx` (restaurar al recargar y servidor caído) |
 
 **Sabotajes (mutaciones manuales, todas detectadas y revertidas):**
 
@@ -113,10 +158,22 @@ type ErrorApi =
 | 6.1.1 | El mensaje concurrente sin su punto final | La prueba de deriva |
 | 6.1.2 | El radicado sin `encodeURIComponent` | Las 5 pruebas de URL |
 | 6.1.2 | `status > 500` en lugar de `>= 500` | El 500 de NestJS llegaba crudo a la pantalla |
+| 6.2.2 | `correo: true` en `SELECT_PERFIL` | P-1: el correo ni siquiera debe leerse |
+| 6.2.2 | El perfil de un id fijo en lugar del id del token | La prueba del controlador |
+| 6.2.3 | `perfil-confirmado` sin la guarda de estado | Los dos eventos ignorados de perfiles tardíos |
+| 6.2.3 | Tratar el 401 del perfil como una falla de red | La prueba del token vencido |
 
 **Verificación manual (6.1.3):** login, lista y creación; un token alterado devuelve al login con el aviso de sesión expirada; con el backend apagado aparece el mensaje de red y la UI no se rompe.
 
-**Resultado:** `npm run typecheck` y `npm run lint` limpios · `npm test` 11 archivos · 105 ✅ · CI con los jobs Backend y Frontend en verde.
+**Verificación manual (6.2):**
+- sin `CORS_ORIGENES`, la API se niega a arrancar con el `FATAL ERROR`; con la variable, el flujo completo funciona sin errores de CORS en la consola;
+- al recargar (F5) con sesión, se ve *"Verificando tu sesión…"* y luego el panel, sin pasar por el login;
+- con el backend detenido, al recargar aparece la pantalla de reintento y el token sigue guardado; con el backend arriba, **Reintentar** entra al panel;
+- un token alterado devuelve al login con el aviso; **Salir** deja el login sin aviso.
+
+**Resultado al cierre de 6.1:** `npm test` del frontend, 11 archivos · 105 ✅.
+
+**Resultado al cierre de 6.2:** frontend `npm test` 13 archivos · 134 ✅ · backend `npm test` 705 ✅ y 1 omitida · `npm run test:e2e` 5 suites · 64 ✅ · CI con los jobs Backend y Frontend en verde, 0 advertencias de lint.
 
 ---
 
@@ -124,19 +181,23 @@ type ErrorApi =
 
 - **Positivas:**
   - ninguna respuesta de la API llega a la UI sin validar, y ningún error queda sin un texto para la persona;
-  - un 401 ya no deja un panel muerto;
+  - un 401 ya no deja un panel muerto, y la sesión sobrevive a una recarga y a una caída del servidor (F4 resuelto);
+  - la API solo responde a los orígenes del frontend en el navegador;
   - las desalineaciones con el backend fallan en el CI, no en producción;
   - los cuerpos ilegales no compilan.
 - **Costo:**
   - una dependencia nueva (Zod);
   - una copia de la máquina que hay que mantener, vigilada por la prueba de deriva;
-  - la prueba de deriva depende del formato de una línea por transición en el backend: si cambia, falla de forma ruidosa y se actualiza a propósito.
+  - la prueba de deriva depende del formato de una línea por transición en el backend: si cambia, falla de forma ruidosa y se actualiza a propósito;
+  - una variable de entorno obligatoria más (`CORS_ORIGENES`) en cada despliegue del backend;
+  - restaurar la sesión cuesta una petición (`GET /auth/perfil`) al cargar la página.
 - **Mantenimiento:** una ruta nueva sigue la lista de verificación del README del frontend (§5): esquema primero, una función por ruta, el cuerpo más estrecho posible y pruebas en el mismo commit.
 
 ## 5. Riesgos y deuda conocida
 
 - **F2 y F3 (6.3):** `toISOString()` todavía usa la zona del navegador al crear, y la validación local del almuerzo contradice CA-04.
-- **F4 (6.2):** la sesión no se restaura al recargar; el backend no tiene un endpoint de perfil. CORS sin restricción de origen.
+- **Sesión (DS4, fuera del 6.2):** cerrar la sesión en todas las pestañas a la vez (evento `storage`); cerrarla de forma proactiva al vencer el JWT (hoy se cierra con el primer 401); revocar tokens en el servidor al salir (el JWT es *stateless*: uno robado sigue vigente hasta sus 8 h); la cookie `httpOnly` (DF2).
+- **Backend:** el puerto 3000 sigue fijo en `main.ts`.
 - **Backend:** `findMisSolicitudes()` y `findAll()` usan `include` y devuelven todas las columnas (punto 8 de su lista de verificación). El lector tolerante las descarta, pero viajan por la red.
 - **Accesibilidad:** las etiquetas del formulario no están asociadas a sus campos (`htmlFor`); `jsx-a11y` entra con las vistas de 6.4.
 - **CI:** `actions/checkout` y `setup-node` `@v4` corren sobre Node 20 (aviso de obsolescencia): subir a `@v5` junto con la fijación por SHA, en los dos jobs.
@@ -155,4 +216,9 @@ type ErrorApi =
 | `6c2e6b0` | 6.1.1 · Esquemas Zod, máquina de la vista y prueba de deriva |
 | `ab3c3b8` | 6.1.2 · Cliente con resultados tipados y una función por ruta |
 | `fda9515` | 6.1.3 · App y Dashboard usan el cliente; un 401 cierra la sesión |
-| — | Este ADR y el README del frontend |
+| `7e088dc` | 6.1 · Este ADR y el README del frontend |
+| `14b9e56` | Supresión justificada de `no-misused-spread` en `longitudReal` (el CI la exigía) |
+| `150bf4a` | 6.2.1 · CORS con lista blanca y *fail-fast* |
+| `96b048e` | 6.2.2 · `GET /auth/perfil` con el rol leído de la base de datos |
+| `fa9a73b` | 6.2.3 · La sesión como máquina de estados |
+| — | 6.2.4 · Esta actualización (§2.7 a §2.9) y los README |

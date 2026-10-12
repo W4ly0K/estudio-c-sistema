@@ -18,7 +18,7 @@ El *por qué* de este diseño está en [ADR-006](../docs/adr/ADR-006-frontend-co
 
 ## 1. Configuración local
 
-Requisitos: Node.js **24** (la misma versión del CI) y el backend corriendo (por defecto en `http://localhost:3000`).
+Requisitos: Node.js **24** (la misma versión del CI) y el backend corriendo (por defecto en `http://localhost:3000`), con `CORS_ORIGENES` que incluya el origen del frontend (`http://localhost:5173`; ver el README del backend §2). Sin eso, el navegador bloquea las respuestas por CORS.
 
 ```bash
 cd Frontend
@@ -43,7 +43,7 @@ npm run dev                  # http://localhost:5173
 | `npm run dev` | Servidor de desarrollo con recarga automática |
 | `npm run typecheck` | `tsc -b`: tipos de la app y de la configuración (incluye las pruebas) |
 | `npm run lint` | oxlint sobre `src/`; cualquier advertencia falla |
-| `npm test` | Vitest una vez (105 pruebas) |
+| `npm test` | Vitest una vez (134 pruebas) |
 | `npm run test:watch` | Vitest en modo observación |
 | `npm run build` | `tsc -b && vite build`: un error de tipos impide el build |
 
@@ -65,9 +65,12 @@ src/
 │   ├── crear-api.ts      Raíz de composición: conecta el cliente con el entorno y el navegador
 │   └── contrato.test.ts  Prueba de deriva contra el código del backend
 ├── config/entorno.ts     Variables de entorno validadas (fail-fast)
-├── sesion/token.ts       Único módulo que conoce localStorage (con try/catch)
+├── sesion/
+│   ├── token.ts          Único módulo que conoce localStorage (con try/catch)
+│   ├── maquina-sesion.ts Máquina pura de la sesión: estados, eventos y reducirSesion()
+│   └── use-sesion.ts     Hook dueño de la sesión: conecta la máquina con el token, el perfil y el 401
 ├── test/                 setup.ts (jest-dom) y fixtures-api.ts (cargas del contrato y fetch falso)
-├── App.tsx               Dueña de la sesión; crea la api y la inyecta
+├── App.tsx               Una pantalla por estado de la sesión; inyecta la api en el panel
 └── Dashboard.tsx         Panel del solicitante (recibe la api por props)
 ```
 
@@ -95,7 +98,21 @@ mostrar(resultado.datos.solicitud) // tipado y validado
 | `red` | El servidor no respondió | *"No pudimos conectar con el servidor…"* |
 | `contrato` | Respondió 2xx con algo que no cumple el esquema | Mensaje genérico; en la consola, la ruta y los campos que fallaron (nunca los datos) |
 
-## 5. ✅ Lista de verificación para consumir una ruta nueva
+## 5. La sesión
+
+La sesión es una máquina de estados (`src/sesion/maquina-sesion.ts`, ADR-006 §2.9). La App renderiza una pantalla por estado:
+
+| Estado | Cuándo | Pantalla |
+|---|---|---|
+| `verificando` | Al cargar con un token guardado, o al reintentar | *"Verificando tu sesión…"* (sin mostrar el login) |
+| `autenticada` | `GET /auth/perfil` respondió 200, o el login fue correcto | El panel |
+| `anonima` | Sin token, al salir, o tras un 401 (con el aviso *"Tu sesión expiró"*) | El login |
+| `sin-conexion` | El perfil no se pudo verificar (red, 5xx o contrato) | Reintentar o cerrar sesión. **El token se conserva** |
+
+- Un evento que no corresponde al estado actual se ignora: una respuesta tardía nunca reabre una sesión cerrada.
+- Ningún componente toca la sesión directamente: todo pasa por `useSesion()` (`iniciarSesion`, `cerrarSesion`, `reintentar`) y por `alExpirarSesion` del cliente.
+
+## 6. ✅ Lista de verificación para consumir una ruta nueva
 
 1. **Esquema primero** en `esquemas.ts`, y el tipo con `z.infer`. Nunca un `interface` escrito a mano para una respuesta.
 2. Declara solo los campos que la UI usa (lector tolerante). Los estados, siempre con `esquemaEstado`.
@@ -108,14 +125,14 @@ mostrar(resultado.datos.solicitud) // tipado y validado
 9. Nada de `dangerouslySetInnerHTML` (`react/no-danger` es error): React escapa los mensajes del servidor.
 10. Pruebas en el mismo commit: la función con el fetch falso (`crearEntornoDePrueba`) y el componente con una api falsa inyectada.
 
-## 6. Pruebas
+## 7. Pruebas
 
 - `src/api/*.test.ts`: esquemas, máquina (oráculo de las 14 combinaciones de estado y rol), cliente (18 casos de transporte y error), una prueba por ruta y la **prueba de deriva**.
 - **Prueba de deriva (`contrato.test.ts`):** lee como texto (`?raw` de Vite) `backend/src/solicitudes/reglas/maquina-estados.ts`, `backend/prisma/schema.prisma` y `backend/src/solicitudes/solicitudes.service.ts`, y compara estados, acciones, transiciones, roles, categorías y el mensaje concurrente. Exige encontrar exactamente 9 transiciones: un cambio de formato en el backend falla en lugar de pasar sin comparar nada. `vitest.config.ts` permite leer `..` solo en las pruebas.
 - Las variables de entorno de las pruebas son ficticias y viven en `vitest.config.ts`: las pruebas no dependen del `.env.local` de nadie.
+- `src/sesion/*.test.ts`: la máquina con una tabla de transiciones (incluidos los eventos ignorados, verificados con `toBe`) y el hook con `renderHook` y un `fetch` falso por ruta.
 
-## 7. Pendiente en la Fase 6
+## 8. Pendiente en la Fase 6
 
-- **6.2:** restaurar la sesión al recargar y CORS limitado al origen del frontend.
 - **6.3:** fechas en `America/Bogota` (hoy `toISOString()` usa la zona del navegador) y retiro de la validación local que contradice CA-04.
 - **6.4 y 6.5:** vistas del solicitante (B1 a B4) y del Staff (tablero y acciones).

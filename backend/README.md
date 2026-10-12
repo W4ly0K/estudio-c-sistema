@@ -69,8 +69,8 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test                 # Pruebas unitarias (685; 1 omitida por diseño)
-npm run test:e2e         # Pruebas end-to-end por HTTP real (55)
+npm test                 # Pruebas unitarias (705; 1 omitida por diseño)
+npm run test:e2e         # Pruebas end-to-end por HTTP real (64)
 npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias
 npm run test:integracion # CA-06, K9, motivo y concurrencia contra PostgreSQL real, en una base DESECHABLE (41)
 ```
@@ -128,6 +128,7 @@ Petición HTTP
 | `@Roles(...)` | `src/auth/decorators/roles.decorator.ts` | Restringe un endpoint o controlador a uno o más roles. El del método tiene prioridad sobre el de la clase |
 | `@UsuarioActual()` | `src/auth/decorators/usuario-actual.decorator.ts` | Inyecta la identidad verificada (`UsuarioAutenticado`). Responde 401 si no existe (fail-closed) |
 | `crearValidationPipe()` | `src/common/pipes/crear-validation-pipe.ts` | Única fuente de la configuración de validación (la usan `main.ts`, los tests y los e2e) |
+| `aplicarCors(app, valor)` | `src/common/cors/configurar-cors.ts` | Única forma de configurar CORS: lista blanca de `CORS_ORIGENES`, validada con *fail-fast* (la usan `main.ts` y los e2e). Es una barrera del navegador, no reemplaza al JWT ni a los guards ([ADR-006 §2.7](../docs/adr/ADR-006-frontend-contrato-tipado.md)) |
 | `filtroDeAcceso(usuario)` | `src/solicitudes/politicas/filtro-de-acceso.ts` | Política de acceso por fila: devuelve el fragmento de `WHERE` que limita lo que cada rol puede ver. Un rol nuevo sin política **no compila** |
 | `SELECT_DETALLE_*` | `src/solicitudes/proyecciones/detalle-solicitud.proyeccion.ts` | Proyecciones por rol (`select` = lista blanca). La del solicitante no expone identidades internas ni inventario |
 | `Reloj` | `src/common/reloj/reloj.ts` | Fuente inyectable del "ahora". Pídelo **una sola vez** por operación. En pruebas se reemplaza por `RelojFijo` (`test/utils/`) |
@@ -189,6 +190,7 @@ src/
 │   ├── jwt-auth.guard.ts
 │   └── jwt.strategy.ts  Valida el JWT y consulta el usuario vigente en la BD
 ├── common/
+│   ├── cors/            aplicarCors() y leerOrigenesCors() (lista blanca, fail-fast)
 │   ├── pipes/           crearValidationPipe()
 │   ├── reloj/           Reloj (abstracto) y RelojDelSistema
 │   └── validadores/     @FechaConZonaHoraria(), @TextoConLongitudReal()
