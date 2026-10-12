@@ -6,6 +6,9 @@ import viteConfig from './vite.config.ts'
 export default mergeConfig(
   viteConfig,
   defineConfig({
+    // La prueba de deriva (src/api/contrato.test.ts) lee archivos de ../backend con
+    // ?raw: se permite leer desde la raíz del repositorio, solo en las pruebas.
+    server: { fs: { allow: ['..'] } },
     test: {
       environment: 'jsdom',
       include: ['src/**/*.test.{ts,tsx}'],
