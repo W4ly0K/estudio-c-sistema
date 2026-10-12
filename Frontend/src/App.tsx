@@ -1,51 +1,60 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
-import Dashboard, { type UsuarioSesion } from './Dashboard';
+import Dashboard from './Dashboard';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
-import { entorno } from './config/entorno';
-
-// Tipo mínimo de la respuesta de POST /auth/google/login. El paso 6.1 lo
-// reemplaza por el contrato tipado de src/api/.
-interface RespuestaLogin {
-  token: string;
-  usuario: UsuarioSesion;
-}
-
+import { crearApi } from './api/crear-api';
+import { TEXTO_SESION_EXPIRADA, textoDeError } from './api/errores';
+import type { UsuarioSesion } from './api/esquemas';
+import { borrarToken, guardarToken, leerToken } from './sesion/token';
 
 function App() {
   const [status, setStatus] = useState('');
   const [userData, setUserData] = useState<UsuarioSesion | null>(null);
 
-  const handleLoginSuccess = async (credentialResponse: CredentialResponse) => {
-    setStatus('Autenticando...');
-    try {
-      const res = await fetch(`${entorno.apiUrl}/auth/google/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: credentialResponse.credential })
-      });
+  // DC3: ante un 401 en cualquier ruta privada, el cliente llama aquí. La App es la
+  // dueña de la sesión: borra el token y vuelve al login con un aviso.
+  const expirarSesion = useCallback(() => {
+    borrarToken();
+    setUserData(null);
+    setStatus(`⚠️ ${TEXTO_SESION_EXPIRADA}`);
+  }, []);
 
-      if (!res.ok) throw new Error('Acceso restringido a @unicesmag.edu.co');
-      
-      // Aserción temporal: 6.1 la reemplaza por apiFetch, que valida la respuesta.
-      const data = (await res.json()) as RespuestaLogin;
-      localStorage.setItem('estudio_c_token', data.token);
-      setUserData(data.usuario);
-      
-    } catch (error) {
-      console.error('Error:', error);
-      setStatus("❌ " + (error instanceof Error ? error.message : 'Error desconocido'));
+  // Un solo cliente durante toda la vida de la App. Si se creara en cada render, el
+  // efecto del Dashboard (que depende de la api) volvería a pedir las solicitudes en
+  // un ciclo sin fin. useMemo + useCallback lo mantienen estable.
+  const api = useMemo(
+    () => crearApi({ obtenerToken: leerToken, alExpirarSesion: expirarSesion }),
+    [expirarSesion],
+  );
+
+  const handleLoginSuccess = async (credentialResponse: CredentialResponse) => {
+    const credencial = credentialResponse.credential;
+    if (credencial === undefined) {
+      setStatus('❌ Google no entregó la credencial. Intenta de nuevo.');
+      return;
     }
+
+    setStatus('Autenticando...');
+    const resultado = await api.auth.loginConGoogle(credencial);
+    if (!resultado.ok) {
+      // Mensaje del servidor tal cual (por ejemplo, el del dominio institucional).
+      setStatus(`❌ ${textoDeError(resultado.error)}`);
+      return;
+    }
+
+    guardarToken(resultado.datos.token);
+    setStatus('');
+    setUserData(resultado.datos.usuario);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('estudio_c_token');
+    borrarToken();
     setUserData(null);
     setStatus('');
   };
 
   if (userData) {
-    return <Dashboard usuario={userData} onLogout={handleLogout} />;
+    return <Dashboard usuario={userData} onLogout={handleLogout} api={api.solicitudes} />;
   }
 
   return (

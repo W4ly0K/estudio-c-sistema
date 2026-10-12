@@ -1,71 +1,52 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
-import { entorno } from './config/entorno';
-
-// Tipos mínimos para la migración (6.0.2b). El paso 6.1 los reemplaza por el
-// contrato tipado de src/api/ (estados, proyecciones y respuestas de error).
-export interface UsuarioSesion {
-  id: string;
-  nombre: string;
-  rol: 'SOLICITANTE' | 'STAFF';
-}
-
-interface SolicitudResumen {
-  radicado: string;
-  categoria: string;
-  proposito: string;
-  estado: string;
-  fecha_inicio: string;
-  fecha_fin: string;
-}
-
-interface ErrorApi {
-  message?: string | string[];
-}
+import { textoDeError } from './api/errores';
+import { CATEGORIAS, type Categoria, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
+import type { ApiSolicitudes } from './api/solicitudes';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
   onLogout: () => void;
+  /** Inyectada por la App (DC3): en las pruebas, una api falsa. */
+  api: ApiSolicitudes;
 }
 
-export default function Dashboard({ usuario, onLogout }: DashboardProps) {
-  const [solicitudes, setSolicitudes] = useState<SolicitudResumen[]>([]);
+interface FormularioSolicitud {
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+  categoria: Categoria;
+  proposito: string;
+}
+
+const FORMULARIO_VACIO: FormularioSolicitud = { fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' };
+
+export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
+  const [solicitudes, setSolicitudes] = useState<SolicitudPropia[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState('');
   const [showModal, setShowModal] = useState(false);
-  
-  // 1. Estado actualizado para hacer "match" con el DTO de NestJS y Prisma
-  const [form, setForm] = useState({ 
-    fecha: '', 
-    horaInicio: '', 
-    horaFin: '', 
-    categoria: 'ESPACIOS', 
-    proposito: '' 
-  });
+  const [form, setForm] = useState<FormularioSolicitud>(FORMULARIO_VACIO);
   const [errorValidacion, setErrorValidacion] = useState('');
 
-  // Cargar solicitudes del usuario
+  // Cargar solicitudes del usuario. `vigente` descarta la respuesta si el componente
+  // se desmontó o el efecto se repitió (StrictMode lo ejecuta dos veces en desarrollo).
   useEffect(() => {
-    const fetchSolicitudes = async () => {
-      try {
-        const token = localStorage.getItem('estudio_c_token');
-        const res = await fetch(`${entorno.apiUrl}/solicitudes/mis-solicitudes`, {
-          headers: { 
-              'Content-Type': 'application/json', 
-              'Authorization': `Bearer ${token}` 
-}
-        });
-        if (res.ok) {
-          const data = (await res.json()) as SolicitudResumen[];
-          setSolicitudes(data);
-        }
-      } catch (err) {
-        console.error('Error cargando solicitudes:', err);
-      } finally {
-        setLoading(false);
+    let vigente = true;
+    void api.misSolicitudes().then((resultado) => {
+      if (!vigente) return;
+      if (resultado.ok) {
+        setSolicitudes(resultado.datos);
+      } else {
+        // Antes un error se veía como "No tienes solicitudes": ahora se dice qué pasó.
+        setErrorCarga(textoDeError(resultado.error));
       }
+      setLoading(false);
+    });
+    return () => {
+      vigente = false;
     };
-    void fetchSolicitudes();
-  }, []);
+  }, [api]);
 
   // 2. Validación Shift-Left mejorada y envío al backend
   const handleCrearSolicitud = async (e: FormEvent<HTMLFormElement>) => {
@@ -88,44 +69,25 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
       return;
     }
 
-    try {
-      const token = localStorage.getItem('estudio_c_token');
-      
-      // 3. Transformar los datos visuales al formato ISO-8601 que exige NestJS (IsDate)
-      const payload = {
-        categoria: form.categoria,
-        proposito: form.proposito,
-        fecha_inicio: new Date(`${form.fecha}T${form.horaInicio}:00`).toISOString(),
-        fecha_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString()
-      };
+    // F2 (zona horaria) se corrige en el paso 6.3: aquí solo cambia el transporte.
+    const resultado = await api.crear({
+      categoria: form.categoria,
+      proposito: form.proposito,
+      fecha_inicio: new Date(`${form.fecha}T${form.horaInicio}:00`).toISOString(),
+      fecha_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString(),
+    });
 
-      const res = await fetch(`${entorno.apiUrl}/solicitudes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!res.ok) {
-        // El backend responde message como texto o, desde el ValidationPipe, como lista.
-        const errData = (await res.json()) as ErrorApi;
-        const mensaje = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message;
-        throw new Error(mensaje || 'Error al registrar la solicitud');
-      }
-      
-      const nuevaSolicitud = (await res.json()) as SolicitudResumen; // <-- CORRECCIÓN 1: Renombramos la variable para mayor claridad
-      
-      // <-- CORRECCIÓN 2: Inyectamos 'nuevaSolicitud' directamente en lugar de 'respuesta.solicitud'
-      setSolicitudes([nuevaSolicitud, ...solicitudes]); 
-      
-      setShowModal(false);
-      
-      // Limpiamos el formulario
-      setForm({ fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' });
-      
-    } catch (err) {
-      // El mensaje del backend (ya unido si era una lista) se muestra tal cual.
-      setErrorValidacion(err instanceof Error ? err.message : 'Error al registrar la solicitud');
+    if (!resultado.ok) {
+      // Mensajes del servidor tal cual (CA-04, CA-06...); una sesión vencida ya la cerró la App.
+      setErrorValidacion(textoDeError(resultado.error));
+      return;
     }
+
+    // POST /solicitudes responde la solicitud sin la relación de recursos; este
+    // formulario tampoco los envía.
+    setSolicitudes((anteriores) => [{ ...resultado.datos, recursos: [] }, ...anteriores]);
+    setShowModal(false);
+    setForm(FORMULARIO_VACIO);
   };
 
   return (
@@ -166,6 +128,10 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
         {loading ? (
           <p className="text-sm text-gray-500">Cargando radicados...</p>
+        ) : errorCarga ? (
+          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            {errorCarga}
+          </p>
         ) : solicitudes.length === 0 ? (
           <div className="border border-outline rounded-lg p-8 text-center bg-surface">
             <p className="text-gray-500 text-sm">No tienes solicitudes registradas aún.</p>
@@ -221,7 +187,11 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   required 
                   className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.categoria}
-                  onChange={e => setForm({...form, categoria: e.target.value})}
+                  onChange={e => {
+                    // Sin aserción: solo se acepta un valor que esté en el contrato.
+                    const categoria = CATEGORIAS.find((c) => c === e.target.value);
+                    if (categoria) setForm({ ...form, categoria });
+                  }}
                 >
                   <option value="ESPACIOS">Reserva de Espacios</option>
                   <option value="PODCAST">Producción de Podcast</option>
