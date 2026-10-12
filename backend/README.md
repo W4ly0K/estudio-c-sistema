@@ -33,6 +33,7 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 | `DIRECT_URL` | Conexión directa, usada por Prisma para migraciones |
 | `JWT_SECRET` | Secreto para firmar y verificar los JWT. **Obligatorio**: si falta, la API no arranca (fail-fast). Usa una cadena larga y aleatoria |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth usado para verificar el token de inicio de sesión |
+| `CORS_ORIGENES` | Orígenes del frontend permitidos por CORS, separados por comas y exactos (`esquema://host[:puerto]`, sin ruta ni `*`). En local: `http://localhost:5173`. **Obligatorio**: si falta o es inválido, la API no arranca y el mensaje dice cómo corregirlo |
 
 ## 2.1 Base de datos y migraciones
 

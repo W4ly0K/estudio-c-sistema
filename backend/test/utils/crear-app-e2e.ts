@@ -6,6 +6,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { crearValidationPipe } from '../../src/common/pipes/crear-validation-pipe';
+import { aplicarCors } from '../../src/common/cors/configurar-cors';
 import { Reloj } from '../../src/common/reloj/reloj';
 import { RelojFijo } from './reloj-fijo';
 
@@ -18,6 +19,9 @@ export const AHORA_E2E = new Date('2026-10-05T10:00:00-05:00');
  */
 
 export const JWT_SECRET_E2E = 'secreto-e2e-solo-pruebas';
+
+/** Origen del frontend permitido en los e2e (el servidor de desarrollo de Vite). */
+export const ORIGEN_FRONTEND_E2E = 'http://localhost:5173';
 
 export interface UsuarioBD {
   id_usuario: string;
@@ -175,6 +179,7 @@ export async function crearAppE2E(): Promise<ContextoE2E> {
 
   const app = moduleRef.createNestApplication<INestApplication<App>>();
   app.useGlobalPipes(crearValidationPipe()); // Misma configuración que main.ts (Decisión F)
+  aplicarCors(app, ORIGEN_FRONTEND_E2E); // Misma función que main.ts (Fase 6.2 · DS2)
   await app.init();
 
   const jwt = moduleRef.get(JwtService);
