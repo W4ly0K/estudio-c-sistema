@@ -10,6 +10,7 @@
     "lint": "oxlint --deny-warnings src/",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:tz": "node scripts/test-zonas-horarias.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -116,6 +116,12 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: npm test
 
+      # Fase 6.3 · DH5: la suite completa en UTC, Bogotá, UTC−11 y UTC+14. En la zona de
+      # Bogotá un error de zona horaria no se ve; en las otras tres, sí.
+      - name: Pruebas en 4 zonas horarias (test:tz)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run test:tz
+
       # El build no valida las variables VITE_*: entorno.ts lo hace al cargar la
       # app en el navegador. Aquí se comprueba que el bundle de producción compila.
       - name: Build de producción
