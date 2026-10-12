@@ -7,7 +7,8 @@ import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estad
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
 import { CATEGORIAS } from './esquemas'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
-import { MENSAJE_CAMBIO_CONCURRENTE } from './mensajes'
+import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
+import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
 const lf = (texto: string): string => texto.replace(/\r\n/g, '\n')
@@ -65,6 +66,12 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('las categorías coinciden con el enum CategoriaSolicitud de Prisma', () => {
     expect([...CATEGORIAS]).toEqual(enumDePrisma('CategoriaSolicitud'))
+  })
+
+  it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {
+    expect(MENSAJE_FIN_NO_POSTERIOR).toBe(
+      capturar(fuenteHorario, /FIN_NO_POSTERIOR:\s*'([^']*)'/, 'MENSAJES_ERROR_HORARIO.FIN_NO_POSTERIOR'),
+    )
   })
 
   it('el mensaje del 409 concurrente es idéntico al del servicio (DC5)', () => {

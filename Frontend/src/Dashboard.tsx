@@ -2,7 +2,16 @@ import { useEffect, useState, type FormEvent } from 'react';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
 import { textoDeError } from './api/errores';
 import { CATEGORIAS, type Categoria, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
+import { MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes';
 import type { ApiSolicitudes } from './api/solicitudes';
+import { aIsoBogota, formatearFranja, hoyEnBogota } from './fechas/bogota';
+
+/**
+ * DH4: el cliente solo valida "fin posterior al inicio". Los bloques, los días hábiles
+ * y los festivos los decide el servidor (CA-04): aquí solo se informan.
+ */
+export const TEXTO_BLOQUES_ATENCION =
+  'Atención: lunes a viernes hábiles, de 8:00 a 12:00 y de 14:00 a 18:00 (hora de Colombia).';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
@@ -53,28 +62,26 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
     e.preventDefault();
     setErrorValidacion('');
 
-    const inicioNum = parseInt(form.horaInicio.replace(':', ''), 10);
-    const finNum = parseInt(form.horaFin.replace(':', ''), 10);
-
-    // Shift-Left A: Validar coherencia temporal
-    if (inicioNum >= finNum) {
-      setErrorValidacion('⚠️ La hora de fin debe ser posterior a la hora de inicio.');
+    // DH1 · F2a: la hora elegida ES la hora de Bogotá, desde cualquier equipo. El ISO
+    // lleva el desfase explícito y nunca pasa por la zona del navegador.
+    const fechaInicio = aIsoBogota(form.fecha, form.horaInicio);
+    const fechaFin = aIsoBogota(form.fecha, form.horaFin);
+    if (fechaInicio === null || fechaFin === null) {
+      setErrorValidacion('Revisa la fecha y las horas: no son válidas.');
       return;
     }
 
-    // Shift-Left B: Bloque institucional estricto 12:00 - 14:00
-    // Bloquea si empieza durante el almuerzo, si termina durante el almuerzo, o si abarca todo el almuerzo
-    if ((inicioNum >= 1200 && inicioNum < 1400) || (finNum > 1200 && finNum <= 1400) || (inicioNum <= 1200 && finNum >= 1400)) {
-      setErrorValidacion('⚠️ Regla CA-04: No se permiten reservas cruzando el horario de almuerzo institucional (12:00 - 14:00).');
+    // DH4 · F3: la única regla local. "HH:MM" con ceros a la izquierda se compara como texto.
+    if (form.horaFin <= form.horaInicio) {
+      setErrorValidacion(MENSAJE_FIN_NO_POSTERIOR);
       return;
     }
 
-    // F2 (zona horaria) se corrige en el paso 6.3: aquí solo cambia el transporte.
     const resultado = await api.crear({
       categoria: form.categoria,
       proposito: form.proposito,
-      fecha_inicio: new Date(`${form.fecha}T${form.horaInicio}:00`).toISOString(),
-      fecha_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString(),
+      fecha_inicio: fechaInicio,
+      fecha_fin: fechaFin,
     });
 
     if (!resultado.ok) {
@@ -156,11 +163,9 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-500 mb-0.5">Fecha y Horario</p>
-                    <p className="font-medium text-primary">
-                      {new Date(sol.fecha_inicio).toLocaleDateString()} <br/>
-                      ({new Date(sol.fecha_inicio).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(sol.fecha_fin).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
-                    </p>
+                    <p className="text-gray-500 mb-0.5">Fecha y horario (hora de Colombia)</p>
+                    {/* DH2 · F2b: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
+                    <p className="font-medium text-primary">{formatearFranja(sol.fecha_inicio, sol.fecha_fin)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500 mb-0.5">Propósito</p>
@@ -218,7 +223,7 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                 <input 
                   type="date" 
                   required 
-                  min={new Date().toISOString().split('T')[0]} // Bloquea días pasados en UI
+                  min={hoyEnBogota(new Date())} // DH3 · F2c: hoy en Bogotá, no en UTC
                   className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.fecha}
                   onChange={e => setForm({...form, fecha: e.target.value})} 
@@ -235,6 +240,8 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                   <input type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
                 </div>
               </div>
+
+              <p className="text-xs text-gray-500">{TEXTO_BLOQUES_ATENCION}</p>
 
               {errorValidacion && (
                 <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded-sm text-xs font-bold text-accent">
