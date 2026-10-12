@@ -9,6 +9,9 @@ import { ValidateBy } from 'class-validator';
  * violar un CHECK del motor y responder 500 (Fase 6.1b, Decisión DB2).
  */
 export function longitudReal(texto: string): number {
+  // La regla advierte que el spread separa en puntos de código y no en grafemas: aquí
+  // es exactamente lo que se busca, porque char_length cuenta puntos de código.
+  // oxlint-disable-next-line typescript/no-misused-spread -- igualar char_length de PostgreSQL (DB2)
   return [...texto].length;
 }
 
