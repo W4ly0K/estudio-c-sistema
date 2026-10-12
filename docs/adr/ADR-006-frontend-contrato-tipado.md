@@ -2,9 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado (pasos 6.0 a 6.2; la Fase 6 lo amplía en 6.3 a 6.5) |
+| **Estado** | ✅ Aceptado (pasos 6.0 a 6.3; la Fase 6 lo amplía en 6.4 y 6.5) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
+| **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -132,6 +133,29 @@ type Sesion =
 - La App es un `switch` sobre el estado: ninguno queda sin pantalla. Mientras dura `verificando` se muestra *"Verificando tu sesión…"*, así que el login no parpadea antes de saltar al panel.
 - **Fuera de alcance (DS4):** cerrar la sesión en todas las pestañas a la vez, cerrarla de forma proactiva al vencer el JWT, revocar tokens en el servidor y la cookie `httpOnly` (DF2). Están en la §5.
 
+### 2.10 Fechas en la hora de Bogotá (paso 6.3 · Decisiones DH1 a DH5)
+
+El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia, sin importar desde dónde se reserve o se consulte. El diagnóstico encontró F2 y F3; al revisar el código apareció un tercer error de zona horaria (F2c):
+
+| # | Código anterior | Problema |
+|---|---|---|
+| F2a · al crear | `` new Date(`${fecha}T${hora}:00`).toISOString() `` | Interpretaba la hora en la zona del **navegador**: desde Madrid, "08:00" se guardaba como la 01:00 de Bogotá |
+| F2b · al mostrar | `toLocaleDateString()` / `toLocaleTimeString()` | La misma reserva se veía con otra hora según desde dónde se mirara |
+| F2c · mínimo del calendario | `new Date().toISOString().split('T')[0]` | Era el día en **UTC**: todos los días, desde las 7:00 p. m. de Colombia, el calendario ya no dejaba elegir hoy. Fallaba también en un equipo en Colombia |
+| F3 · validación local | Bloqueaba solo de 12:00 a 14:00 | Contradecía CA-04: dejaba enviar 07:00 o 19:00 y no conocía los días hábiles ni los festivos |
+
+- **DH1 · El ISO se construye con el desfase explícito, sin pasar por `Date`:** `aIsoBogota('2026-10-20', '08:00')` → `'2026-10-20T08:00:00-05:00'`, el formato que el backend ya acepta (`@FechaConZonaHoraria`). Valida que la fecha y la hora existan (rechaza `2026-02-30` y `24:00`).
+  - El desfase `-05:00` es una constante: Colombia no tiene horario de verano desde 1993. Una **prueba canario** lo compara con lo que reporta `Intl` para `America/Bogota` en un instante de cada mes de 2026 y 2030; si eso cambiara, falla antes que producción (el criterio del canario del `23P01` en el backend).
+- **DH2 · Se muestra con `Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota' })`, en 24 horas** (*"jueves, 15 de octubre de 2026 · 09:00 – 11:00"*): sin la ambigüedad de "a. m." en una reserva. Los formateadores se crean una vez; una fecha ilegible muestra *"Fecha no disponible"*, nunca *"Invalid Date"*.
+- **DH3 · "Hoy" se calcula en Bogotá y recibe el "ahora" como parámetro** (`hoyEnBogota(ahora)`), como el `Reloj` del backend.
+- **DH4 · El cliente valida solo "fin posterior al inicio";** los bloques, los días hábiles y los festivos los decide el servidor, y el formulario solo los informa. Copiar CA-04 completo en el cliente habría duplicado el calendario de festivos (algoritmo de Meeus, Ley 51): dos fuentes de verdad, justo el problema de F3.
+  - El aviso local usa el **mismo texto** que la primera regla del backend (`MENSAJE_FIN_NO_POSTERIOR`), y la prueba de deriva lo compara con `horario.validator.ts`: la persona lee lo mismo venga el aviso del cliente o del servidor.
+  - `horaFin <= horaInicio` compara texto: `<input type="time">` entrega siempre `HH:MM` en 24 horas con ceros a la izquierda (aunque el sistema operativo lo dibuje en 12 horas), y en ese formato el orden alfabético es el cronológico.
+- **DH5 · Toda la suite corre en cuatro zonas horarias** (`npm run test:tz`): UTC, America/Bogota, Pacific/Pago_Pago (UTC−11) y Pacific/Kiritimati (UTC+14), también en el CI.
+  - Es un lanzador en Node (`scripts/test-zonas-horarias.mjs`), no `TZ=UTC vitest`: npm en Windows ejecuta los scripts con `cmd.exe`.
+  - Antes de cada zona verifica que el proceso hijo de verdad la tomó: si `TZ` no se aplicara, las cuatro ejecuciones correrían en la hora de Bogotá y el verde sería falso.
+- **Por qué es indispensable: la prueba roja.** Las pruebas del panel se escribieron **antes** de la corrección. Con el código anterior, F2a (que compara el **instante** enviado) **pasaba en Bogotá** y fallaba en las otras tres zonas: en UTC enviaba `08:00Z`, en Pago_Pago `19:00Z` y en Kiritimati las `18:00Z` del día anterior, en lugar de `13:00Z`. En el equipo de quien desarrolla en Colombia, F2 era invisible. F2c fallaba en las cuatro (`min="2026-10-21"` a las 19:30 del 20). Con la corrección, las mismas pruebas pasaron en las cuatro zonas.
+
 ---
 
 ## 3. Verificación
@@ -147,6 +171,9 @@ type Sesion =
 | DS2 (backend) | `configurar-cors.spec.ts` (14) · e2e C-1 a C-4 (*preflight* permitido y ajeno, petición ajena que llega pero no se lee, `Vary: Origin`) |
 | DS1 (backend) | `auth.service.spec.ts` P-1 a P-3 · `auth.controller.spec.ts` · e2e PE-1 a PE-5 |
 | DS3 | `maquina-sesion.test.ts` (8 transiciones y 6 eventos ignorados, con `toBe`) · `use-sesion.test.ts` (10) · `App.test.tsx` (restaurar al recargar y servidor caído) |
+| DH1 a DH3 | `bogota.test.ts` (44: el canario del desfase en 24 instantes, 8 entradas inválidas, F2c a las 19:30, formato en 24 horas y el día de Bogotá aunque en UTC ya sea otro) |
+| DH4 y F2 en la UI | `Dashboard.test.tsx` (F2a con el instante y el texto exactos, F2b, F2c con `vi.setSystemTime`, y tres de F3) · `contrato.test.ts` (el aviso local idéntico a CA-04) |
+| DH5 | `npm run test:tz`: la suite completa en 4 zonas, en local y en el CI |
 
 **Sabotajes (mutaciones manuales, todas detectadas y revertidas):**
 
@@ -162,6 +189,8 @@ type Sesion =
 | 6.2.2 | El perfil de un id fijo en lugar del id del token | La prueba del controlador |
 | 6.2.3 | `perfil-confirmado` sin la guarda de estado | Los dos eventos ignorados de perfiles tardíos |
 | 6.2.3 | Tratar el 401 del perfil como una falla de red | La prueba del token vencido |
+| 6.3.1 | `hour12: true` en lugar de `hourCycle: 'h23'` | Las pruebas de `08:00` y `18:30` |
+| 6.3.2 | El código anterior del panel, antes de corregirlo (prueba roja) | `test:tz`: F2a en verde solo en Bogotá y en rojo en las otras tres zonas; F2b, F2c y F3 en rojo en las cuatro |
 
 **Verificación manual (6.1.3):** login, lista y creación; un token alterado devuelve al login con el aviso de sesión expirada; con el backend apagado aparece el mensaje de red y la UI no se rompe.
 
@@ -171,9 +200,16 @@ type Sesion =
 - con el backend detenido, al recargar aparece la pantalla de reintento y el token sigue guardado; con el backend arriba, **Reintentar** entra al panel;
 - un token alterado devuelve al login con el aviso; **Salir** deja el login sin aviso.
 
+**Verificación manual (6.3):**
+- una solicitud de 08:00 a 10:00 se crea y se muestra como *"… · 08:00 – 10:00"*;
+- con la zona del navegador cambiada a Berlín (herramientas del navegador → *Sensors*), las franjas conservan sus horas y una solicitud nueva de 08:00 se guarda como 08:00 de Bogotá;
+- una franja de 11:00 a 15:00 ya no se bloquea en el cliente: responde el servidor con su mensaje de CA-04.
+
 **Resultado al cierre de 6.1:** `npm test` del frontend, 11 archivos · 105 ✅.
 
 **Resultado al cierre de 6.2:** frontend `npm test` 13 archivos · 134 ✅ · backend `npm test` 705 ✅ y 1 omitida · `npm run test:e2e` 5 suites · 64 ✅ · CI con los jobs Backend y Frontend en verde, 0 advertencias de lint.
+
+**Resultado al cierre de 6.3:** frontend `npm test` 14 archivos · 185 ✅ y `npm run test:tz` 185 ✅ en cada una de las 4 zonas · CI en verde con el paso nuevo de zonas horarias.
 
 ---
 
@@ -182,6 +218,7 @@ type Sesion =
 - **Positivas:**
   - ninguna respuesta de la API llega a la UI sin validar, y ningún error queda sin un texto para la persona;
   - un 401 ya no deja un panel muerto, y la sesión sobrevive a una recarga y a una caída del servidor (F4 resuelto);
+  - una reserva significa la misma hora real desde cualquier equipo, y se ve igual desde cualquier zona horaria (F2 resuelto); el cliente ya no contradice CA-04 (F3 resuelto);
   - la API solo responde a los orígenes del frontend en el navegador;
   - las desalineaciones con el backend fallan en el CI, no en producción;
   - los cuerpos ilegales no compilan.
@@ -190,12 +227,14 @@ type Sesion =
   - una copia de la máquina que hay que mantener, vigilada por la prueba de deriva;
   - la prueba de deriva depende del formato de una línea por transición en el backend: si cambia, falla de forma ruidosa y se actualiza a propósito;
   - una variable de entorno obligatoria más (`CORS_ORIGENES`) en cada despliegue del backend;
-  - restaurar la sesión cuesta una petición (`GET /auth/perfil`) al cargar la página.
+  - restaurar la sesión cuesta una petición (`GET /auth/perfil`) al cargar la página;
+  - las reglas de CA-04 distintas de "fin posterior al inicio" se ven al enviar, no al escribir;
+  - la suite del frontend corre cinco veces en el CI (una normal y cuatro por zona).
 - **Mantenimiento:** una ruta nueva sigue la lista de verificación del README del frontend (§5): esquema primero, una función por ruta, el cuerpo más estrecho posible y pruebas en el mismo commit.
 
 ## 5. Riesgos y deuda conocida
 
-- **F2 y F3 (6.3):** `toISOString()` todavía usa la zona del navegador al crear, y la validación local del almuerzo contradice CA-04.
+- **Desfase fijo:** si Colombia adoptara horario de verano, la prueba canario falla y `DESFASE_BOGOTA` tendría que calcularse por fecha con `Intl`.
 - **Sesión (DS4, fuera del 6.2):** cerrar la sesión en todas las pestañas a la vez (evento `storage`); cerrarla de forma proactiva al vencer el JWT (hoy se cierra con el primer 401); revocar tokens en el servidor al salir (el JWT es *stateless*: uno robado sigue vigente hasta sus 8 h); la cookie `httpOnly` (DF2).
 - **Backend:** el puerto 3000 sigue fijo en `main.ts`.
 - **Backend:** `findMisSolicitudes()` y `findAll()` usan `include` y devuelven todas las columnas (punto 8 de su lista de verificación). El lector tolerante las descarta, pero viajan por la red.
@@ -221,4 +260,7 @@ type Sesion =
 | `150bf4a` | 6.2.1 · CORS con lista blanca y *fail-fast* |
 | `96b048e` | 6.2.2 · `GET /auth/perfil` con el rol leído de la base de datos |
 | `fa9a73b` | 6.2.3 · La sesión como máquina de estados |
-| — | 6.2.4 · Esta actualización (§2.7 a §2.9) y los README |
+| `3ef7543` | 6.2.4 · §2.7 a §2.9 y los README |
+| `fb1471e` | 6.3.1 · `src/fechas/bogota.ts`, `test:tz` y su paso en el CI |
+| `6cdf6bb` | 6.3.2 · El panel crea y muestra las franjas en la hora de Bogotá (F2) y solo valida fin posterior al inicio (F3) |
+| — | 6.3.3 · Esta actualización (§2.10) y el README |
