@@ -25,21 +25,24 @@ export const ORIGEN_FRONTEND_E2E = 'http://localhost:5173';
 
 export interface UsuarioBD {
   id_usuario: string;
+  nombre: string;
   correo: string;
   rol: RolUsuario;
 }
 
 // "Base de datos" de usuarios. 'uuid-borrado' NO existe a propósito.
 export const USUARIOS_BD: Readonly<Record<string, UsuarioBD>> = {
-  'uuid-staff': { id_usuario: 'uuid-staff', correo: 'staff@unicesmag.edu.co', rol: RolUsuario.STAFF },
+  'uuid-staff': { id_usuario: 'uuid-staff', nombre: 'Staff Estudio C', correo: 'staff@unicesmag.edu.co', rol: RolUsuario.STAFF },
   'uuid-solicitante': {
     id_usuario: 'uuid-solicitante',
+    nombre: 'Estudiante de Prueba',
     correo: 'estudiante@unicesmag.edu.co',
     rol: RolUsuario.SOLICITANTE,
   },
   // Fue STAFF (así lo dice su token), pero en la BD ya es SOLICITANTE
   'uuid-degradado': {
     id_usuario: 'uuid-degradado',
+    nombre: 'Ex Staff',
     correo: 'exstaff@unicesmag.edu.co',
     rol: RolUsuario.SOLICITANTE,
   },

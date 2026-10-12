@@ -160,6 +160,7 @@ Petición HTTP
 | Endpoint | Acceso |
 |---|---|
 | `POST /auth/google/login` | 🌐 Público |
+| `GET /auth/perfil` | 🔐 Autenticado (cualquier rol). Responde el perfil del usuario del token, leído de la BD (§13) |
 | `GET /` | 🔐 Autenticado |
 | `POST /solicitudes` | 🔐 Autenticado. El solicitante sale del token |
 | `GET /solicitudes/mis-solicitudes` | 🔐 Autenticado. Solo ve sus propias solicitudes |
@@ -418,3 +419,17 @@ Sin cuerpo. **200:** `mensaje` = `Reprogramación rechazada: la solicitud quedó
 | Sin propuesta pendiente | 409 | `La solicitud no tiene una propuesta de reprogramación pendiente.` |
 | Estado final | 409 | `La solicitud está en un estado final y no admite cambios de estado.` |
 | Estado guardado fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
+
+## 13. Contrato de `GET /auth/perfil` (restaurar la sesión)
+
+Permite al frontend reconstruir la sesión al recargar la página con el JWT que ya tiene guardado (Fase 6.2, [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md)). Exige JWT y no exige rol.
+
+**200**, con la **misma forma** que el `usuario` de la respuesta del login:
+
+```json
+{ "id": "uuid-del-usuario", "nombre": "Ana Pérez", "rol": "SOLICITANTE" }
+```
+
+- La identidad sale del token; el `nombre` y el `rol` se leen de la base de datos en ese momento. Si el Staff le cambió el rol a alguien, el perfil ya muestra el rol nuevo, aunque el token diga otro.
+- No incluye el correo (minimización): la interfaz no lo necesita.
+- **401** sin token, con un token inválido o vencido, o si el usuario del token ya no existe. El frontend lo trata como sesión vencida: borra el token y vuelve al login.
