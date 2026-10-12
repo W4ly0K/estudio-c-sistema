@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
 import { json } from './test/fixtures-api'
 
@@ -87,5 +87,41 @@ describe('App', () => {
     expect(await screen.findByText(`⚠️ ${TEXTO_SESION_EXPIRADA}`)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Acceso al Sistema' })).toBeInTheDocument()
     expect(localStorage.getItem('estudio_c_token')).toBeNull()
+  })
+
+  describe('restaurar la sesión al recargar (Fase 6.2 · DS3)', () => {
+    it('con un token guardado entra directo al panel, sin pasar por el login', async () => {
+      localStorage.setItem('estudio_c_token', 'jwt-guardado')
+      servidorFalso({
+        '/auth/perfil': () => json(200, LOGIN.usuario),
+        '/solicitudes/mis-solicitudes': () => json(200, []),
+      })
+      render(<App />)
+
+      // Mientras verifica no aparece el login (sin parpadeo).
+      expect(screen.getByRole('status')).toHaveTextContent(TEXTO_VERIFICANDO)
+      expect(screen.queryByRole('heading', { name: 'Acceso al Sistema' })).not.toBeInTheDocument()
+
+      expect(await screen.findByText('Ana Pérez')).toBeInTheDocument()
+    })
+
+    it('servidor caído al recargar: ofrece reintentar, conserva el token y permite cerrar sesión', async () => {
+      localStorage.setItem('estudio_c_token', 'jwt-guardado')
+      servidorFalso({
+        '/auth/perfil': () => {
+          throw new TypeError('Failed to fetch')
+        },
+      })
+      render(<App />)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(TEXTO_SIN_VERIFICAR)
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+      expect(localStorage.getItem('estudio_c_token')).toBe('jwt-guardado')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+
+      expect(screen.getByRole('heading', { name: 'Acceso al Sistema' })).toBeInTheDocument()
+      expect(localStorage.getItem('estudio_c_token')).toBeNull()
+    })
   })
 })

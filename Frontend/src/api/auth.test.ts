@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { crearApiAuth } from './auth'
-import { BASE, crearEntornoDePrueba, json } from '../test/fixtures-api'
+import { BASE, TOKEN, crearEntornoDePrueba, json } from '../test/fixtures-api'
 
 const LOGIN = { mensaje: 'Autenticación exitosa', token: 'jwt-nuevo', usuario: { id: 'uuid', nombre: 'Ana', rol: 'SOLICITANTE' } }
 
@@ -34,5 +34,23 @@ describe('crearApiAuth', () => {
 
     expect(!resultado.ok && resultado.error).toMatchObject({ tipo: 'http', status: 401, mensajes: [mensaje] })
     expect(alExpirarSesion).not.toHaveBeenCalled()
+  })
+
+  it('perfil → GET /auth/perfil con el token y el mismo esquema del usuario del login', async () => {
+    const { cliente, llamada, encabezados } = crearEntornoDePrueba(json(200, LOGIN.usuario))
+
+    const resultado = await crearApiAuth(cliente).perfil()
+
+    expect(resultado).toEqual({ ok: true, datos: LOGIN.usuario })
+    expect(llamada().url).toBe(`${BASE}/auth/perfil`)
+    expect(llamada().init.method).toBe('GET')
+    expect(encabezados().Authorization).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('perfil con un token vencido (401): sesión expirada, como cualquier ruta privada', async () => {
+    const { cliente, alExpirarSesion } = crearEntornoDePrueba(json(401, { statusCode: 401, message: 'Unauthorized' }))
+
+    expect(await crearApiAuth(cliente).perfil()).toEqual({ ok: false, error: { tipo: 'sesion-expirada' } })
+    expect(alExpirarSesion).toHaveBeenCalledOnce()
   })
 })

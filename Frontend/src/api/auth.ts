@@ -1,5 +1,5 @@
 import type { ClienteApi, Resultado } from './cliente'
-import { esquemaRespuestaLogin, type RespuestaLogin } from './esquemas'
+import { esquemaRespuestaLogin, esquemaUsuarioSesion, type RespuestaLogin, type UsuarioSesion } from './esquemas'
 
 export function crearApiAuth(cliente: ClienteApi) {
   return {
@@ -16,6 +16,13 @@ export function crearApiAuth(cliente: ClienteApi) {
         esquema: esquemaRespuestaLogin,
         publica: true,
       }),
+
+    /**
+     * GET /auth/perfil (Fase 6.2): "¿quién soy?" con el token guardado, para restaurar
+     * la sesión al recargar. Misma forma que el `usuario` del login (README del backend §13).
+     */
+    perfil: (): Promise<Resultado<UsuarioSesion>> =>
+      cliente.solicitar({ metodo: 'GET', ruta: '/auth/perfil', esquema: esquemaUsuarioSesion }),
   }
 }
 
