@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from './Dashboard'
 import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
+import { TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './componentes/ExitoRadicado'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { RECURSOS_RESUMEN, SOLICITUD, apiFalsa } from './test/fixtures-api'
 
@@ -56,7 +57,7 @@ describe('Dashboard con la api inyectada', () => {
     expect(screen.queryByText('No tienes solicitudes registradas aún.')).not.toBeInTheDocument()
   })
 
-  it('crear: envía el cuerpo tipado y agrega la solicitud nueva al inicio', async () => {
+  it('crear: envía el cuerpo tipado, muestra el radicado (B1b) y agrega la solicitud al inicio', async () => {
     const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
       ok: true,
       datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido' },
@@ -68,11 +69,20 @@ describe('Dashboard con la api inyectada', () => {
     llenarFormulario(container)
     fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
 
-    expect(await screen.findByText('EC-2026-0999')).toBeInTheDocument()
+    // B1b: el mismo diálogo cambia de contenido (y de nombre accesible) al radicado.
+    const exito = await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+    expect(within(exito).getByText('EC-2026-0999')).toBeInTheDocument()
     expect(crear).toHaveBeenCalledWith(
       expect.objectContaining({ categoria: 'VIDEO', proposito: 'Grabación de clase' }),
     )
     expect(screen.queryByRole('button', { name: 'Enviar Radicado' })).not.toBeInTheDocument()
+
+    fireEvent.click(within(exito).getByRole('button', { name: 'Volver al panel' }))
+
+    expect(exito).not.toHaveAttribute('open')
+    expect(screen.queryByText(TEXTO_EXITO_TITULO)).not.toBeInTheDocument()
+    const articulos = screen.getAllByRole('article')
+    expect(articulos[0]).toHaveAccessibleName('EC-2026-0999')
   })
 
   it('crear rechazado por el servidor: muestra su mensaje tal cual y deja el formulario abierto', async () => {
@@ -168,6 +178,57 @@ describe('Dashboard con la api inyectada', () => {
       fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
 
       expect(screen.getByText(/lunes a viernes hábiles, de 8:00 a 12:00 y de 14:00 a 18:00 \(hora de Colombia\)/)).toBeInTheDocument()
+    })
+  })
+
+  describe('panel y confirmación (Fase 6.4.2 · B1 y B1b)', () => {
+    it('crear con urgencia marcada por el servidor: la confirmación pide avisar al Staff', async () => {
+      const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+        ok: true,
+        datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido', es_urgencia: true },
+      })
+      const { container } = mostrar(apiFalsa({ crear }))
+      await screen.findByText('No tienes solicitudes registradas aún.')
+
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      llenarFormulario(container)
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      const exito = await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(within(exito).getByText(TEXTO_AVISO_URGENCIA, { exact: false })).toBeInTheDocument()
+    })
+
+    it('resume las solicitudes y avisa cuando una espera respuesta a una reprogramación', async () => {
+      const pendiente = {
+        ...PROPIA,
+        radicado: 'EC-2026-0098',
+        estado: 'Pendiente de Reprogramación',
+        fecha_propuesta_inicio: '2026-10-21T19:00:00.000Z',
+        fecha_propuesta_fin: '2026-10-21T21:00:00.000Z',
+      } as const
+      const entregada = { ...PROPIA, radicado: 'EC-2026-0034', estado: 'Entregado' } as const
+      mostrar(
+        apiFalsa({
+          misSolicitudes: vi
+            .fn<ApiSolicitudes['misSolicitudes']>()
+            .mockResolvedValue({ ok: true, datos: [PROPIA, pendiente, entregada] }),
+        }),
+      )
+
+      expect(await screen.findByText('Tienes 2 solicitudes activas y 1 cerrada.')).toBeInTheDocument()
+      expect(screen.getByText('1 solicitud espera tu respuesta a una propuesta de reprogramación.')).toBeInTheDocument()
+      expect(screen.getAllByRole('article')).toHaveLength(3)
+    })
+
+    it('sin nada por decidir, no hay aviso', async () => {
+      mostrar(
+        apiFalsa({
+          misSolicitudes: vi.fn<ApiSolicitudes['misSolicitudes']>().mockResolvedValue({ ok: true, datos: [PROPIA] }),
+        }),
+      )
+
+      expect(await screen.findByText('Tienes 1 solicitud activa y 0 cerradas.')).toBeInTheDocument()
+      expect(screen.queryByText(/espera tu respuesta/)).not.toBeInTheDocument()
     })
   })
 

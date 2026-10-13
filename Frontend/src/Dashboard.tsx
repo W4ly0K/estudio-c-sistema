@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
 import { textoDeError } from './api/errores';
-import { CATEGORIAS, type Categoria, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
+import { CATEGORIAS, type Categoria, type Solicitud, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
 import { MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes';
 import { useApi } from './api/contexto-api';
-import { InsigniaEstado } from './componentes/Insignias';
-import { aIsoBogota, formatearFranja, hoyEnBogota } from './fechas/bogota';
+import { ExitoRadicado } from './componentes/ExitoRadicado';
+import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
+import { aIsoBogota, hoyEnBogota } from './fechas/bogota';
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
+import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
 
 /**
  * DH4: el cliente solo valida "fin posterior al inicio". Los bloques, los días hábiles
@@ -30,6 +32,17 @@ interface FormularioSolicitud {
 
 const FORMULARIO_VACIO: FormularioSolicitud = { fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' };
 
+/**
+ * Qué muestra el diálogo. Una unión discriminada en lugar de dos estados sueltos
+ * (`abierto` + `creada`): así no existe la combinación imposible "cerrado pero con éxito".
+ */
+type EstadoDialogo =
+  | { readonly vista: 'cerrado' }
+  | { readonly vista: 'formulario' }
+  | { readonly vista: 'exito'; readonly solicitud: Solicitud };
+
+const DIALOGO_CERRADO: EstadoDialogo = { vista: 'cerrado' };
+
 export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   // DV1: la api llega por Context (en las pruebas, una api falsa en el proveedor).
   const api = useApi();
@@ -46,23 +59,26 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   const [solicitudes, setSolicitudes] = useState<SolicitudPropia[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorCarga, setErrorCarga] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const [dialogo, setDialogo] = useState<EstadoDialogo>(DIALOGO_CERRADO);
+  const abierto = dialogo.vista !== 'cerrado';
   // Modal NATIVO (DV6): el navegador captura el foco, cierra con Escape y vuelve inerte el fondo.
   const dialogoRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<FormularioSolicitud>(FORMULARIO_VACIO);
   const [errorValidacion, setErrorValidacion] = useState('');
 
+  // Una sola fuente de verdad: el estado `dialogo` manda y el <dialog> lo obedece.
+  // Guardas con `open`: `showModal()` nativo lanza InvalidStateError si ya está abierto.
+  // Pasar de formulario a éxito no cambia `abierto`: el diálogo sigue abierto y solo
+  // cambia su contenido.
+  useEffect(() => {
+    const elemento = dialogoRef.current;
+    if (elemento === null) return;
+    if (abierto && !elemento.open) elemento.showModal();
+    if (!abierto && elemento.open) elemento.close();
+  }, [abierto]);
+
   // Cargar solicitudes del usuario. `vigente` descarta la respuesta si el componente
   // se desmontó o el efecto se repitió (StrictMode lo ejecuta dos veces en desarrollo).
-  // Una sola fuente de verdad: el estado `showModal` manda y el <dialog> lo obedece.
-  // Guardas con `open`: `showModal()` nativo lanza InvalidStateError si ya está abierto.
-  useEffect(() => {
-    const dialogo = dialogoRef.current;
-    if (dialogo === null) return;
-    if (showModal && !dialogo.open) dialogo.showModal();
-    if (!showModal && dialogo.open) dialogo.close();
-  }, [showModal]);
-
   useEffect(() => {
     let vigente = true;
     void api.misSolicitudes().then((resultado) => {
@@ -116,9 +132,13 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
     // POST /solicitudes responde la solicitud sin la relación de recursos; este
     // formulario tampoco los envía.
     setSolicitudes((anteriores) => [{ ...resultado.datos, recursos: [] }, ...anteriores]);
-    setShowModal(false);
+    // B1b: el radicado se muestra en el mismo diálogo, con el aviso de urgencia si aplica.
+    setDialogo({ vista: 'exito', solicitud: resultado.datos });
     setForm(FORMULARIO_VACIO);
   };
+
+  const resumen = resumirSolicitudes(solicitudes);
+  const avisoPorDecidir = textoPorDecidir(resumen);
 
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
@@ -146,10 +166,14 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
         <div className="flex justify-between items-end border-b border-outline pb-4 mb-8">
           <div>
             <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
-            <p className="text-sm text-gray-600 mt-1">Seguimiento de tus reservas de espacios y equipos.</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {!loading && !errorCarga && solicitudes.length > 0
+                ? textoResumen(resumen)
+                : 'Seguimiento de tus reservas de espacios y equipos.'}
+            </p>
           </div>
           <button 
-            onClick={() => setShowModal(true)}
+            onClick={() => setDialogo({ vista: 'formulario' })}
             className="px-5 py-2.5 bg-accent text-white rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"
           >
             <span className="text-lg">+</span> Nueva Solicitud
@@ -168,48 +192,39 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Wireframe B1 · intervención inmediata: lo que espera al solicitante, arriba. */}
+            {avisoPorDecidir !== null && (
+              <p className="p-3 border border-dotted border-gray-500 rounded-sm bg-gray-50 text-sm font-bold text-primary">
+                <span aria-hidden="true">↻ </span>
+                {avisoPorDecidir}
+              </p>
+            )}
             {solicitudes.map((sol) => (
-              <div key={sol.radicado} className="border border-outline rounded-lg p-6 bg-surface shadow-xs relative hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start border-b border-outline pb-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-3 mb-1">
-                      <span className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</span>
-                      <span className="text-lg font-black text-primary">{sol.radicado}</span>
-                    </div>
-                    <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
-                      {ETIQUETAS_CATEGORIA[sol.categoria]}
-                    </span>
-                  </div>
-                  <InsigniaEstado estado={sol.estado} />
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Fecha y horario (hora de Colombia)</p>
-                    {/* DH2 · F2b: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
-                    <p className="font-medium text-primary">{formatearFranja(sol.fecha_inicio, sol.fecha_fin)}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Propósito</p>
-                    <p className="font-medium text-primary line-clamp-2">{sol.proposito}</p>
-                  </div>
-                </div>
-              </div>
+              <TarjetaSolicitud key={sol.radicado} solicitud={sol} />
             ))}
           </div>
         )}
       </main>
 
-      {/* Modal Nueva Solicitud (B2) - Actualizado al esquema Prisma */}
-      {/* Siempre montado: `showModal()` necesita el elemento. El contenido solo existe abierto,
-          así un diálogo cerrado no deja campos ocultos en el DOM. `onClose` recoge TODO cierre
-          (Escape, Cancelar, envío exitoso) y lo devuelve al estado de React. */}
+      {/* Diálogo B2 (formulario) y B1b (éxito). Siempre montado: `showModal()` necesita el
+          elemento. El contenido solo existe abierto, así un diálogo cerrado no deja campos
+          ocultos en el DOM. `onClose` recoge TODO cierre (Escape, Cancelar, Volver al panel)
+          y lo devuelve al estado de React. */}
       <dialog
         ref={dialogoRef}
-        onClose={() => setShowModal(false)}
+        onClose={() => setDialogo(DIALOGO_CERRADO)}
         aria-labelledby={ids.titulo}
         className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50"
       >
-        {showModal && (
+        {dialogo.vista === 'exito' && (
+          <ExitoRadicado
+            solicitud={dialogo.solicitud}
+            responsable={usuario.nombre}
+            idTitulo={ids.titulo}
+            onVolver={() => setDialogo(DIALOGO_CERRADO)}
+          />
+        )}
+        {dialogo.vista === 'formulario' && (
           <>
             <h3 id={ids.titulo} className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
             
@@ -280,7 +295,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
               )}
 
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
               </div>
             </form>
