@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { Link, Navigate, useParams } from 'react-router'
 import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
@@ -83,7 +83,9 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
 
   // Tras una acción, el botón que tenía el foco puede haber desaparecido (ya no hay nada
   // que cancelar): el foco vuelve al título y el aviso se anuncia desde el <output>.
-  useEffect(() => {
+  // useLayoutEffect: el foco se aplica en el mismo commit que pinta el título, nunca un
+  // fotograma después (ni el lector de pantalla ni findByRole ven el título sin foco).
+  useLayoutEffect(() => {
     if (aviso !== null) tituloRef.current?.focus()
   }, [aviso])
 
@@ -94,8 +96,8 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
   }
 
   // Navegar en una SPA no recarga la página: el lector de pantalla no se entera del cambio.
-  // Al terminar de cargar, el foco va al título de lo que se muestra.
-  useEffect(() => {
+  // Al terminar de cargar, el foco va al título de lo que se muestra (mismo commit, ver arriba).
+  useLayoutEffect(() => {
     if (carga.tipo !== 'cargando') tituloRef.current?.focus()
   }, [carga.tipo])
 
