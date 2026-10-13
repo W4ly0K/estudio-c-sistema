@@ -94,6 +94,12 @@ export function formatearHora(iso: string): string {
   return fecha === null ? FECHA_NO_DISPONIBLE : FORMATO_HORA.format(fecha)
 }
 
+/** "martes, 20 de octubre de 2026 · 08:00" (un instante: los cambios de la línea de vida). */
+export function formatearMomento(iso: string): string {
+  if (instante(iso) === null) return FECHA_NO_DISPONIBLE
+  return `${formatearFecha(iso)} · ${formatearHora(iso)}`
+}
+
 /** "martes, 20 de octubre de 2026 · 08:00 – 10:00". Las franjas son de un solo día (CA-04). */
 export function formatearFranja(inicioIso: string, finIso: string): string {
   if (instante(inicioIso) === null || instante(finIso) === null) return FECHA_NO_DISPONIBLE

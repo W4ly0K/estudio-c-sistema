@@ -1,7 +1,9 @@
 import { useId } from 'react'
+import { Link } from 'react-router'
 import type { SolicitudPropia } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
 import { ETIQUETAS_CATEGORIA } from '../presentacion/etiquetas'
+import { rutaDetalle } from '../rutas'
 import { InsigniaEstado, InsigniaUrgencia } from './Insignias'
 
 export const TEXTO_PROPUESTA_STAFF = 'El Staff del Estudio C propone una nueva franja para esta solicitud.'
@@ -84,6 +86,20 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
           <p className="mt-1 text-gray-600">{TEXTO_PROPUESTA_EN_ESPERA}</p>
         </div>
       )}
+
+      <div className="mt-4 flex justify-end">
+        {/* Nombre accesible único por tarjeta: en la lista de enlaces del lector de pantalla
+            no aparecen N "Ver seguimiento detallado" idénticos. */}
+        <Link
+          to={rutaDetalle(radicado)}
+          className="px-3 py-1.5 border border-primary rounded-sm text-sm font-medium text-primary hover:bg-gray-50"
+        >
+          {/* El espacio va FUERA del span: el cálculo del nombre accesible recorta los
+              espacios de los extremos de cada elemento hijo, pero no los de un texto suelto. */}
+          Ver seguimiento detallado{' '}
+          <span className="sr-only">de {radicado}</span>
+        </Link>
+      </div>
     </article>
   )
 }

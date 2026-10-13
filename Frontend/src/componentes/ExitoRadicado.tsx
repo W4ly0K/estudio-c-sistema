@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
+import { Link } from 'react-router'
 import type { Solicitud } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
 import { ETIQUETAS_CATEGORIA } from '../presentacion/etiquetas'
+import { rutaDetalle } from '../rutas'
 import { InsigniaEstado } from './Insignias'
 
 export const TEXTO_EXITO_TITULO = '¡Solicitud registrada!'
@@ -77,9 +79,15 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
         </div>
       </dl>
 
-      <button type="button" onClick={onVolver} className="px-5 py-2.5 bg-primary text-white rounded-sm font-bold hover:opacity-90">
-        Volver al panel
-      </button>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        {/* Navegar desmonta el panel y con él el <dialog>: el navegador lo saca de la capa superior. */}
+        <Link to={rutaDetalle(solicitud.radicado)} className="px-5 py-2.5 bg-primary text-white rounded-sm font-bold hover:opacity-90">
+          Ver seguimiento detallado
+        </Link>
+        <button type="button" onClick={onVolver} className="px-5 py-2.5 border border-outline rounded-sm text-primary hover:bg-gray-50">
+          Volver al panel
+        </button>
+      </div>
     </div>
   )
 }

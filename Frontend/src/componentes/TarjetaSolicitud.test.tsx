@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import type { SolicitudPropia } from '../api/esquemas'
 import { RECURSOS_RESUMEN, SOLICITUD } from '../test/fixtures-api'
@@ -7,7 +8,11 @@ import { TEXTO_PROPUESTA_EN_ESPERA, TEXTO_PROPUESTA_STAFF, TarjetaSolicitud } fr
 const BASE: SolicitudPropia = { ...SOLICITUD, recursos: [] }
 
 const mostrar = (cambios: Partial<SolicitudPropia> = {}) =>
-  render(<TarjetaSolicitud solicitud={{ ...BASE, ...cambios }} />)
+  render(
+    <MemoryRouter>
+      <TarjetaSolicitud solicitud={{ ...BASE, ...cambios }} />
+    </MemoryRouter>,
+  )
 
 describe('TarjetaSolicitud (B1)', () => {
   it('es un artículo cuyo nombre accesible es el radicado', () => {
@@ -16,6 +21,13 @@ describe('TarjetaSolicitud (B1)', () => {
     const tarjeta = screen.getByRole('article', { name: SOLICITUD.radicado })
     expect(within(tarjeta).getByText('Podcast / Vodcast')).toBeInTheDocument()
     expect(tarjeta.querySelector('[data-estado="Validado"]')).not.toBeNull()
+  })
+
+  it('enlaza al detalle con un nombre accesible único (incluye el radicado)', () => {
+    mostrar()
+
+    const enlace = screen.getByRole('link', { name: `Ver seguimiento detallado de ${SOLICITUD.radicado}` })
+    expect(enlace).toHaveAttribute('href', `/solicitudes/${SOLICITUD.radicado}`)
   })
 
   it('urgencia: muestra la insignia y resalta el borde', () => {

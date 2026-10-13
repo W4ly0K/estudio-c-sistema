@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
 import { textoDeError } from './api/errores';
 import { CATEGORIAS, type Categoria, type Solicitud, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
 import { MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes';
 import { useApi } from './api/contexto-api';
+import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
 import { aIsoBogota, hoyEnBogota } from './fechas/bogota';
@@ -142,24 +142,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
-      {/* Header Institucional CESMAG - Intacto */}
-      <header className="w-full bg-surface border-b border-outline px-8 py-3 flex justify-between items-center sticky top-0 z-50 shadow-xs">
-        <div className="flex items-center gap-4">
-          <img src={logoEstudioC} alt="Logo Estudio C" className="h-8" />
-          <span className="font-bold text-primary border-l border-outline pl-4 tracking-wide">
-            Panel de Solicitudes
-          </span>
-        </div>
-        <div className="flex items-center gap-5">
-          <div className="text-right">
-            <p className="text-sm font-bold text-primary">{usuario.nombre}</p>
-            <p className="text-xs text-gray-500">Rol: <span className="font-semibold text-accent">{usuario.rol}</span></p>
-          </div>
-          <button onClick={onLogout} className="px-4 py-1.5 border border-outline rounded-sm text-sm font-medium hover:bg-gray-50 text-primary transition-colors">
-            Salir
-          </button>
-        </div>
-      </header>
+      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" />
 
       {/* Área de Trabajo - Tabla Intacta */}
       <main className="flex-1 p-8 max-w-[1200px] mx-auto w-full">

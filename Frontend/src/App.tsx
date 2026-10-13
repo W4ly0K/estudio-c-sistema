@@ -2,9 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Navigate, Route, Routes } from 'react-router';
 import Dashboard from './Dashboard';
+import DetalleSolicitud from './DetalleSolicitud';
 import { ProveedorApi } from './api/ProveedorApi';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
 import { textoDeError } from './api/errores';
+import { RUTA_DETALLE, RUTA_PANEL } from './rutas';
 import { useSesion } from './sesion/use-sesion';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
@@ -76,8 +78,9 @@ function App() {
       return (
         <ProveedorApi api={api.solicitudes}>
           <Routes>
-            <Route path="/" element={<Dashboard usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path={RUTA_PANEL} element={<Dashboard usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_DETALLE} element={<DetalleSolicitud usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path="*" element={<Navigate to={RUTA_PANEL} replace />} />
           </Routes>
         </ProveedorApi>
       );

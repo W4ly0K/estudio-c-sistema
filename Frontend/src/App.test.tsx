@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
-import { json } from './test/fixtures-api'
+import { DETALLE_SOLICITANTE, json } from './test/fixtures-api'
 
 // El botón real de Google necesita su proveedor y la red. El sustituto entrega una
 // credencial al hacer clic: se prueba la pantalla y el cableado del Estudio C.
@@ -133,6 +133,18 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: 'Acceso al Sistema' })).toBeInTheDocument()
       expect(localStorage.getItem('estudio_c_token')).toBeNull()
     })
+  })
+
+  it('con sesión, el enlace directo a un radicado abre su detalle (B3)', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    servidorFalso({
+      '/auth/perfil': () => json(200, LOGIN.usuario),
+      '/solicitudes/EC-2026-0142': () => json(200, DETALLE_SOLICITANTE),
+    })
+    mostrarApp('/solicitudes/EC-2026-0142')
+
+    expect(await screen.findByRole('heading', { name: 'EC-2026-0142' })).toBeInTheDocument()
+    expect(screen.getByText('Seguimiento de solicitud')).toBeInTheDocument()
   })
 
   it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {

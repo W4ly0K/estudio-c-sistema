@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from './Dashboard'
 import { ProveedorApi } from './api/ProveedorApi'
@@ -13,9 +14,11 @@ const PROPIA = { ...SOLICITUD, recursos: RECURSOS_RESUMEN }
 /** El panel con la api falsa en el proveedor (DV1): igual que en la App. */
 const mostrar = (api: ApiSolicitudes) =>
   render(
-    <ProveedorApi api={api}>
-      <Dashboard usuario={USUARIO} onLogout={() => undefined} />
-    </ProveedorApi>,
+    <MemoryRouter>
+      <ProveedorApi api={api}>
+        <Dashboard usuario={USUARIO} onLogout={() => undefined} />
+      </ProveedorApi>
+    </MemoryRouter>,
   )
 
 /** Llena el formulario B2: martes 20 de octubre de 2026, de `inicio` a `fin`. */

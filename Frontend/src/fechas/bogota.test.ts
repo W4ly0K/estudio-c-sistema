@@ -7,6 +7,7 @@ import {
   formatearFecha,
   formatearFranja,
   formatearHora,
+  formatearMomento,
   hoyEnBogota,
 } from './bogota'
 
@@ -102,8 +103,13 @@ describe('Fechas en la hora de Bogotá (Fase 6.3)', () => {
       )
     })
 
+    it('el momento junta el día y la hora, en Bogotá', () => {
+      expect(formatearMomento('2026-10-21T03:00:00.000Z')).toMatch(/^martes, 20 de octubre de 2026 · 22:00$/)
+    })
+
     it.each(['no es una fecha', ''])('una fecha ilegible ("%s") nunca muestra "Invalid Date"', (iso) => {
       expect(formatearFecha(iso)).toBe(FECHA_NO_DISPONIBLE)
+      expect(formatearMomento(iso)).toBe(FECHA_NO_DISPONIBLE)
       expect(formatearHora(iso)).toBe(FECHA_NO_DISPONIBLE)
       expect(formatearFranja(iso, '2026-10-20T15:00:00.000Z')).toBe(FECHA_NO_DISPONIBLE)
     })

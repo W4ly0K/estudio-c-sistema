@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import type { Solicitud } from '../api/esquemas'
 import { SOLICITUD } from '../test/fixtures-api'
@@ -7,7 +8,11 @@ import { ExitoRadicado, TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './Exito
 const CREADA: Solicitud = { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido' }
 
 function mostrar(cambios: Partial<Solicitud> = {}, onVolver = vi.fn<() => void>()) {
-  render(<ExitoRadicado solicitud={{ ...CREADA, ...cambios }} responsable="Ana Pérez" idTitulo="titulo" onVolver={onVolver} />)
+  render(
+    <MemoryRouter>
+      <ExitoRadicado solicitud={{ ...CREADA, ...cambios }} responsable="Ana Pérez" idTitulo="titulo" onVolver={onVolver} />
+    </MemoryRouter>,
+  )
   return { onVolver }
 }
 
@@ -40,6 +45,12 @@ describe('ExitoRadicado (B1b)', () => {
     mostrar()
 
     expect(document.querySelector('[data-aviso="urgencia"]')).toBeNull()
+  })
+
+  it('ofrece ir al seguimiento detallado del radicado nuevo', () => {
+    mostrar()
+
+    expect(screen.getByRole('link', { name: 'Ver seguimiento detallado' })).toHaveAttribute('href', '/solicitudes/EC-2026-0999')
   })
 
   it('"Volver al panel" avisa al contenedor', () => {
