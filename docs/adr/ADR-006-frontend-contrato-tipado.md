@@ -2,10 +2,11 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado (pasos 6.0 a 6.3; la Fase 6 lo amplía en 6.4 y 6.5) |
+| **Estado** | ✅ Aceptado (pasos 6.0 a 6.4; la Fase 6 lo amplía en 6.5) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
+| **Actualización** | 2026-10-13 · Paso 6.4: vistas del solicitante B1 a B4, rutas, accesibilidad y acciones T3, T6, T7 y T8 (§2.11) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -156,6 +157,57 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
   - Antes de cada zona verifica que el proceso hijo de verdad la tomó: si `TZ` no se aplicara, las cuatro ejecuciones correrían en la hora de Bogotá y el verde sería falso.
 - **Por qué es indispensable: la prueba roja.** Las pruebas del panel se escribieron **antes** de la corrección. Con el código anterior, F2a (que compara el **instante** enviado) **pasaba en Bogotá** y fallaba en las otras tres zonas: en UTC enviaba `08:00Z`, en Pago_Pago `19:00Z` y en Kiritimati las `18:00Z` del día anterior, en lugar de `13:00Z`. En el equipo de quien desarrolla en Colombia, F2 era invisible. F2c fallaba en las cuatro (`min="2026-10-21"` a las 19:30 del 20). Con la corrección, las mismas pruebas pasaron en las cuatro zonas.
 
+### 2.11 Vistas del solicitante (paso 6.4 · Decisiones DV1 a DV6)
+
+El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b), formulario (B2), detalle con línea de vida (B3) y respuesta a la propuesta de reprogramación (B4), con cancelar (T3, T6), aceptar (T7) y rechazar (T8).
+
+**Rutas y api (DV1).**
+- react-router 7: `BrowserRouter` en `main.tsx` y rutas **solo con sesión**. `src/rutas.ts` es la única fuente de las rutas (`RUTA_PANEL`, `RUTA_DETALLE`, `rutaDetalle()`), así que los enlaces y el `<Routes>` no pueden divergir. Una ruta desconocida vuelve a `/`.
+- `rutaDetalle()` codifica el radicado igual que la api. react-router decodifica el parámetro (`%2F` → `/`) y la api lo vuelve a codificar: el viaje de ida y vuelta tiene su prueba.
+- La api llega por Context (`ProveedorApi` / `useApi`). `useApi()` lanza un error fuera del proveedor: mejor un error claro que un `undefined` silencioso.
+- **Despliegue:** el hosting debe responder `index.html` en cualquier ruta (*SPA fallback*). Vite lo hace en desarrollo; un servidor estático en producción, no. Sin eso, F5 en `/solicitudes/EC-…` responde 404.
+
+**Derivar de la máquina, no repetir reglas.** Tres funciones puras leen la tabla de transiciones en lugar de listas escritas a mano; si el backend cambia la tabla, la prueba de deriva avisa y la vista se ajusta sola:
+- `resumirSolicitudes()` cuenta como cerradas las de `esEstadoFinal()`.
+- `accionesDelSolicitante(estado)` filtra `TRANSICIONES` por el rol `SOLICITANTE`: Recibido y Validado → cancelar; Pendiente → aceptar o rechazar, y **no** cancelar.
+- `actorDe(desde, hacia)`: el backend no envía al solicitante quién hizo cada cambio (minimización, README §8), pero cada transición tiene un único rol: "Tú" o "Staff Estudio C". Un par fuera de la tabla devuelve `null`: mejor callar que inventar.
+
+**Línea de vida (`lineaDeVida()`, pura).** Un stepper de 4 nodos (Recibido, Validado, En Producción, Entregado), cada uno `completado`, `actual`, `pendiente` u `omitido`.
+- `omitido`: el flujo terminó fuera del camino (Rechazado o Cancelado) y ese paso ya no llegará. Mostrarlo como "pendiente" no sería honesto.
+- Pendiente de Reprogramación es un **desvío**: no es final, así que el camino sigue pendiente.
+- La fecha de un nodo es la del cambio **más reciente** hacia ese estado (tras T7, Validado muestra la fecha nueva). "Recibido" no tiene hora: el log solo guarda cambios de estado.
+- Los logs se ordenan por fecha aunque el contrato prometa que llegan ordenados.
+
+**UI honesta (DV2).** Cada texto dice exactamente lo que hará el servidor:
+- **Rechazar la propuesta CANCELA la solicitud** (T8). El wireframe promete una contrapropuesta que la máquina no tiene (W3): la UI no la ofrece.
+- **Cancelar no pide motivo**, aunque el wireframe lo dibuje: el endpoint no recibe cuerpo, y pedir un dato que no se guarda sería engañar.
+- Desde En Producción se explica por qué ya no hay cancelación en línea.
+- La urgencia se muestra solo si el **servidor** la marcó (`es_urgencia`); el cliente no calcula días hábiles (DH4). La confirmación B1b pide avisar al Staff (README §9).
+- **404 uniforme:** ajena o inexistente se ven igual, *"No encontramos esa solicitud"*; decir "no es tuya" confirmaría que existe. Un error de red se muestra distinto: no se hace pasar por "no existe".
+- Si aceptar falla (README §12.3: otra solicitud confirmó la franja antes), se explican las salidas sin culpar al usuario. Sin comparar el texto del servidor (DC5): la ayuda aparece ante cualquier fallo de T7.
+- Cualquier 409 en una acción ofrece **"Recargar la solicitud"**: lo que se ve ya no es lo que hay.
+
+**Accesibilidad (DV6).** `jsx-a11y` entra al lint, y las pruebas consultan por rol, etiqueta y nombre accesible: si se rompe la accesibilidad, se rompe una prueba.
+- Etiquetas con `htmlFor` e ids de `useId`. Insignias distinguidas por la forma del borde y un símbolo, nunca solo por el color.
+- Cada tarjeta es un `<article>` cuyo nombre accesible es el radicado. Los enlaces repetidos tienen nombre único ("Ver seguimiento detallado de EC-…", con texto `sr-only`). El espacio va **fuera** del `<span>`: el cálculo del nombre accesible recorta los espacios de los extremos de cada elemento hijo (la prueba lo atrapó como *"detalladode"*).
+- `<output>` para los mensajes de estado. **El foco va al título** cuando cambia la pantalla (navegación, confirmación, acción terminada): en una SPA el lector de pantalla no se entera de otra forma, y el botón que tenía el foco a veces ya no existe.
+- **Diálogos con `<dialog>` nativo y `showModal()`:** el navegador atrapa el foco, cierra con Escape y vuelve inerte el fondo. Un estado de React manda y un efecto lo traduce a `showModal()` / `close()`, con guardas sobre `open`; `onClose` recoge todo cierre. jsdom 30 no implementa la API modal: el polyfill vive **solo** en `src/test/setup.ts`, sin ramas para jsdom en el código de la app.
+
+**Patrones de estado.**
+- **Uniones discriminadas** para lo que se muestra: el diálogo B2 es `cerrado | formulario | exito(solicitud)`, y la combinación imposible "cerrado pero con éxito" no se puede escribir.
+- **Estado derivado en lugar de `setState` en un efecto** (`react(set-state-in-effect)`): el detalle guarda cada respuesta **junto al radicado y la versión** que la pidieron, y "cargando" se deriva. Al pasar de un detalle a otro nunca se pinta, ni por un instante, la solicitud anterior. "Recargar" sube la versión.
+- **Confirmaciones:** "Volver sin cambios" va primero, así recibe el foco al abrir (un Enter apresurado no ejecuta una acción irreversible) y no dice "Cancelar", que se confundiría con cancelar la solicitud. Mientras la petición viaja, los botones se bloquean y Escape no cierra. Un candado síncrono (`useRef`) es la defensa en profundidad contra el doble envío.
+- **El diálogo no se desmonta con los botones:** tras un éxito, la solicitud puede quedarse sin acciones. Si el diálogo viviera dentro de ese bloque, React lo arrancaría del DOM todavía abierto, sin pasar por `close()`.
+
+**Lo que atraparon las herramientas durante el paso** (no los sabotajes, sino errores reales):
+
+| Herramienta | Hallazgo | Corrección |
+|---|---|---|
+| `jsx-a11y(prefer-tag-over-role)` | `<p role="status">` y `<div role="dialog">` | `<output>` y `<dialog>` nativo, que además hizo honesto el `aria-modal` |
+| `react(set-state-in-effect)` | `setCarga('cargando')` dentro del efecto del detalle | Estado derivado de la respuesta guardada con su radicado |
+| Prueba de nombre accesible | *"Ver seguimiento detalladode EC-…"* | El espacio fuera del `<span className="sr-only">` |
+| Prueba de cierre del diálogo | El `<dialog>` quedaba con `open` al desmontarse | El diálogo, fuera del bloque condicional de los botones |
+
 ---
 
 ## 3. Verificación
@@ -174,6 +226,10 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 | DH1 a DH3 | `bogota.test.ts` (44: el canario del desfase en 24 instantes, 8 entradas inválidas, F2c a las 19:30, formato en 24 horas y el día de Bogotá aunque en UTC ya sea otro) |
 | DH4 y F2 en la UI | `Dashboard.test.tsx` (F2a con el instante y el texto exactos, F2b, F2c con `vi.setSystemTime`, y tres de F3) · `contrato.test.ts` (el aviso local idéntico a CA-04) |
 | DH5 | `npm run test:tz`: la suite completa en 4 zonas, en local y en el CI |
+| DV1 | `contexto-api.test.tsx` · `rutas.test.ts` · `App.test.tsx` (ruta desconocida y enlace directo al detalle) |
+| Derivar de la máquina | `resumen.test.ts` · `linea-de-vida.test.ts` (12) · `acciones-solicitante.test.ts` (9) |
+| DV2 y B1 a B4 en la UI | `TarjetaSolicitud.test.tsx` · `ExitoRadicado.test.tsx` · `DetalleSolicitud.test.tsx` · `DetalleSolicitud.acciones.test.tsx` (10) · `Dashboard.test.tsx` |
+| DV6 | `Insignias.test.tsx` (13) · consultas por rol, etiqueta y nombre accesible en todas las pruebas de vista · `toHaveFocus` tras cada cambio de pantalla |
 
 **Sabotajes (mutaciones manuales, todas detectadas y revertidas):**
 
@@ -191,6 +247,16 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 | 6.2.3 | Tratar el 401 del perfil como una falla de red | La prueba del token vencido |
 | 6.3.1 | `hour12: true` en lugar de `hourCycle: 'h23'` | Las pruebas de `08:00` y `18:30` |
 | 6.3.2 | El código anterior del panel, antes de corregirlo (prueba roja) | `test:tz`: F2a en verde solo en Bogotá y en rojo en las otras tres zonas; F2b, F2c y F3 en rojo en las cuatro |
+| 6.4.1 | Sin `htmlFor` en la etiqueta "Fecha" | Las pruebas que buscan el campo por su etiqueta |
+| 6.4.1 | Sin `onClose` en el `<dialog>` | El cierre por el evento `close` (Escape) |
+| 6.4.2 | Sin llevar el foco al título de B1b | "lleva el foco al título" |
+| 6.4.2 | `s.estado === 'Entregado'` en lugar de `esEstadoFinal()` | El conteo de cerradas y el resumen del panel |
+| 6.4.3 | `actorDe` invertido | Las pruebas de actor y del historial |
+| 6.4.3 | Sin la rama del 404 en el detalle | "No encontramos esa solicitud" |
+| 6.4.3 | Los logs sin ordenar | "ordena por fecha aunque lleguen desordenados" |
+| 6.4.4 | El texto de T8 sin "CANCELA" | La prueba pura y la de integración de T8 |
+| 6.4.4 | Sin `preventDefault` en el `cancel` del diálogo | "Escape no cierra mientras viaja" |
+| 6.4.4 | Acciones para cualquier rol | "un usuario STAFF no ve las acciones del solicitante" |
 
 **Verificación manual (6.1.3):** login, lista y creación; un token alterado devuelve al login con el aviso de sesión expirada; con el backend apagado aparece el mensaje de red y la UI no se rompe.
 
@@ -205,11 +271,19 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 - con la zona del navegador cambiada a Berlín (herramientas del navegador → *Sensors*), las franjas conservan sus horas y una solicitud nueva de 08:00 se guarda como 08:00 de Bogotá;
 - una franja de 11:00 a 15:00 ya no se bloquea en el cliente: responde el servidor con su mensaje de CA-04.
 
+**Verificación manual (6.4):**
+- el foco queda atrapado en los diálogos y Escape los cierra; con el formulario abierto, Tab no sale de él;
+- F5 conserva la sesión en el panel y en el detalle; una ruta inválida vuelve al panel;
+- una solicitud urgente se ve con borde grueso e insignia, y su confirmación pide avisar al Staff;
+- al navegar al detalle, el foco salta al radicado.
+
 **Resultado al cierre de 6.1:** `npm test` del frontend, 11 archivos · 105 ✅.
 
 **Resultado al cierre de 6.2:** frontend `npm test` 13 archivos · 134 ✅ · backend `npm test` 705 ✅ y 1 omitida · `npm run test:e2e` 5 suites · 64 ✅ · CI con los jobs Backend y Frontend en verde, 0 advertencias de lint.
 
 **Resultado al cierre de 6.3:** frontend `npm test` 14 archivos · 185 ✅ y `npm run test:tz` 185 ✅ en cada una de las 4 zonas · CI en verde con el paso nuevo de zonas horarias.
+
+**Resultado al cierre de 6.4:** frontend `npm test` 25 archivos · 270 ✅ y `npm run test:tz` 270 ✅ en cada una de las 4 zonas · `npm run lint` con `jsx-a11y`, 0 advertencias.
 
 ---
 
@@ -219,6 +293,7 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
   - ninguna respuesta de la API llega a la UI sin validar, y ningún error queda sin un texto para la persona;
   - un 401 ya no deja un panel muerto, y la sesión sobrevive a una recarga y a una caída del servidor (F4 resuelto);
   - una reserva significa la misma hora real desde cualquier equipo, y se ve igual desde cualquier zona horaria (F2 resuelto); el cliente ya no contradice CA-04 (F3 resuelto);
+  - el solicitante sigue y responde sus solicitudes sin salir del sistema (F5 resuelto para el solicitante), con textos que dicen lo que de verdad hará el servidor;
   - la API solo responde a los orígenes del frontend en el navegador;
   - las desalineaciones con el backend fallan en el CI, no en producción;
   - los cuerpos ilegales no compilan.
@@ -229,8 +304,9 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
   - una variable de entorno obligatoria más (`CORS_ORIGENES`) en cada despliegue del backend;
   - restaurar la sesión cuesta una petición (`GET /auth/perfil`) al cargar la página;
   - las reglas de CA-04 distintas de "fin posterior al inicio" se ven al enviar, no al escribir;
-  - la suite del frontend corre cinco veces en el CI (una normal y cuatro por zona).
-- **Mantenimiento:** una ruta nueva sigue la lista de verificación del README del frontend (§5): esquema primero, una función por ruta, el cuerpo más estrecho posible y pruebas en el mismo commit.
+  - la suite del frontend corre cinco veces en el CI (una normal y cuatro por zona);
+  - el hosting de producción debe configurarse con *SPA fallback* (§2.11).
+- **Mantenimiento:** una ruta nueva sigue la lista de verificación del README del frontend (§7): esquema primero, una función por ruta, el cuerpo más estrecho posible y pruebas en el mismo commit.
 
 ## 5. Riesgos y deuda conocida
 
@@ -238,7 +314,9 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 - **Sesión (DS4, fuera del 6.2):** cerrar la sesión en todas las pestañas a la vez (evento `storage`); cerrarla de forma proactiva al vencer el JWT (hoy se cierra con el primer 401); revocar tokens en el servidor al salir (el JWT es *stateless*: uno robado sigue vigente hasta sus 8 h); la cookie `httpOnly` (DF2).
 - **Backend:** el puerto 3000 sigue fijo en `main.ts`.
 - **Backend:** `findMisSolicitudes()` y `findAll()` usan `include` y devuelven todas las columnas (punto 8 de su lista de verificación). El lector tolerante las descarta, pero viajan por la red.
-- **Accesibilidad:** las etiquetas del formulario no están asociadas a sus campos (`htmlFor`); `jsx-a11y` entra con las vistas de 6.4.
+- **Backend (hallazgo de la 6.4 · DE1):** `motivo_rechazo` (`update-solicitude.dto.ts`) se valida con `@MinLength(10)`: no recorta espacios (diez espacios pasan), no cuenta caracteres reales y no tiene máximo. El motivo de la reprogramación ya usa `@TextoConLongitudReal(10, 500)` con CHECK en la base (ADR-005 §2.9). Se corrige en el paso 6.5b, antes del formulario de rechazo del Staff.
+- **Formulario B2:** no permite elegir recursos (el contrato sí los acepta).
+- **Vista del Staff:** llega en la 6.5. Editar las fechas de una solicitud en Recibido queda fuera (DE6): una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado).
 - **CI:** `actions/checkout` y `setup-node` `@v4` corren sobre Node 20 (aviso de obsolescencia): subir a `@v5` junto con la fijación por SHA, en los dos jobs.
 - **Identidad visual:** la fuente Roboto se declara en el tema pero no se carga.
 
@@ -263,4 +341,9 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 | `3ef7543` | 6.2.4 · §2.7 a §2.9 y los README |
 | `fb1471e` | 6.3.1 · `src/fechas/bogota.ts`, `test:tz` y su paso en el CI |
 | `6cdf6bb` | 6.3.2 · El panel crea y muestra las franjas en la hora de Bogotá (F2) y solo valida fin posterior al inicio (F3) |
-| — | 6.3.3 · Esta actualización (§2.10) y el README |
+| `428854c` | 6.3.3 · §2.10 y el README |
+| `500ace2` | 6.4.1 · Rutas con react-router, api por Context, insignias, modal nativo y `jsx-a11y` |
+| `0a49201` | 6.4.2 · Tarjetas con urgencia y aviso de reprogramación, resumen del panel y confirmación del radicado (B1, B1b) |
+| `4bff58d` | 6.4.3 · Detalle con la línea de vida, 404 uniforme y enlaces desde el panel (B3) |
+| `78881ad` | 6.4.4 · Cancelar, aceptar y rechazar con confirmación nativa y recarga ante 409 (B3, B4) |
+| — | 6.4.5 · Esta actualización (§2.11) y el README |

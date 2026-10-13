@@ -4,7 +4,7 @@ Interfaz web del sistema de gestión, reservas y seguimiento de solicitudes de e
 
 | Capa | Tecnología |
 |---|---|
-| Interfaz | React 19 + Vite 8 |
+| Interfaz | React 19 + Vite 8 · rutas con react-router 7 |
 | Estilos | Tailwind CSS v4 (plugin `@tailwindcss/vite`; tema CESMAG en `src/index.css`) |
 | Contrato con la API | Zod 4: cada respuesta se valida en tiempo de ejecución |
 | Autenticación | Google OAuth institucional (`@react-oauth/google`) → JWT del backend |
@@ -43,7 +43,7 @@ npm run dev                  # http://localhost:5173
 | `npm run dev` | Servidor de desarrollo con recarga automática |
 | `npm run typecheck` | `tsc -b`: tipos de la app y de la configuración (incluye las pruebas) |
 | `npm run lint` | oxlint sobre `src/`; cualquier advertencia falla |
-| `npm test` | Vitest una vez (185 pruebas) |
+| `npm test` | Vitest una vez (270 pruebas) |
 | `npm run test:tz` | La suite completa en 4 zonas horarias (UTC, Bogotá, UTC−11 y UTC+14). **Obligatorio si tocas fechas u horas** |
 | `npm run test:watch` | Vitest en modo observación |
 | `npm run build` | `tsc -b && vite build`: un error de tipos impide el build |
@@ -64,16 +64,24 @@ src/
 │   ├── auth.ts           POST /auth/google/login (ruta pública)
 │   ├── errores.ts        textoDeError(): el texto que ve la persona para cada ErrorApi
 │   ├── crear-api.ts      Raíz de composición: conecta el cliente con el entorno y el navegador
+│   ├── contexto-api.ts   ContextoApi y useApi(): la api para las vistas (lanza fuera del proveedor)
+│   ├── ProveedorApi.tsx  <ProveedorApi api={…}>: la App inyecta la api real; las pruebas, una falsa
 │   └── contrato.test.ts  Prueba de deriva contra el código del backend
+├── componentes/          Piezas de las vistas: Encabezado, Insignias, TarjetaSolicitud, ExitoRadicado (B1b),
+│                         LineaDeVida, AccionesSolicitud y DialogoConfirmacion (<dialog> nativo)
 ├── config/entorno.ts     Variables de entorno validadas (fail-fast)
 ├── fechas/bogota.ts      Fechas SIEMPRE en la hora de Bogotá: aIsoBogota, hoyEnBogota y formatear*
+├── presentacion/         Funciones PURAS de la vista: etiquetas, resumen del panel, lineaDeVida y las
+│                         acciones del solicitante con sus textos (derivadas de la máquina de estados)
 ├── sesion/
 │   ├── token.ts          Único módulo que conoce localStorage (con try/catch)
 │   ├── maquina-sesion.ts Máquina pura de la sesión: estados, eventos y reducirSesion()
 │   └── use-sesion.ts     Hook dueño de la sesión: conecta la máquina con el token, el perfil y el 401
-├── test/                 setup.ts (jest-dom) y fixtures-api.ts (cargas del contrato y fetch falso)
-├── App.tsx               Una pantalla por estado de la sesión; inyecta la api en el panel
-└── Dashboard.tsx         Panel del solicitante (recibe la api por props)
+├── test/                 setup.ts (jest-dom y el polyfill de <dialog>) y fixtures-api.ts (cargas, fetch y api falsos)
+├── rutas.ts              Las rutas, en un solo lugar: RUTA_PANEL, RUTA_DETALLE y rutaDetalle(radicado)
+├── App.tsx               Una pantalla por estado de la sesión; con sesión, las rutas dentro de <ProveedorApi>
+├── Dashboard.tsx         Panel del solicitante (B1, B1b y el formulario B2)
+└── DetalleSolicitud.tsx  Detalle (B3), propuesta (B4) y acciones; "cargando" se deriva, no se guarda
 ```
 
 ## 4. Cómo se habla con la API
@@ -139,7 +147,9 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 8. Fechas: con `src/fechas/bogota.ts`, nunca con la zona del navegador (§6).
 9. Botones de acción: deshabilitados mientras la petición está en curso (evita el doble clic y el 409 de estado final).
 10. Nada de `dangerouslySetInnerHTML` (`react/no-danger` es error): React escapa los mensajes del servidor.
-11. Pruebas en el mismo commit: la función con el fetch falso (`crearEntornoDePrueba`) y el componente con una api falsa inyectada.
+11. Pruebas en el mismo commit: la función con el fetch falso (`crearEntornoDePrueba`) y el componente con una api falsa inyectada (`apiFalsa()` dentro de `<ProveedorApi>`).
+12. **Accesibilidad:** busca en las pruebas por rol, etiqueta y nombre accesible (`getByRole`, `getByLabelText`), nunca por clases. Diálogos con `<dialog>` y `showModal()`; tras cambiar de pantalla, el foco al título. Si `jsx-a11y` marca algo, se corrige; no se silencia.
+13. **Si el backend rechaza algo, el texto dice qué pasará de verdad** (ADR-006 §2.11): ni promesas que la máquina no cumple ni datos que no se guardan.
 
 ## 8. Pruebas
 
@@ -149,7 +159,22 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 - `src/sesion/*.test.ts`: la máquina con una tabla de transiciones (incluidos los eventos ignorados, verificados con `toBe`) y el hook con `renderHook` y un `fetch` falso por ruta.
 - `src/fechas/bogota.test.ts`: el canario del desfase de Bogotá, entradas inválidas, el día de "hoy" a las 19:30 y el formato. `Dashboard.test.tsx` fija el reloj con `vi.setSystemTime` para el mínimo del calendario.
 - **`npm run test:tz`** repite toda la suite en 4 zonas y verifica antes que cada proceso de verdad tomó su zona (sin eso, el verde podría ser falso).
+- Las vistas se prueban con `apiFalsa()` dentro de `<ProveedorApi>` y un `MemoryRouter`. jsdom no implementa `showModal()`: el polyfill de `src/test/setup.ts` imita las reglas del navegador que importan (`InvalidStateError` al abrir dos veces y el evento `close`).
+- Las funciones de `presentacion/` se prueban sin React: ahí vive la lógica de la vista.
 
-## 9. Pendiente en la Fase 6
+## 9. Vistas del solicitante y despliegue
 
-- **6.4 y 6.5:** vistas del solicitante (B1 a B4) y del Staff (tablero y acciones).
+| Ruta | Pantalla |
+|---|---|
+| `/` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) |
+| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) |
+| cualquier otra | Vuelve a `/` |
+
+- **Despliegue en producción:** el servidor debe responder `index.html` en **cualquier** ruta (*SPA fallback*). `npm run dev` ya lo hace; un hosting estático, no por defecto. Sin eso, recargar o abrir un enlace directo a `/solicitudes/EC-…` responde 404.
+- Ajena o inexistente se ven igual: *"No encontramos esa solicitud"* (404 uniforme del backend).
+
+## 10. Pendiente en la Fase 6
+
+- **6.5b · Backend:** `motivo_rechazo` con `@TextoConLongitudReal(10, 500)` y CHECK en la base (hoy `@MinLength(10)` acepta diez espacios).
+- **6.5 · Vista del Staff:** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (decisiones DE1 a DE6).
+- **6.6 · Cierre:** bitácora, ADR y PR de la fase.
