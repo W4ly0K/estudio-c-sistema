@@ -4,6 +4,9 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { DetalleSolicitante, UsuarioSesion } from './api/esquemas'
+import type { Rol } from './api/maquina-estados'
+import type { RespuestaComando } from './api/solicitudes'
+import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { LineaDeVida } from './componentes/LineaDeVida'
@@ -50,8 +53,20 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
   // DERIVA cuando la respuesta guardada es de otro radicado (o aún no hay ninguna). Así el
   // efecto solo escribe estado en el callback asíncrono, y al pasar de un detalle a otro
   // nunca se pinta, ni por un instante, la solicitud anterior.
-  const [respuesta, setRespuesta] = useState<{ readonly radicado: string; readonly estado: Respuesta } | null>(null)
-  const carga: EstadoCarga = respuesta !== null && respuesta.radicado === radicado ? respuesta.estado : CARGANDO
+  // `version` sube al pedir "Recargar la solicitud" (tras un 409): la respuesta guardada
+  // queda vieja por la misma regla y la pantalla vuelve a "cargando" sin escribir estado
+  // dentro del efecto.
+  const [version, setVersion] = useState(0)
+  const [respuesta, setRespuesta] = useState<{
+    readonly radicado: string
+    readonly version: number
+    readonly estado: Respuesta
+    /** Mensaje del servidor tras una acción (cancelar, aceptar, rechazar). */
+    readonly aviso: string | null
+  } | null>(null)
+  const vigenteAhora = respuesta !== null && respuesta.radicado === radicado && respuesta.version === version
+  const carga: EstadoCarga = vigenteAhora ? respuesta.estado : CARGANDO
+  const aviso = vigenteAhora ? respuesta.aviso : null
   const tituloRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -59,12 +74,24 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
     let vigente = true
     void api.detalleSolicitante(radicado).then((resultado) => {
       // Una respuesta que llega tarde (ya se navegó a otro radicado) se descarta.
-      if (vigente) setRespuesta({ radicado, estado: aRespuesta(resultado) })
+      if (vigente) setRespuesta({ radicado, version, estado: aRespuesta(resultado), aviso: null })
     })
     return () => {
       vigente = false
     }
-  }, [api, radicado])
+  }, [api, radicado, version])
+
+  // Tras una acción, el botón que tenía el foco puede haber desaparecido (ya no hay nada
+  // que cancelar): el foco vuelve al título y el aviso se anuncia desde el <output>.
+  useEffect(() => {
+    if (aviso !== null) tituloRef.current?.focus()
+  }, [aviso])
+
+  const alCompletar = (resultado: RespuestaComando<DetalleSolicitante>) => {
+    if (radicado === undefined) return
+    // La solicitud que devuelve el comando ES la verdad del servidor: se pinta sin otra petición.
+    setRespuesta({ radicado, version, estado: { tipo: 'lista', detalle: resultado.solicitud }, aviso: resultado.mensaje })
+  }
 
   // Navegar en una SPA no recarga la página: el lector de pantalla no se entera del cambio.
   // Al terminar de cargar, el foco va al título de lo que se muestra.
@@ -100,7 +127,21 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
             </p>
           </div>
         )}
-        {carga.tipo === 'lista' && <Contenido detalle={carga.detalle} tituloRef={tituloRef} />}
+        {aviso !== null && (
+          <output className="block p-3 border-2 border-primary rounded-sm bg-surface text-sm font-bold text-primary">
+            <span aria-hidden="true">✓ </span>
+            {aviso}
+          </output>
+        )}
+        {carga.tipo === 'lista' && (
+          <Contenido
+            detalle={carga.detalle}
+            tituloRef={tituloRef}
+            rol={usuario.rol}
+            alCompletar={alCompletar}
+            alRecargar={() => setVersion((v) => v + 1)}
+          />
+        )}
       </main>
     </div>
   )
@@ -109,9 +150,15 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
 function Contenido({
   detalle,
   tituloRef,
+  rol,
+  alCompletar,
+  alRecargar,
 }: {
   detalle: DetalleSolicitante
   tituloRef: RefObject<HTMLHeadingElement | null>
+  rol: Rol
+  alCompletar: (respuesta: RespuestaComando<DetalleSolicitante>) => void
+  alRecargar: () => void
 }) {
   const propuesta =
     detalle.estado === 'Pendiente de Reprogramación' &&
@@ -157,7 +204,7 @@ function Contenido({
         </dl>
       </section>
 
-      {/* B4 (solo lectura en 6.4.3): la decisión llega en 6.4.4. */}
+      {/* B4: la propuesta y su motivo; la decisión, en las acciones de abajo. */}
       {propuesta !== null && (
         <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-6 bg-surface text-sm">
           <h3 className="font-bold text-primary">
@@ -180,6 +227,8 @@ function Contenido({
           </div>
         </section>
       )}
+
+      <AccionesSolicitud detalle={detalle} rol={rol} alCompletar={alCompletar} alRecargar={alRecargar} />
 
       <LineaDeVida linea={lineaDeVida(detalle)} />
     </>
