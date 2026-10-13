@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
 import { json } from './test/fixtures-api'
@@ -17,6 +18,15 @@ vi.mock('@react-oauth/google', () => ({
 // VITE_API_URL de vitest.config.ts.
 const API = 'http://api.prueba.local'
 const LOGIN = { mensaje: 'Autenticación exitosa', token: 'jwt-de-la-app', usuario: { id: 'uuid', nombre: 'Ana Pérez', rol: 'SOLICITANTE' } }
+
+/** La App dentro de un router en memoria (en producción, BrowserRouter en main.tsx). */
+function mostrarApp(ruta = '/') {
+  return render(
+    <MemoryRouter initialEntries={[ruta]}>
+      <App />
+    </MemoryRouter>,
+  )
+}
 
 /** fetch falso por ruta: la App crea su propio cliente con el fetch global (raíz de composición). */
 function servidorFalso(rutas: Record<string, () => Response>) {
@@ -39,7 +49,7 @@ describe('App', () => {
   })
 
   it('sin sesión muestra la pantalla de acceso institucional', () => {
-    render(<App />)
+    mostrarApp()
 
     expect(screen.getByRole('heading', { name: 'Acceso al Sistema' })).toBeInTheDocument()
     expect(screen.getByText(/exclusivamente con tu correo institucional CESMAG/)).toBeInTheDocument()
@@ -53,7 +63,7 @@ describe('App', () => {
       '/auth/google/login': () => json(201, LOGIN),
       '/solicitudes/mis-solicitudes': () => json(200, []),
     })
-    render(<App />)
+    mostrarApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
 
@@ -67,7 +77,7 @@ describe('App', () => {
   it('correo fuera del dominio: muestra el mensaje del servidor y no crea sesión', async () => {
     const mensaje = 'Acceso restringido al dominio @unicesmag.edu.co'
     servidorFalso({ '/auth/google/login': () => json(401, { statusCode: 401, message: mensaje }) })
-    render(<App />)
+    mostrarApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
 
@@ -80,7 +90,7 @@ describe('App', () => {
       '/auth/google/login': () => json(201, LOGIN),
       '/solicitudes/mis-solicitudes': () => json(401, { statusCode: 401, message: 'Unauthorized' }),
     })
-    render(<App />)
+    mostrarApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
 
@@ -96,7 +106,7 @@ describe('App', () => {
         '/auth/perfil': () => json(200, LOGIN.usuario),
         '/solicitudes/mis-solicitudes': () => json(200, []),
       })
-      render(<App />)
+      mostrarApp()
 
       // Mientras verifica no aparece el login (sin parpadeo).
       expect(screen.getByRole('status')).toHaveTextContent(TEXTO_VERIFICANDO)
@@ -112,7 +122,7 @@ describe('App', () => {
           throw new TypeError('Failed to fetch')
         },
       })
-      render(<App />)
+      mostrarApp()
 
       expect(await screen.findByRole('alert')).toHaveTextContent(TEXTO_SIN_VERIFICAR)
       expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
@@ -123,5 +133,16 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: 'Acceso al Sistema' })).toBeInTheDocument()
       expect(localStorage.getItem('estudio_c_token')).toBeNull()
     })
+  })
+
+  it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    servidorFalso({
+      '/auth/perfil': () => json(200, LOGIN.usuario),
+      '/solicitudes/mis-solicitudes': () => json(200, []),
+    })
+    mostrarApp('/una/ruta/que/no/existe')
+
+    expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
   })
 })

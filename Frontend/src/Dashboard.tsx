@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png'; // O el .svg si lo prefieres
 import { textoDeError } from './api/errores';
 import { CATEGORIAS, type Categoria, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
 import { MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes';
-import type { ApiSolicitudes } from './api/solicitudes';
+import { useApi } from './api/contexto-api';
+import { InsigniaEstado } from './componentes/Insignias';
 import { aIsoBogota, formatearFranja, hoyEnBogota } from './fechas/bogota';
+import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 
 /**
  * DH4: el cliente solo valida "fin posterior al inicio". Los bloques, los días hábiles
@@ -16,8 +18,6 @@ export const TEXTO_BLOQUES_ATENCION =
 interface DashboardProps {
   usuario: UsuarioSesion;
   onLogout: () => void;
-  /** Inyectada por la App (DC3): en las pruebas, una api falsa. */
-  api: ApiSolicitudes;
 }
 
 interface FormularioSolicitud {
@@ -30,16 +30,39 @@ interface FormularioSolicitud {
 
 const FORMULARIO_VACIO: FormularioSolicitud = { fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' };
 
-export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
+export default function Dashboard({ usuario, onLogout }: DashboardProps) {
+  // DV1: la api llega por Context (en las pruebas, una api falsa en el proveedor).
+  const api = useApi();
+  // DV6: ids únicos para asociar cada etiqueta con su campo (y el diálogo con su título).
+  const id = useId();
+  const ids = {
+    titulo: `${id}-titulo`,
+    categoria: `${id}-categoria`,
+    proposito: `${id}-proposito`,
+    fecha: `${id}-fecha`,
+    horaInicio: `${id}-hora-inicio`,
+    horaFin: `${id}-hora-fin`,
+  };
   const [solicitudes, setSolicitudes] = useState<SolicitudPropia[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorCarga, setErrorCarga] = useState('');
   const [showModal, setShowModal] = useState(false);
+  // Modal NATIVO (DV6): el navegador captura el foco, cierra con Escape y vuelve inerte el fondo.
+  const dialogoRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<FormularioSolicitud>(FORMULARIO_VACIO);
   const [errorValidacion, setErrorValidacion] = useState('');
 
   // Cargar solicitudes del usuario. `vigente` descarta la respuesta si el componente
   // se desmontó o el efecto se repitió (StrictMode lo ejecuta dos veces en desarrollo).
+  // Una sola fuente de verdad: el estado `showModal` manda y el <dialog> lo obedece.
+  // Guardas con `open`: `showModal()` nativo lanza InvalidStateError si ya está abierto.
+  useEffect(() => {
+    const dialogo = dialogoRef.current;
+    if (dialogo === null) return;
+    if (showModal && !dialogo.open) dialogo.showModal();
+    if (!showModal && dialogo.open) dialogo.close();
+  }, [showModal]);
+
   useEffect(() => {
     let vigente = true;
     void api.misSolicitudes().then((resultado) => {
@@ -154,12 +177,10 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                       <span className="text-lg font-black text-primary">{sol.radicado}</span>
                     </div>
                     <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
-                      {sol.categoria}
+                      {ETIQUETAS_CATEGORIA[sol.categoria]}
                     </span>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-primary text-white">
-                    {sol.estado}
-                  </span>
+                  <InsigniaEstado estado={sol.estado} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
@@ -179,16 +200,25 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
       </main>
 
       {/* Modal Nueva Solicitud (B2) - Actualizado al esquema Prisma */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface border border-outline rounded-xl p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
+      {/* Siempre montado: `showModal()` necesita el elemento. El contenido solo existe abierto,
+          así un diálogo cerrado no deja campos ocultos en el DOM. `onClose` recoge TODO cierre
+          (Escape, Cancelar, envío exitoso) y lo devuelve al estado de React. */}
+      <dialog
+        ref={dialogoRef}
+        onClose={() => setShowModal(false)}
+        aria-labelledby={ids.titulo}
+        className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50"
+      >
+        {showModal && (
+          <>
+            <h3 id={ids.titulo} className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
             
             <form onSubmit={handleCrearSolicitud} className="space-y-4 text-sm">
               
               <div>
-                <label className="block text-gray-600 mb-1">Categoría</label>
+                <label htmlFor={ids.categoria} className="block text-gray-600 mb-1">Categoría</label>
                 <select 
+                  id={ids.categoria}
                   required 
                   className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.categoria}
@@ -198,17 +228,16 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                     if (categoria) setForm({ ...form, categoria });
                   }}
                 >
-                  <option value="ESPACIOS">Reserva de Espacios</option>
-                  <option value="PODCAST">Producción de Podcast</option>
-                  <option value="VIDEO">Producción de Video</option>
-                  <option value="STREAMING">Transmisión (Streaming)</option>
-                  <option value="ASESORIAS">Asesoría Técnica</option>
+                  {CATEGORIAS.map((categoria) => (
+                    <option key={categoria} value={categoria}>{ETIQUETAS_CATEGORIA[categoria]}</option>
+                  ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1">Propósito de la reserva</label>
+                <label htmlFor={ids.proposito} className="block text-gray-600 mb-1">Propósito de la reserva</label>
                 <textarea 
+                  id={ids.proposito}
                   required 
                   rows={2}
                   className="w-full border border-outline rounded-sm p-2 text-primary resize-none" 
@@ -219,8 +248,9 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1">Fecha</label>
+                <label htmlFor={ids.fecha} className="block text-gray-600 mb-1">Fecha</label>
                 <input 
+                  id={ids.fecha}
                   type="date" 
                   required 
                   min={hoyEnBogota(new Date())} // DH3 · F2c: hoy en Bogotá, no en UTC
@@ -232,12 +262,12 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-gray-600 mb-1">Hora Inicio</label>
-                  <input type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaInicio} onChange={e => setForm({...form, horaInicio: e.target.value})} />
+                  <label htmlFor={ids.horaInicio} className="block text-gray-600 mb-1">Hora de inicio</label>
+                  <input id={ids.horaInicio} type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaInicio} onChange={e => setForm({...form, horaInicio: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-gray-600 mb-1">Hora Fin</label>
-                  <input type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
+                  <label htmlFor={ids.horaFin} className="block text-gray-600 mb-1">Hora de finalización</label>
+                  <input id={ids.horaFin} type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
                 </div>
               </div>
 
@@ -254,9 +284,9 @@ export default function Dashboard({ usuario, onLogout, api }: DashboardProps) {
                 <button type="submit" className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </dialog>
     </div>
   );
 }

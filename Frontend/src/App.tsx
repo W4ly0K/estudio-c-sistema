@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
+import { Navigate, Route, Routes } from 'react-router';
 import Dashboard from './Dashboard';
+import { ProveedorApi } from './api/ProveedorApi';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
 import { textoDeError } from './api/errores';
 import { useSesion } from './sesion/use-sesion';
@@ -49,7 +51,7 @@ function App() {
       // Evita el parpadeo de la pantalla de login antes de saltar al panel.
       return (
         <PantallaCentrada>
-          <p role="status" className="text-sm text-gray-500">{TEXTO_VERIFICANDO}</p>
+          <output className="block text-sm text-gray-500">{TEXTO_VERIFICANDO}</output>
         </PantallaCentrada>
       );
 
@@ -69,7 +71,16 @@ function App() {
       );
 
     case 'autenticada':
-      return <Dashboard usuario={sesion.usuario} onLogout={handleLogout} api={api.solicitudes} />;
+      // DV1: rutas solo con sesión. Una ruta desconocida vuelve al panel. La URL se conserva
+      // durante el login: quien abre un enlace sin sesión llega a él después de entrar.
+      return (
+        <ProveedorApi api={api.solicitudes}>
+          <Routes>
+            <Route path="/" element={<Dashboard usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ProveedorApi>
+      );
 
     case 'anonima':
       break;

@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import { crearClienteApi, type ClienteApi, type FuncionFetch } from '../api/cliente'
+import type { ApiSolicitudes } from '../api/solicitudes'
 
 /** Cargas válidas del contrato (README del backend §8 y §12), para las pruebas de src/api. */
 export const BASE = 'http://api.prueba.local'
@@ -66,4 +67,21 @@ export function crearEntornoDePrueba(respuesta: Response | (() => Promise<Respon
   }
   const encabezados = (n = 0): Record<string, string> => llamada(n).init.headers as Record<string, string>
   return { cliente, fetchFalso, alExpirarSesion, sesion, llamada, encabezados }
+}
+
+/** API de solicitudes falsa para inyectar en <ProveedorApi> (DC3): cada prueba define solo lo que usa. */
+export function apiFalsa(cambios: Partial<ApiSolicitudes> = {}): ApiSolicitudes {
+  return {
+    misSolicitudes: vi.fn<ApiSolicitudes['misSolicitudes']>().mockResolvedValue({ ok: true, datos: [] }),
+    tablero: vi.fn<ApiSolicitudes['tablero']>(),
+    detalleSolicitante: vi.fn<ApiSolicitudes['detalleSolicitante']>(),
+    detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>(),
+    crear: vi.fn<ApiSolicitudes['crear']>(),
+    actualizarTablero: vi.fn<ApiSolicitudes['actualizarTablero']>(),
+    proponerReprogramacion: vi.fn<ApiSolicitudes['proponerReprogramacion']>(),
+    cancelar: vi.fn<ApiSolicitudes['cancelar']>(),
+    aceptarReprogramacion: vi.fn<ApiSolicitudes['aceptarReprogramacion']>(),
+    rechazarReprogramacion: vi.fn<ApiSolicitudes['rechazarReprogramacion']>(),
+    ...cambios,
+  }
 }

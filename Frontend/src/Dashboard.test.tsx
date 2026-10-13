@@ -1,44 +1,31 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from './Dashboard'
+import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { ApiSolicitudes } from './api/solicitudes'
-import { RECURSOS_RESUMEN, SOLICITUD } from './test/fixtures-api'
+import { RECURSOS_RESUMEN, SOLICITUD, apiFalsa } from './test/fixtures-api'
 
 const USUARIO = { id: 'uuid', nombre: 'Ana Pérez', rol: 'SOLICITANTE' } as const
 const PROPIA = { ...SOLICITUD, recursos: RECURSOS_RESUMEN }
 
-/** API falsa inyectada (DC3): cada prueba define solo lo que usa. */
-function apiFalsa(cambios: Partial<ApiSolicitudes> = {}): ApiSolicitudes {
-  return {
-    misSolicitudes: vi.fn<ApiSolicitudes['misSolicitudes']>().mockResolvedValue({ ok: true, datos: [] }),
-    tablero: vi.fn<ApiSolicitudes['tablero']>(),
-    detalleSolicitante: vi.fn<ApiSolicitudes['detalleSolicitante']>(),
-    detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>(),
-    crear: vi.fn<ApiSolicitudes['crear']>(),
-    actualizarTablero: vi.fn<ApiSolicitudes['actualizarTablero']>(),
-    proponerReprogramacion: vi.fn<ApiSolicitudes['proponerReprogramacion']>(),
-    cancelar: vi.fn<ApiSolicitudes['cancelar']>(),
-    aceptarReprogramacion: vi.fn<ApiSolicitudes['aceptarReprogramacion']>(),
-    rechazarReprogramacion: vi.fn<ApiSolicitudes['rechazarReprogramacion']>(),
-    ...cambios,
-  }
-}
-
-const mostrar = (api: ApiSolicitudes) => render(<Dashboard usuario={USUARIO} onLogout={() => undefined} api={api} />)
+/** El panel con la api falsa en el proveedor (DV1): igual que en la App. */
+const mostrar = (api: ApiSolicitudes) =>
+  render(
+    <ProveedorApi api={api}>
+      <Dashboard usuario={USUARIO} onLogout={() => undefined} />
+    </ProveedorApi>,
+  )
 
 /** Llena el formulario B2: martes 20 de octubre de 2026, de `inicio` a `fin`. */
 function llenarFormulario(contenedor: HTMLElement, inicio = '08:00', fin = '10:00'): void {
-  const campo = <T extends Element>(selector: string, indice = 0): T => {
-    const elemento = contenedor.querySelectorAll<T>(selector)[indice]
-    if (elemento === undefined) throw new Error(`No se encontró ${selector}`)
-    return elemento
-  }
-  fireEvent.change(campo('select'), { target: { value: 'VIDEO' } })
-  fireEvent.change(campo('textarea'), { target: { value: 'Grabación de clase' } })
-  fireEvent.change(campo('input[type="date"]'), { target: { value: '2026-10-20' } })
-  fireEvent.change(campo('input[type="time"]', 0), { target: { value: inicio } })
-  fireEvent.change(campo('input[type="time"]', 1), { target: { value: fin } })
+  // Consultas ACCESIBLES (DV6): si una etiqueta no está asociada a su campo, la prueba falla.
+  const formulario = within(contenedor)
+  fireEvent.change(formulario.getByLabelText('Categoría'), { target: { value: 'VIDEO' } })
+  fireEvent.change(formulario.getByLabelText('Propósito de la reserva'), { target: { value: 'Grabación de clase' } })
+  fireEvent.change(formulario.getByLabelText('Fecha'), { target: { value: '2026-10-20' } })
+  fireEvent.change(formulario.getByLabelText('Hora de inicio'), { target: { value: inicio } })
+  fireEvent.change(formulario.getByLabelText('Hora de finalización'), { target: { value: fin } })
 }
 
 describe('Dashboard con la api inyectada', () => {
@@ -156,7 +143,7 @@ describe('Dashboard con la api inyectada', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
 
-      expect(container.querySelector('input[type="date"]')).toHaveAttribute('min', '2026-10-20')
+      expect(within(container).getByLabelText('Fecha')).toHaveAttribute('min', '2026-10-20')
     })
 
     it('F3 · fin anterior al inicio: el aviso local usa el mismo texto que el backend (CA-04) y no envía nada', async () => {
@@ -181,6 +168,54 @@ describe('Dashboard con la api inyectada', () => {
       fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
 
       expect(screen.getByText(/lunes a viernes hábiles, de 8:00 a 12:00 y de 14:00 a 18:00 \(hora de Colombia\)/)).toBeInTheDocument()
+    })
+  })
+
+  describe('bases de la vista (Fase 6.4.1)', () => {
+    it('muestra la categoría con su nombre legible y la insignia del estado', async () => {
+      mostrar(
+        apiFalsa({
+          misSolicitudes: vi.fn<ApiSolicitudes['misSolicitudes']>().mockResolvedValue({ ok: true, datos: [PROPIA] }),
+        }),
+      )
+
+      expect(await screen.findByText('Podcast / Vodcast')).toBeInTheDocument()
+      expect(document.querySelector('[data-estado="Validado"]')).toHaveTextContent('Validado')
+    })
+
+    it('el formulario es un diálogo con nombre accesible', async () => {
+      mostrar(apiFalsa())
+      await screen.findByText('No tienes solicitudes registradas aún.')
+
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+
+      expect(screen.getByRole('dialog', { name: 'Nueva Solicitud · Estudio C' })).toBeInTheDocument()
+    })
+
+    it('el evento close del diálogo (Escape en el navegador) oculta el formulario', async () => {
+      mostrar(apiFalsa())
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      const dialogo = screen.getByRole('dialog', { name: 'Nueva Solicitud · Estudio C' })
+      expect(dialogo).toHaveAttribute('open')
+
+      // Cierre que NO pasa por el botón Cancelar: lo origina el propio <dialog>.
+      fireEvent(dialogo, new Event('close'))
+
+      expect(screen.queryByLabelText('Fecha')).not.toBeInTheDocument()
+      expect(dialogo).not.toHaveAttribute('open')
+    })
+
+    it('Cancelar cierra el diálogo y permite abrirlo de nuevo', async () => {
+      mostrar(apiFalsa())
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+      expect(screen.queryByLabelText('Fecha')).not.toBeInTheDocument()
+
+      // Si el estado y el <dialog> se desincronizaran, showModal() lanzaría InvalidStateError.
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      expect(screen.getByLabelText('Fecha')).toBeInTheDocument()
     })
   })
 })
