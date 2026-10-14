@@ -39,7 +39,7 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 
 Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
 
-Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
+Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
 
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
@@ -247,7 +247,7 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 ```
 
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
-- `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` solo tiene valor en el registro de T2.
+- `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
@@ -292,7 +292,9 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 
 - `estado` debe ser uno de los 7 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
 - Enviar el estado actual no es un cambio de estado: **200** sin log.
-- **Rechazar (T2)** exige `motivo_rechazo`. Si falta o es corto, el pipe responde **400** con `El motivo de rechazo es obligatorio y debe ser detallado (mínimo 10 caracteres)`.
+- **Rechazar (T2)** exige `motivo_rechazo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo del rechazo es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
+- Con otro `estado`, el pipe no valida el motivo: lo rechaza la fila 2 de la tabla, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
+- El pipe valida el cuerpo **antes** que la tabla: el orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
 
 **Errores, en el orden en que se evalúan** (responde la primera regla incumplida):
 
@@ -338,6 +340,7 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 - **Franjas:** todos los estados ocupan su franja oficial salvo `Rechazado` y `Cancelado por el Usuario`. En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
 - La base de datos garantiza que hay propuesta (`fecha_propuesta_inicio` y `fecha_propuesta_fin`) **si y solo si** la solicitud está en `Pendiente de Reprogramación`, y que la propuesta termina después de empezar (invariante K9).
 - La base de datos también garantiza que todo log de T5, y solo ese, lleva `motivo_reprogramacion`, con 10 a 500 caracteres sin contar los espacios de los extremos (Fase 6.1b).
+- Y que todo log de T2, y solo ese, lleva `motivo_rechazo`, con la misma regla de longitud (Fase 6.5b).
 
 ## 12. Contratos de cancelación y reprogramación (CA-10)
 

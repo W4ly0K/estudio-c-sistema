@@ -7,6 +7,7 @@
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
 | **Actualización** | 2026-10-13 · Paso 6.4: vistas del solicitante B1 a B4, rutas, accesibilidad y acciones T3, T6, T7 y T8 (§2.11) |
+| **Actualización** | 2026-10-14 · Paso 6.5b: DE1 resuelta en el backend (ADR-005 §2.10) y deuda de `GET /solicitudes` registrada (§5) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -190,7 +191,7 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 **Accesibilidad (DV6).** `jsx-a11y` entra al lint, y las pruebas consultan por rol, etiqueta y nombre accesible: si se rompe la accesibilidad, se rompe una prueba.
 - Etiquetas con `htmlFor` e ids de `useId`. Insignias distinguidas por la forma del borde y un símbolo, nunca solo por el color.
 - Cada tarjeta es un `<article>` cuyo nombre accesible es el radicado. Los enlaces repetidos tienen nombre único ("Ver seguimiento detallado de EC-…", con texto `sr-only`). El espacio va **fuera** del `<span>`: el cálculo del nombre accesible recorta los espacios de los extremos de cada elemento hijo (la prueba lo atrapó como *"detalladode"*).
-- `<output>` para los mensajes de estado. **El foco va al título** cuando cambia la pantalla (navegación, confirmación, acción terminada): en una SPA el lector de pantalla no se entera de otra forma, y el botón que tenía el foco a veces ya no existe.
+- `<output>` para los mensajes de estado. **El foco va al título** cuando cambia la pantalla (navegación, confirmación, acción terminada): en una SPA el lector de pantalla no se entera de otra forma, y el botón que tenía el foco a veces ya no existe. Se aplica con `useLayoutEffect`, en el mismo *commit* que pinta el título: con `useEffect` existía un fotograma sin foco y el CI lo vio (`findByRole` resolvía antes que el efecto pasivo, 6.4.5).
 - **Diálogos con `<dialog>` nativo y `showModal()`:** el navegador atrapa el foco, cierra con Escape y vuelve inerte el fondo. Un estado de React manda y un efecto lo traduce a `showModal()` / `close()`, con guardas sobre `open`; `onClose` recoge todo cierre. jsdom 30 no implementa la API modal: el polyfill vive **solo** en `src/test/setup.ts`, sin ramas para jsdom en el código de la app.
 
 **Patrones de estado.**
@@ -314,7 +315,12 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 - **Sesión (DS4, fuera del 6.2):** cerrar la sesión en todas las pestañas a la vez (evento `storage`); cerrarla de forma proactiva al vencer el JWT (hoy se cierra con el primer 401); revocar tokens en el servidor al salir (el JWT es *stateless*: uno robado sigue vigente hasta sus 8 h); la cookie `httpOnly` (DF2).
 - **Backend:** el puerto 3000 sigue fijo en `main.ts`.
 - **Backend:** `findMisSolicitudes()` y `findAll()` usan `include` y devuelven todas las columnas (punto 8 de su lista de verificación). El lector tolerante las descarta, pero viajan por la red.
-- **Backend (hallazgo de la 6.4 · DE1):** `motivo_rechazo` (`update-solicitude.dto.ts`) se valida con `@MinLength(10)`: no recorta espacios (diez espacios pasan), no cuenta caracteres reales y no tiene máximo. El motivo de la reprogramación ya usa `@TextoConLongitudReal(10, 500)` con CHECK en la base (ADR-005 §2.9). Se corrige en el paso 6.5b, antes del formulario de rechazo del Staff.
+- **Backend · DE1 (resuelta en la 6.5b):** `motivo_rechazo` usa ahora `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo (6.5.3) usará `MOTIVO_RECHAZO_MINIMO` y `MOTIVO_RECHAZO_MAXIMO`, vigiladas por la prueba de deriva.
+- **Backend · `GET /solicitudes` (hallazgos de la 6.5.0; deuda aceptada, fuera del alcance de la 6.5):**
+  - `?categoria=` con un valor fuera del enum llega a Prisma sin validar: `PrismaClientValidationError` y, previsiblemente, 500 en lugar de 400 (no reproducido todavía);
+  - `?estado=` con un estado inventado responde 200 con `[]` en lugar de 400;
+  - sin paginación: devuelve todas las solicitudes, finales incluidas. El tablero las carga en un solo GET y las agrupa en el cliente (DE3), así que el volumen crece sin límite;
+  - corrección prevista: un DTO de consulta con `@IsIn` para los dos filtros y paginación (o acotar los estados finales por fecha) cuando el volumen lo pida.
 - **Formulario B2:** no permite elegir recursos (el contrato sí los acepta).
 - **Vista del Staff:** llega en la 6.5. Editar las fechas de una solicitud en Recibido queda fuera (DE6): una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado).
 - **CI:** `actions/checkout` y `setup-node` `@v4` corren sobre Node 20 (aviso de obsolescencia): subir a `@v5` junto con la fijación por SHA, en los dos jobs.
@@ -346,4 +352,7 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 | `0a49201` | 6.4.2 · Tarjetas con urgencia y aviso de reprogramación, resumen del panel y confirmación del radicado (B1, B1b) |
 | `4bff58d` | 6.4.3 · Detalle con la línea de vida, 404 uniforme y enlaces desde el panel (B3) |
 | `78881ad` | 6.4.4 · Cancelar, aceptar y rechazar con confirmación nativa y recarga ante 409 (B3, B4) |
-| — | 6.4.5 · Esta actualización (§2.11) y el README |
+| `9fce27e` | 6.4.5 · §2.11 y el README |
+| `7828d80` | 6.4.5 · El foco del título con `useLayoutEffect` (carrera con `findByRole` en el CI) |
+| `56adde1` · `e6ee26c` · `51b223e` | 6.5b · Motivo del rechazo en el backend (DE1, ADR-005 §2.10) |
+| — | 6.5b.3 · Esta actualización (§5) |

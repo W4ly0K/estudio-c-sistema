@@ -175,6 +175,6 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 
 ## 10. Pendiente en la Fase 6
 
-- **6.5b · Backend:** `motivo_rechazo` con `@TextoConLongitudReal(10, 500)` y CHECK en la base (hoy `@MinLength(10)` acepta diez espacios).
+- ✅ **6.5b · Backend (cerrada):** `motivo_rechazo` con `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo usará `MOTIVO_RECHAZO_MINIMO` y `MOTIVO_RECHAZO_MAXIMO` con su prueba de deriva.
 - **6.5 · Vista del Staff:** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (decisiones DE1 a DE6).
 - **6.6 · Cierre:** bitácora, ADR y PR de la fase.
