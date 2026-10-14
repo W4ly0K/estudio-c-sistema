@@ -3,7 +3,9 @@ import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Navigate, Route, Routes } from 'react-router';
 import Dashboard from './Dashboard';
 import DetalleSolicitud from './DetalleSolicitud';
+import TableroStaff from './TableroStaff';
 import { ProveedorApi } from './api/ProveedorApi';
+import type { UsuarioSesion } from './api/esquemas';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
 import { textoDeError } from './api/errores';
 import { RUTA_DETALLE, RUTA_PANEL } from './rutas';
@@ -23,6 +25,20 @@ function PantallaCentrada({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+}
+
+/**
+ * DE2: una sola URL por pantalla. "/" muestra la vista del rol que trae el token. Es solo
+ * presentación: el backend vuelve a decidir con @Roles en cada ruta. El `switch` es
+ * exhaustivo: un rol nuevo en la máquina no compila hasta tener su pantalla.
+ */
+function PantallaInicio({ usuario, onLogout }: { usuario: UsuarioSesion; onLogout: () => void }) {
+  switch (usuario.rol) {
+    case 'STAFF':
+      return <TableroStaff usuario={usuario} onLogout={onLogout} />;
+    case 'SOLICITANTE':
+      return <Dashboard usuario={usuario} onLogout={onLogout} />;
+  }
 }
 
 function App() {
@@ -78,7 +94,7 @@ function App() {
       return (
         <ProveedorApi api={api.solicitudes}>
           <Routes>
-            <Route path={RUTA_PANEL} element={<Dashboard usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_PANEL} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
             <Route path={RUTA_DETALLE} element={<DetalleSolicitud usuario={sesion.usuario} onLogout={handleLogout} />} />
             <Route path="*" element={<Navigate to={RUTA_PANEL} replace />} />
           </Routes>

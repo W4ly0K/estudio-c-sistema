@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
+import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
 import { DETALLE_SOLICITANTE, json } from './test/fixtures-api'
 
@@ -145,6 +146,19 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'EC-2026-0142' })).toBeInTheDocument()
     expect(screen.getByText('Seguimiento de solicitud')).toBeInTheDocument()
+  })
+
+  it('DE2: con sesión de STAFF, "/" muestra el tablero (un solo GET /solicitudes) y no el panel del solicitante', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes': () => json(200, []),
+    })
+    mostrarApp()
+
+    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
   })
 
   it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {

@@ -41,6 +41,13 @@ export const DETALLE_STAFF = {
   logs: [{ ...LOG, id_log: 'uuid-log', modificado_por: 'uuid-staff' }],
 }
 
+/** Un elemento de GET /solicitudes (STAFF · tablero 6.5.1). */
+export const SOLICITUD_TABLERO = {
+  ...SOLICITUD,
+  recursos: RECURSOS_RESUMEN,
+  usuario: { nombre: 'Ana Pérez', correo: 'ana@unicesmag.edu.co' },
+}
+
 /** Respuesta HTTP con cuerpo JSON. */
 export const json = (status: number, cuerpo: unknown): Response =>
   new Response(JSON.stringify(cuerpo), { status, headers: { 'Content-Type': 'application/json' } })
