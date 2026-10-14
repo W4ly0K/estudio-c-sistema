@@ -753,6 +753,20 @@ describe('SolicitudesService', () => {
       sinEscrituras();
     });
 
+    // Fase 6.5b · X09: E5 exige un cambio REAL a Rechazado. Repetir el estado ya guardado no es
+    // una transición (no hay log que reciba el motivo): sin esta prueba, olvidar `cambiaEstado`
+    // respondería 200 y descartaría el motivo en silencio.
+    it('U-26 · E5: motivo_rechazo repitiendo el "Rechazado" ya guardado (sin cambio real) → 400 sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Rechazado' }));
+
+      const error = await rechazo({ estado: 'Rechazado', motivo_rechazo: 'Motivo suficientemente detallado' });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
     it('U-27 · H8/ADR-002: radicado inexistente → 404 uniforme, sin eco del radicado', async () => {
       prismaMock.solicitud.findUnique.mockResolvedValue(null);
 
