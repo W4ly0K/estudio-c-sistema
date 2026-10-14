@@ -26,13 +26,14 @@ const R = Object.freeze({
   segunEstado: 'Log_Auditoria_motivo_reprogramacion_segun_estado_check',
 } as const);
 
-/** El literal de R1 se deriva de la máquina (destino de T5), nunca se repite a mano. */
-function destinoDe(id: 'T5'): Estado {
+/** Los literales se derivan de la máquina (destinos de T2 y T5), nunca se repiten a mano. */
+function destinoDe(id: 'T2' | 'T5'): Estado {
   const transicion = TRANSICIONES.find((t) => t.id === id);
   if (!transicion) throw new Error(`La máquina de estados no define ${id}`);
   return transicion.destino;
 }
 const PENDIENTE = destinoDe('T5');
+const RECHAZADO = destinoDe('T2');
 const OTROS_ESTADOS = ESTADOS.filter((estado) => estado !== PENDIENTE);
 
 const AHORA = new Date('2026-10-05T10:00:00-05:00'); // lunes, 10:00 en Bogotá
@@ -88,6 +89,9 @@ describe('Motivo de la reprogramación contra PostgreSQL real (integración · F
         estado_nuevo: estadoNuevo,
         modificado_por: STAFF,
         motivo_reprogramacion: motivo,
+        // Fase 6.5b: un log hacia Rechazado exige su propio motivo de rechazo. Se le da uno
+        // válido para que cada caso siga rompiendo UNA sola regla (la de este archivo).
+        motivo_rechazo: estadoNuevo === RECHAZADO ? 'Motivo de rechazo válido del ensayo' : null,
       },
     });
 

@@ -84,6 +84,11 @@ model Log_Auditoria {
   estado_nuevo       String
   modificado_por     String
   fecha_modificacion DateTime @default(now())
+  /// T2 (Fase 6.5b, DE1): justificación del Staff al rechazar. Existe si y solo si el
+  /// log registra T2 (estado_nuevo = "Rechazado"; Log_Auditoria_motivo_rechazo_segun_estado_check)
+  /// y mide entre 10 y 500 caracteres sin los espacios de los extremos
+  /// (Log_Auditoria_motivo_rechazo_longitud_check). Prisma no modela CHECK: ver la
+  /// migración 20261013120000_motivo_rechazo.
   motivo_rechazo     String?  @db.Text
   /// CA-10 · K7 (Fase 6.1b, Decisión DB1): justificación del Staff al proponer una
   /// reprogramación. Existe si y solo si el log registra T5 (estado_nuevo = "Pendiente
