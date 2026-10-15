@@ -9,6 +9,8 @@ interface DialogoConfirmacionProps {
   irreversible: boolean
   /** Mientras la petición viaja: botones deshabilitados y Escape no cierra. */
   enCurso: boolean
+  /** Falso mientras el contenido no es válido (p. ej., un motivo corto). Por defecto, verdadero. */
+  puedeConfirmar?: boolean
   onConfirmar: () => void
   onCerrar: () => void
   /** Error de la última confirmación (con sus acciones de recuperación, si las hay). */
@@ -27,6 +29,7 @@ export function DialogoConfirmacion({
   textoConfirmar,
   irreversible,
   enCurso,
+  puedeConfirmar = true,
   onConfirmar,
   onCerrar,
   children,
@@ -74,7 +77,7 @@ export function DialogoConfirmacion({
             <button
               type="button"
               onClick={onConfirmar}
-              disabled={enCurso}
+              disabled={enCurso || !puedeConfirmar}
               aria-busy={enCurso}
               className={`px-4 py-2 rounded-sm font-bold disabled:opacity-60 ${
                 irreversible ? 'bg-accent text-white' : 'bg-primary text-white'

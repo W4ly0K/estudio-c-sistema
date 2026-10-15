@@ -5,10 +5,12 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { DetalleStaff as DatosDetalleStaff, UsuarioSesion } from './api/esquemas'
+import { AccionesStaff } from './componentes/AccionesStaff'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
+import { textoExito, type DestinoDelStaff } from './presentacion/acciones-staff'
 import { filasDeRecursos } from './presentacion/detalle-staff'
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
@@ -18,6 +20,8 @@ export const TEXTO_NO_ENCONTRADA_AYUDA_STAFF = 'Revisa el número de radicado o 
 /** UI honesta: tras T5 la decisión es del solicitante (T7 o T8); el Staff no puede retirar la propuesta. */
 export const TEXTO_PROPUESTA_EN_ESPERA_STAFF =
   'Propuesta enviada al solicitante: la solicitud espera su respuesta (aceptar o rechazar).'
+/** DA2: el PATCH se aplicó y lo que falló es la recarga; decirlo evita que se repita la acción. */
+export const TEXTO_RECARGA_FALLIDA = 'La acción quedó registrada, pero no pudimos recargar la solicitud:'
 export const TEXTO_SIN_RECURSOS = 'La solicitud no incluye recursos.'
 export const TEXTO_SUPERA_INVENTARIO = 'Supera el inventario total'
 /** DD3: el total no descuenta otras reservas; decirlo evita que se lea como "disponible". */
@@ -46,36 +50,72 @@ interface DetalleStaffProps {
 
 /**
  * Pantalla C3 del Staff (6.5.2 · DD1): proyección completa, recursos frente al inventario y
- * línea de vida desde la perspectiva del Staff. Las acciones llegan en la 6.5.3 (DE4).
+ * línea de vida desde la perspectiva del Staff, y la resolución (T1, T2, T4 y T9 · 6.5.3).
  * La carga repite a propósito el patrón de DetalleSolicitud (DD4): con dos usos aún no se
  * ve la abstracción correcta.
  */
 export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   const { radicado } = useParams()
   const api = useApi()
-  // La respuesta se guarda JUNTO al radicado que la pidió; "cargando" se DERIVA cuando la
-  // guardada es de otro radicado. Al pasar de un detalle a otro nunca se pinta el anterior.
-  const [respuesta, setRespuesta] = useState<{ readonly radicado: string; readonly estado: Respuesta } | null>(null)
-  const carga: EstadoCarga = respuesta !== null && respuesta.radicado === radicado ? respuesta.estado : CARGANDO
+  // La respuesta se guarda JUNTO a la clave que la pidió (radicado y versión). "Cargando" se
+  // DERIVA: el efecto solo escribe estado en el callback asíncrono. `version` sube tras una
+  // acción (DA2: el PATCH no trae los logs) o tras un 409.
+  const [version, setVersion] = useState(0)
+  const [respuesta, setRespuesta] = useState<{
+    readonly radicado: string
+    readonly version: number
+    readonly estado: Respuesta
+  } | null>(null)
+  /** Aviso de la última acción, atado a su radicado: al navegar a otro no se arrastra. */
+  const [aviso, setAviso] = useState<{ readonly radicado: string; readonly texto: string } | null>(null)
+
+  const delRadicado = respuesta !== null && respuesta.radicado === radicado ? respuesta : null
+  const vigente = delRadicado !== null && delRadicado.version === version
+  // DA2 · sin parpadeo: mientras se recarga se sigue viendo el detalle anterior, con las
+  // acciones bloqueadas. Un error o un 404 de otra versión no se muestran.
+  const recargando = delRadicado !== null && !vigente && delRadicado.estado.tipo === 'lista'
+  const carga: EstadoCarga = delRadicado !== null && (vigente || recargando) ? delRadicado.estado : CARGANDO
+  const avisoVisible = aviso !== null && aviso.radicado === radicado ? aviso.texto : null
   const tituloRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     if (radicado === undefined) return
-    let vigente = true
+    let actual = true
     void api.detalleStaff(radicado).then((resultado) => {
-      // Una respuesta que llega tarde (ya se navegó a otro radicado) se descarta.
-      if (vigente) setRespuesta({ radicado, estado: aRespuesta(resultado) })
+      // Una respuesta que llega tarde (otro radicado u otra versión) se descarta.
+      if (actual) setRespuesta({ radicado, version, estado: aRespuesta(resultado) })
     })
     return () => {
-      vigente = false
+      actual = false
     }
-  }, [api, radicado])
+  }, [api, radicado, version])
 
   // Navegar en una SPA no recarga la página: al terminar de cargar, el foco va al título,
   // en el mismo commit que lo pinta (useLayoutEffect, ver 6.4.5).
   useLayoutEffect(() => {
     if (carga.tipo !== 'cargando') tituloRef.current?.focus()
   }, [carga.tipo])
+
+  // Tras una acción, el botón que tenía el foco queda bloqueado o desaparece: el foco vuelve
+  // al título y el aviso se anuncia desde el <output>.
+  useLayoutEffect(() => {
+    if (avisoVisible !== null) tituloRef.current?.focus()
+  }, [avisoVisible])
+
+  const alCompletar = (destino: DestinoDelStaff) => {
+    if (radicado === undefined) return
+    setAviso({ radicado, texto: textoExito(destino) })
+    setVersion((v) => v + 1)
+  }
+
+  /** Tras un 409: lo que se veía ya no vale, y tampoco el aviso de una acción anterior. */
+  const recargarTrasConflicto = () => {
+    setAviso(null)
+    setVersion((v) => v + 1)
+  }
+
+  /** Reintento tras un error de carga: conserva el aviso (la acción sí quedó registrada). */
+  const reintentar = () => setVersion((v) => v + 1)
 
   if (radicado === undefined) return <Navigate to={RUTA_PANEL} replace />
 
@@ -86,6 +126,12 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
         <Link to={RUTA_PANEL} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al tablero
         </Link>
+        {avisoVisible !== null && (
+          <output className="block p-3 border-2 border-primary rounded-sm bg-surface text-sm font-bold text-primary">
+            <span aria-hidden="true">✓ </span>
+            {avisoVisible}
+          </output>
+        )}
         {carga.tipo === 'cargando' && <p className="text-sm text-gray-500">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
           <div className="border border-outline rounded-lg p-8 text-center bg-surface">
@@ -100,12 +146,24 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             <h2 ref={tituloRef} tabIndex={-1} className="sr-only">
               No se pudo cargar la solicitud
             </h2>
+            {/* DA2 · honestidad: si el PATCH ya se aplicó, lo que falló es solo la recarga. */}
             <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
-              {carga.texto}
+              {avisoVisible !== null ? `${TEXTO_RECARGA_FALLIDA} ${carga.texto}` : carga.texto}
             </p>
+            <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-semibold text-primary">
+              Recargar la solicitud
+            </button>
           </div>
         )}
-        {carga.tipo === 'lista' && <Contenido detalle={carga.detalle} tituloRef={tituloRef} />}
+        {carga.tipo === 'lista' && (
+          <Contenido
+            detalle={carga.detalle}
+            tituloRef={tituloRef}
+            recargando={recargando}
+            alCompletar={alCompletar}
+            alRecargar={recargarTrasConflicto}
+          />
+        )}
       </main>
     </div>
   )
@@ -114,9 +172,15 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
 function Contenido({
   detalle,
   tituloRef,
+  recargando,
+  alCompletar,
+  alRecargar,
 }: {
   detalle: DatosDetalleStaff
   tituloRef: RefObject<HTMLHeadingElement | null>
+  recargando: boolean
+  alCompletar: (destino: DestinoDelStaff) => void
+  alRecargar: () => void
 }) {
   const id = useId()
   const idRecursos = `${id}-recursos`
@@ -236,6 +300,8 @@ function Contenido({
           </>
         )}
       </section>
+
+      <AccionesStaff detalle={detalle} deshabilitadas={recargando} alCompletar={alCompletar} alRecargar={alRecargar} />
 
       <LineaDeVida linea={lineaDeVida(detalle, 'STAFF')} />
     </>
