@@ -33,12 +33,13 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 | `DIRECT_URL` | Conexión directa, usada por Prisma para migraciones |
 | `JWT_SECRET` | Secreto para firmar y verificar los JWT. **Obligatorio**: si falta, la API no arranca (fail-fast). Usa una cadena larga y aleatoria |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth usado para verificar el token de inicio de sesión |
+| `CORS_ORIGENES` | Orígenes del frontend permitidos por CORS, separados por comas y exactos (`esquema://host[:puerto]`, sin ruta ni `*`). En local: `http://localhost:5173`. **Obligatorio**: si falta o es inválido, la API no arranca y el mensaje dice cómo corregirlo |
 
 ## 2.1 Base de datos y migraciones
 
 Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
 
-Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) y `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
+Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
 
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
@@ -68,10 +69,10 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test                 # Pruebas unitarias (658; 1 omitida por diseño)
-npm run test:e2e         # Pruebas end-to-end por HTTP real (54)
+npm test                 # Pruebas unitarias (705; 1 omitida por diseño)
+npm run test:e2e         # Pruebas end-to-end por HTTP real (64)
 npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias
-npm run test:integracion # CA-06, K9 y concurrencia contra PostgreSQL real, en una base DESECHABLE (25)
+npm run test:integracion # CA-06, K9, motivo y concurrencia contra PostgreSQL real, en una base DESECHABLE (41)
 ```
 
 - `npm test`, `test:e2e` y `test:tz` **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
@@ -82,7 +83,7 @@ npm run test:integracion # CA-06, K9 y concurrencia contra PostgreSQL real, en u
 
 ### 4.1 Pruebas de integración (`npm run test:integracion`)
 
-Prueban contra **PostgreSQL real** lo que los mocks no pueden: 10 peticiones simultáneas por la misma franja (CA-06 sin carrera), el **canario** del formato del error de Prisma que reconoce `esViolacionDeTraslapeCa06` (si una actualización de Prisma lo cambia, esta batería falla antes que producción) y la coincidencia entre la restricción instalada y el código. Desde la Fase 5 también prueban el *compare-and-set* en transacciones interactivas, las tres restricciones del invariante K9 y la concurrencia de la máquina de estados: una **barrera determinista** que fuerza la carrera en cada ejecución y una batería por propiedades (nunca un 500, historial legal, ninguna actualización perdida).
+Prueban contra **PostgreSQL real** lo que los mocks no pueden: 10 peticiones simultáneas por la misma franja (CA-06 sin carrera), el **canario** del formato del error de Prisma que reconoce `esViolacionDeTraslapeCa06` (si una actualización de Prisma lo cambia, esta batería falla antes que producción) y la coincidencia entre la restricción instalada y el código. Desde la Fase 5 también prueban el *compare-and-set* en transacciones interactivas, las tres restricciones del invariante K9 (y, desde la Fase 6.1b, las dos del motivo de la reprogramación) y la concurrencia de la máquina de estados: una **barrera determinista** que fuerza la carrera en cada ejecución y una batería por propiedades (nunca un 500, historial legal, ninguna actualización perdida).
 
 **Nunca se ejecutan contra producción.** El `globalSetup` aplica tres capas, todas *fail-closed*:
 
@@ -127,10 +128,12 @@ Petición HTTP
 | `@Roles(...)` | `src/auth/decorators/roles.decorator.ts` | Restringe un endpoint o controlador a uno o más roles. El del método tiene prioridad sobre el de la clase |
 | `@UsuarioActual()` | `src/auth/decorators/usuario-actual.decorator.ts` | Inyecta la identidad verificada (`UsuarioAutenticado`). Responde 401 si no existe (fail-closed) |
 | `crearValidationPipe()` | `src/common/pipes/crear-validation-pipe.ts` | Única fuente de la configuración de validación (la usan `main.ts`, los tests y los e2e) |
+| `aplicarCors(app, valor)` | `src/common/cors/configurar-cors.ts` | Única forma de configurar CORS: lista blanca de `CORS_ORIGENES`, validada con *fail-fast* (la usan `main.ts` y los e2e). Es una barrera del navegador, no reemplaza al JWT ni a los guards ([ADR-006 §2.7](../docs/adr/ADR-006-frontend-contrato-tipado.md)) |
 | `filtroDeAcceso(usuario)` | `src/solicitudes/politicas/filtro-de-acceso.ts` | Política de acceso por fila: devuelve el fragmento de `WHERE` que limita lo que cada rol puede ver. Un rol nuevo sin política **no compila** |
 | `SELECT_DETALLE_*` | `src/solicitudes/proyecciones/detalle-solicitud.proyeccion.ts` | Proyecciones por rol (`select` = lista blanca). La del solicitante no expone identidades internas ni inventario |
 | `Reloj` | `src/common/reloj/reloj.ts` | Fuente inyectable del "ahora". Pídelo **una sola vez** por operación. En pruebas se reemplaza por `RelojFijo` (`test/utils/`) |
 | `@FechaConZonaHoraria()` | `src/common/validadores/fecha-con-zona-horaria.decorator.ts` | Acepta solo fechas ISO 8601 **reales** con `Z` o `±HH:MM`. Rechaza fechas ambiguas e imposibles (`2026-02-30`, `T24:00`) |
+| `@TextoConLongitudReal(min, max, mensaje)` | `src/common/validadores/texto-con-longitud-real.decorator.ts` | Texto obligatorio, recortado y medido en caracteres **reales** (como `char_length` de PostgreSQL: un emoji vale 1). Úsalo cuando un `CHECK` del motor limite la longitud: con `.length` el DTO aceptaría textos que el motor rechaza con 500 |
 | `evaluarHorario(...)` | `src/solicitudes/reglas/horario.validator.ts` | Reglas puras de CA-04, fechas pasadas, mismo día, día hábil y urgencia por 5 días hábiles. Devuelve un resultado; no lanza excepciones de HTTP |
 | `calendarioLaboralColombia` | `src/solicitudes/reglas/calendario-colombia.ts` | Días hábiles: lunes a viernes sin los festivos de la Ley 51 de 1983, calculados con el algoritmo de Meeus |
 | `evaluarTransicion` / `evaluarAccion` | `src/solicitudes/reglas/maquina-estados.ts` | Máquina de estados pura (T1–T9): dice **si** una transición es legal y **quién** puede ejecutarla. Devuelve un resultado con su motivo; no lanza excepciones de HTTP |
@@ -158,6 +161,7 @@ Petición HTTP
 | Endpoint | Acceso |
 |---|---|
 | `POST /auth/google/login` | 🌐 Público |
+| `GET /auth/perfil` | 🔐 Autenticado (cualquier rol). Responde el perfil del usuario del token, leído de la BD (§13) |
 | `GET /` | 🔐 Autenticado |
 | `POST /solicitudes` | 🔐 Autenticado. El solicitante sale del token |
 | `GET /solicitudes/mis-solicitudes` | 🔐 Autenticado. Solo ve sus propias solicitudes |
@@ -186,9 +190,10 @@ src/
 │   ├── jwt-auth.guard.ts
 │   └── jwt.strategy.ts  Valida el JWT y consulta el usuario vigente en la BD
 ├── common/
+│   ├── cors/            aplicarCors() y leerOrigenesCors() (lista blanca, fail-fast)
 │   ├── pipes/           crearValidationPipe()
 │   ├── reloj/           Reloj (abstracto) y RelojDelSistema
-│   └── validadores/     @FechaConZonaHoraria()
+│   └── validadores/     @FechaConZonaHoraria(), @TextoConLongitudReal()
 ├── solicitudes/
 │   ├── politicas/       filtroDeAcceso (autorización por fila)
 │   ├── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
@@ -199,7 +204,7 @@ prisma/
 └── migrations/          Historial versionado (0_init = baseline); se aplica solo con npm run db:migrate
 test/
 ├── utils/               Helpers solo para pruebas (excluidos del build), incluido RelojFijo
-├── integracion/         Batería contra PostgreSQL real (*.int-spec.ts): CA-06, K9 y concurrencia de la máquina
+├── integracion/         Batería contra PostgreSQL real (*.int-spec.ts): CA-06, K9, motivo de la reprogramación y concurrencia de la máquina
 └── *.e2e-spec.ts
 scripts/
 └── test-zonas-horarias.mjs   Lanzador de npm run test:tz
@@ -214,6 +219,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-003 — Reglas de horario, días hábiles y zona horaria](../docs/adr/ADR-003-reglas-de-horario.md)
 - [ADR-004 — Concurrencia y anti-traslape (CA-06) garantizados por el motor](../docs/adr/ADR-004-concurrencia-ca06.md)
 - [ADR-005 — Máquina de estados y reprogramación por mutuo acuerdo (CA-10)](../docs/adr/ADR-005-maquina-de-estados-ca10.md)
+- [ADR-006 — Bases del frontend y contrato tipado con la API](../docs/adr/ADR-006-frontend-contrato-tipado.md) (el consumidor de este contrato; ver también el [README del frontend](../Frontend/README.md))
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -234,12 +240,14 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
   "recursos": [{ "cantidad_solicitada": 2, "recurso": { "nombre": "Micrófono de solapa" } }],
   "logs": [
     { "estado_anterior": "Recibido", "estado_nuevo": "Validado",
-      "fecha_modificacion": "2026-10-10T15:20:00.000Z", "motivo_rechazo": null }
+      "fecha_modificacion": "2026-10-10T15:20:00.000Z", "motivo_rechazo": null,
+      "motivo_reprogramacion": null }
   ]
 }
 ```
 
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
+- `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
@@ -284,7 +292,9 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 
 - `estado` debe ser uno de los 7 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
 - Enviar el estado actual no es un cambio de estado: **200** sin log.
-- **Rechazar (T2)** exige `motivo_rechazo`. Si falta o es corto, el pipe responde **400** con `El motivo de rechazo es obligatorio y debe ser detallado (mínimo 10 caracteres)`.
+- **Rechazar (T2)** exige `motivo_rechazo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo del rechazo es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
+- Con otro `estado`, el pipe no valida el motivo: lo rechaza la fila 2 de la tabla, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
+- El pipe valida el cuerpo **antes** que la tabla: el orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
 
 **Errores, en el orden en que se evalúan** (responde la primera regla incumplida):
 
@@ -329,6 +339,8 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 - Toda transición queda en `Log_Auditoria`, en la misma transacción que el cambio, con el autor tomado del token.
 - **Franjas:** todos los estados ocupan su franja oficial salvo `Rechazado` y `Cancelado por el Usuario`. En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
 - La base de datos garantiza que hay propuesta (`fecha_propuesta_inicio` y `fecha_propuesta_fin`) **si y solo si** la solicitud está en `Pendiente de Reprogramación`, y que la propuesta termina después de empezar (invariante K9).
+- La base de datos también garantiza que todo log de T5, y solo ese, lleva `motivo_reprogramacion`, con 10 a 500 caracteres sin contar los espacios de los extremos (Fase 6.1b).
+- Y que todo log de T2, y solo ese, lleva `motivo_rechazo`, con la misma regla de longitud (Fase 6.5b).
 
 ## 12. Contratos de cancelación y reprogramación (CA-10)
 
@@ -355,13 +367,20 @@ Sin cuerpo. **200:** `mensaje` = `Solicitud cancelada correctamente.` y `solicit
 
 ### 12.2 `POST /solicitudes/:radicado/reprogramacion` (STAFF · T5)
 
-Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9. Cualquier otro campo responde 400 (lista blanca).
+Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9, y el **motivo** (obligatorio desde la Fase 6.1b). Cualquier otro campo responde 400 (lista blanca).
 
 ```json
-{ "fecha_inicio": "2026-10-28T09:00:00-05:00", "fecha_fin": "2026-10-28T10:00:00-05:00" }
+{
+  "fecha_inicio": "2026-10-28T09:00:00-05:00",
+  "fecha_fin": "2026-10-28T10:00:00-05:00",
+  "motivo": "Mantenimiento preventivo del set de grabación"
+}
 ```
 
-**200:** `mensaje` = `Propuesta de reprogramación registrada: queda pendiente de la respuesta del solicitante.` y `solicitud` con la proyección del Staff, que incluye la franja oficial y `fecha_propuesta_inicio`/`fecha_propuesta_fin`.
+- `motivo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo de la reprogramación es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
+- El pipe valida el cuerpo **antes** que cualquier regla de la tabla: un motivo inválido, una fecha sin zona o un campo no declarado responden 400 aunque el radicado no exista. El orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
+
+**200:** `mensaje` = `Propuesta de reprogramación registrada: queda pendiente de la respuesta del solicitante.` y `solicitud` con la proyección del Staff, que incluye la franja oficial, `fecha_propuesta_inicio`/`fecha_propuesta_fin` y, en `logs`, el registro de T5 con su `motivo_reprogramacion`.
 
 | Caso, en orden de evaluación | HTTP | `message` |
 |---|---|---|
@@ -377,11 +396,11 @@ Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9. Cualq
 
 - La franja oficial y `es_urgencia` no cambian. La solicitud queda en `Pendiente de Reprogramación` hasta que el solicitante responda: la propuesta no se puede reemplazar ni retirar.
 - **La propuesta no se reserva:** otra solicitud puede ocupar esa franja mientras espera, y la misma franja libre puede proponerse a varias solicitudes. Al aceptar, se revalida (§12.3).
-- No hay campo para el motivo de la reprogramación (pendiente en el backlog).
+- **Motivo (K7):** se registra en el log de T5 (`Log_Auditoria.motivo_reprogramacion`) con el autor tomado del token. El log es inmutable, así que el motivo sigue disponible después de aceptar (§12.3) o rechazar (§12.4) la propuesta.
 
 ### 12.3 `POST /solicitudes/:radicado/reprogramacion/aceptar` (SOLICITANTE dueño · T7)
 
-Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.` y `solicitud` (proyección del solicitante) en `Validado`, con `fecha_inicio`/`fecha_fin` iguales a la propuesta, `fecha_propuesta_*` en `null` y `es_urgencia` en `false` (la fecha la eligió el Estudio C).
+Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.` y `solicitud` (proyección del solicitante) en `Validado`, con `fecha_inicio`/`fecha_fin` iguales a la propuesta, `fecha_propuesta_*` en `null` y `es_urgencia` en `false` (la fecha la eligió el Estudio C). El motivo de la propuesta sigue en `logs`, en el registro de T5.
 
 | Caso, en orden de evaluación | HTTP | `message` |
 |---|---|---|
@@ -397,7 +416,7 @@ Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `R
 
 ### 12.4 `POST /solicitudes/:radicado/reprogramacion/rechazar` (SOLICITANTE dueño · T8)
 
-Sin cuerpo. **200:** `mensaje` = `Reprogramación rechazada: la solicitud quedó cancelada y su franja liberada.` y `solicitud` (proyección del solicitante) en `Cancelado por el Usuario`, con la propuesta en `null`. La franja oficial se conserva como registro y queda liberada.
+Sin cuerpo. **200:** `mensaje` = `Reprogramación rechazada: la solicitud quedó cancelada y su franja liberada.` y `solicitud` (proyección del solicitante) en `Cancelado por el Usuario`, con la propuesta en `null`. La franja oficial se conserva como registro y queda liberada. El motivo de la propuesta sigue en `logs`, en el registro de T5.
 
 | Caso | HTTP | `message` |
 |---|---|---|
@@ -405,3 +424,17 @@ Sin cuerpo. **200:** `mensaje` = `Reprogramación rechazada: la solicitud quedó
 | Sin propuesta pendiente | 409 | `La solicitud no tiene una propuesta de reprogramación pendiente.` |
 | Estado final | 409 | `La solicitud está en un estado final y no admite cambios de estado.` |
 | Estado guardado fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
+
+## 13. Contrato de `GET /auth/perfil` (restaurar la sesión)
+
+Permite al frontend reconstruir la sesión al recargar la página con el JWT que ya tiene guardado (Fase 6.2, [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md)). Exige JWT y no exige rol.
+
+**200**, con la **misma forma** que el `usuario` de la respuesta del login:
+
+```json
+{ "id": "uuid-del-usuario", "nombre": "Ana Pérez", "rol": "SOLICITANTE" }
+```
+
+- La identidad sale del token; el `nombre` y el `rol` se leen de la base de datos en ese momento. Si el Staff le cambió el rol a alguien, el perfil ya muestra el rol nuevo, aunque el token diga otro.
+- No incluye el correo (minimización): la interfaz no lo necesita.
+- **401** sin token, con un token inválido o vencido, o si el usuario del token ya no existe. El frontend lo trata como sesión vencida: borra el token y vuelve al login.

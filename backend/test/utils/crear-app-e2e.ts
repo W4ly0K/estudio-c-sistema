@@ -6,6 +6,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { crearValidationPipe } from '../../src/common/pipes/crear-validation-pipe';
+import { aplicarCors } from '../../src/common/cors/configurar-cors';
 import { Reloj } from '../../src/common/reloj/reloj';
 import { RelojFijo } from './reloj-fijo';
 
@@ -19,23 +20,29 @@ export const AHORA_E2E = new Date('2026-10-05T10:00:00-05:00');
 
 export const JWT_SECRET_E2E = 'secreto-e2e-solo-pruebas';
 
+/** Origen del frontend permitido en los e2e (el servidor de desarrollo de Vite). */
+export const ORIGEN_FRONTEND_E2E = 'http://localhost:5173';
+
 export interface UsuarioBD {
   id_usuario: string;
+  nombre: string;
   correo: string;
   rol: RolUsuario;
 }
 
 // "Base de datos" de usuarios. 'uuid-borrado' NO existe a propósito.
 export const USUARIOS_BD: Readonly<Record<string, UsuarioBD>> = {
-  'uuid-staff': { id_usuario: 'uuid-staff', correo: 'staff@unicesmag.edu.co', rol: RolUsuario.STAFF },
+  'uuid-staff': { id_usuario: 'uuid-staff', nombre: 'Staff Estudio C', correo: 'staff@unicesmag.edu.co', rol: RolUsuario.STAFF },
   'uuid-solicitante': {
     id_usuario: 'uuid-solicitante',
+    nombre: 'Estudiante de Prueba',
     correo: 'estudiante@unicesmag.edu.co',
     rol: RolUsuario.SOLICITANTE,
   },
   // Fue STAFF (así lo dice su token), pero en la BD ya es SOLICITANTE
   'uuid-degradado': {
     id_usuario: 'uuid-degradado',
+    nombre: 'Ex Staff',
     correo: 'exstaff@unicesmag.edu.co',
     rol: RolUsuario.SOLICITANTE,
   },
@@ -76,6 +83,8 @@ const LOG_E2E: Log_Auditoria = {
   modificado_por: 'uuid-staff',
   fecha_modificacion: new Date(),
   motivo_rechazo: null,
+  // ... las demás propiedades
+  motivo_reprogramacion: null,
 };
 
 interface ArgsCreateSolicitud {
@@ -173,6 +182,7 @@ export async function crearAppE2E(): Promise<ContextoE2E> {
 
   const app = moduleRef.createNestApplication<INestApplication<App>>();
   app.useGlobalPipes(crearValidationPipe()); // Misma configuración que main.ts (Decisión F)
+  aplicarCors(app, ORIGEN_FRONTEND_E2E); // Misma función que main.ts (Fase 6.2 · DS2)
   await app.init();
 
   const jwt = moduleRef.get(JwtService);

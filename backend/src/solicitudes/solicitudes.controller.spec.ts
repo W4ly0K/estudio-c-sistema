@@ -136,6 +136,7 @@ describe('SolicitudesController', () => {
       const dto: ProponerReprogramacionDto = {
         fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
         fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+        motivo: 'Mantenimiento preventivo del set de grabación',
       };
 
       await controller.proponerReprogramacion('EC-2099-0001', dto, USUARIO_STAFF);

@@ -4,6 +4,9 @@
 |---|---|
 | **Estado** | ✅ Aceptado |
 | **Fecha** | 2026-10-09 |
+| **Actualización** | 2026-10-11 · Fase 6.1b: K7 resuelto, motivo de la reprogramación obligatorio y garantizado por el motor (§2.9) |
+| **Actualización** | 2026-10-14 · Fase 6.5b: motivo del rechazo (T2) con longitud real y E5 garantizado por el motor (§2.10) |
+| **Actualización** | 2026-10-15 · Cierre de la Fase 6: historial de implementación completo (§7) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-5-maquina-de-estados` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (404 uniforme y proyecciones por rol en los comandos del solicitante) · [ADR-003](ADR-003-reglas-de-horario.md) (la franja propuesta pasa por las mismas reglas de horario) · [ADR-004](ADR-004-concurrencia-ca06.md) (el motor como garante; este ADR **reemplaza** la reactivación de su Decisión AG) |
@@ -91,7 +94,7 @@ El diagnóstico de la Fase 5 (solo lectura sobre el código y sobre producción)
 - **K4:** la propuesta pasa por las mismas reglas de horario que una solicitud nueva y debe diferir de la franja oficial.
 - **D3 / K5:** CA-06 sobre la propuesta solo en la consulta previa, excluyendo la propia solicitud. **La propuesta no se reserva en el motor** (sin migración): la franja oficial sigue ocupada mientras la solicitud está pendiente.
 - **K6:** *compare-and-set* sobre el estado y la franja oficiales; no cambian ni la franja oficial ni `es_urgencia`. **K8:** responde con la proyección del Staff.
-- **K7:** sin motivo de la reprogramación. `Log_Auditoria` solo tiene `motivo_rechazo`, y reutilizarlo corrompería su significado. Queda en el backlog (columna nueva).
+- **K7:** sin motivo de la reprogramación. `Log_Auditoria` solo tiene `motivo_rechazo`, y reutilizarlo corrompería su significado. Queda en el backlog (columna nueva). **Resuelto en la Fase 6.1b** con una columna propia en el log de T5 (§2.9).
 - **K9:** invariante "hay propuesta si y solo si la solicitud está en `Pendiente`", llevado al motor en el paso 5.5b (§2.7).
 
 ### 2.6 CA-10, responder (paso 5.5a · Decisiones L1 a L10)
@@ -133,6 +136,57 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 
 ---
 
+### 2.9 Motivo de la reprogramación (Fase 6.1b · Decisiones DB1 a DB3)
+
+Resuelve K7. El wireframe C4 exige una "justificación técnica obligatoria" al proponer, y B4 se la muestra al solicitante.
+
+- **DB1 · El motivo vive en el log de T5** (`Log_Auditoria.motivo_reprogramacion`), no en `Solicitud`. El log es inmutable: el motivo sobrevive a T7 y T8, y la línea de vida conserva por qué el Estudio C propuso otra fecha. Guardarlo en `Solicitud` obligaba a borrarlo al responder (L8, L9) y a sumar una cuarta restricción a K9. Ambas proyecciones lo exponen en `logs`.
+- **DB2 · Obligatorio, recortado y de 10 a 500 caracteres reales.** El DTO usa `@TextoConLongitudReal`, que mide en puntos de código como `char_length`: `'🎬'.length` es 2 en JavaScript y 1 en PostgreSQL. Si el DTO midiera con `.length`, aceptaría textos que el motor rechaza con 500. Un único validador entrega un único mensaje.
+- **DB3 · El campo del cuerpo se llama `motivo`.** El contexto lo da la ruta `/reprogramacion`. Fue un cambio de contrato deliberado (400 sin motivo), sin consumidores todavía.
+- **Garantizado por el motor** (migración `20261009200000_motivo_reprogramacion`, `BEGIN`/`COMMIT`, LF):
+
+```sql
+ALTER TABLE "Log_Auditoria" ADD COLUMN "motivo_reprogramacion" TEXT;
+ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_reprogramacion_longitud_check"
+  CHECK (char_length(btrim(motivo_reprogramacion)) BETWEEN 10 AND 500);                          -- R2
+ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_reprogramacion_segun_estado_check"
+  CHECK ((motivo_reprogramacion IS NOT NULL) = (estado_nuevo = 'Pendiente de Reprogramación'));  -- R1
+```
+
+- **R1** obliga a todo log de T5, y solo a ese, a llevar motivo. **R2** va antes que R1 a propósito: en el ensayo de atomicidad falla R1 y la reversión debe deshacer también la columna y R2.
+- **Método (el de la Fase 5.5b):**
+  - verificación previa de solo lectura en producción: 0 logs de T5 que violaran R1;
+  - ensayo en la base desechable con un log de T5 sembrado: R1 falló con `23514` y no quedó ni la columna ni ninguna restricción;
+  - prueba roja esperada (I-18a e I-18b en `23514` con el código anterior);
+  - aplicada con `npm run db:migrate`, *checksum* `41747fea…5023b44`.
+- **Lección: la migración y el código que la cumple van en el mismo commit.** Aplicar R1 antes de que `proponerReprogramacion()` escribiera el motivo habría hecho fallar con 500 toda propuesta del Staff. Por eso 6.1b.1 y 6.1b.2 se unieron y producción se migró después del commit.
+- **Límite conocido:** `btrim` solo quita espacios, mientras que el DTO recorta todo el espacio en blanco. Lo que guarda la API siempre llega recortado; un `INSERT` manual con tabuladores o saltos de línea en los extremos podría pasar R2.
+
+### 2.10 Motivo del rechazo (Fase 6.5b · hallazgo DE1)
+
+Hallazgo de la 6.4 (ADR-006 §5). `motivo_rechazo` se validaba con `@MinLength(10)`: diez espacios pasaban, se contaban unidades UTF-16 (5 emojis valían 10), no había máximo y se guardaba sin recortar. Antes del formulario de rechazo del Staff (6.5.3), T2 se lleva al mismo estándar que el motivo de la reprogramación.
+
+- **Mismo validador:** `@ValidateIf(estado === 'Rechazado')` + `@TextoConLongitudReal(MOTIVO_RECHAZO_MINIMO, MOTIVO_RECHAZO_MAXIMO, MENSAJE_MOTIVO_RECHAZO)`. Las constantes se exportan para el cliente y el mensaje interpola los límites: si un límite cambia, el texto no puede quedar mintiendo.
+- **E5 sigue en el servicio.** Con otro estado, el pipe no valida el motivo (dos `@ValidateIf` sobre la misma propiedad se contradicen, §2.2). Un motivo sin un cambio **real** a `Rechazado` responde 400 `MENSAJE_MOTIVO_SOLO_EN_RECHAZO`, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
+- **El DTO y el CHECK cambian juntos** (lección de DB2): con `@MinLength`, 5 emojis pasaban el pipe y el CHECK nuevo habría respondido 500.
+- **Garantizado por el motor** (migración `20261013120000_motivo_rechazo`, `BEGIN`/`COMMIT`, LF). La columna existe desde `0_init`: solo se agregan las reglas.
+
+```sql
+ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_longitud_check"
+  CHECK (char_length(btrim(motivo_rechazo)) BETWEEN 10 AND 500);          -- R2
+ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_segun_estado_check"
+  CHECK ((motivo_rechazo IS NOT NULL) = (estado_nuevo = 'Rechazado'));    -- R1
+```
+
+- **R1 es E5 llevado a la base:** todo log de T2, y solo ese, lleva motivo. **R2** va antes que R1 a propósito, para que el ensayo de atomicidad demuestre que la reversión la deshace.
+- **Método (el de la 6.1b):**
+  - verificación previa de solo lectura en producción (`precheck-6.5b.sql`): 0 rechazos sin motivo, 0 motivos fuera de T2, 0 cortos, 0 largos, 0 variantes de `Rechazado` y 0 restricciones previas sobre la columna;
+  - ensayo en la base desechable con un log de T2 sin motivo: R1 falló con `23514` y R2, que ya se había creado, no quedó;
+  - producción con `npm run db:migrate` después de los commits, verificada con `postcheck-6.5b.sql` (restricciones validadas y *checksum* `70e9fea9…a1369db7`).
+- **Efecto en las pruebas de la 6.1b:** I-22 sembraba un log hacia `Rechazado` sin motivo de rechazo. PostgreSQL evalúa los CHECK en orden alfabético de nombre, así que `…motivo_rechazo…` se habría reportado antes que la regla que esa prueba vigila. Ahora lleva un motivo de rechazo válido: cada caso rompe una sola regla.
+- **Brecha cerrada por mutación:** el mutante X09 (E5 sin `cambiaEstado`) sobrevivió a la primera corrida. Respondía 200 y descartaba el motivo en silencio, sin log que el motor pudiera vigilar. Lo cerró un caso nuevo de U-26.
+- **Límite conocido:** el mismo de §2.9 (`btrim` solo quita espacios).
+
 ## 3. Política de las propuestas de reprogramación
 
 1. **La propuesta no reserva la franja (D3).** Mientras la solicitud está en `Pendiente de Reprogramación`, su franja **oficial** sigue ocupada y la **propuesta** está libre para cualquiera.
@@ -160,6 +214,8 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 | L1 a L10 | A-1 a A-13 y X-1 a X-7 · e2e |
 | M1 a M3 | Integración I-12 (alineación exacta con `pg_constraint`; el literal se deriva del destino de T5) a I-18 (rutas reales T5 → T7 y T5 → T8) |
 | N1, N2 | Integración I-3 (canario de T7), I-11a a I-11f e I-19 |
+| DB1 a DB3 (6.1b) | Decorador `@TextoConLongitudReal` · DTO · R-1 · e2e 35 y 40 · integración I-20 (alineación con `pg_constraint`, límites derivados del DTO), I-21 a I-23 (una violación por regla) e I-24 (T5 → T7 y T5 → T8 conservan el motivo) |
+| DE1 (6.5b) | DTO (`update-solicitude.dto.spec.ts`) · U-26 (incluido `Rechazado` → `Rechazado`) · e2e 41 a 44 (recorte, mensaje y orden 401 → 403 → 400) · integración I-25 (alineación con `pg_constraint`; límites del DTO y literal de T2), I-26 a I-28 (una violación por regla) e I-29 (ruta real de T2) |
 
 **Pruebas de mutación.** Cada paso se mutó con anclas de exactamente una aparición, restauración garantizada y verificación por *hash*:
 
@@ -172,10 +228,16 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 | 5.4 · Proponer | 13 de 13 |
 | 5.5a · Responder | 15 de 15 |
 | 5.6 · Concurrencia (detector: integración real) | 4 de 4, más 1 equivalente justificada |
+| 6.1b · Motivo de la reprogramación | 9 de 9 |
+| 6.5b · Motivo del rechazo | 9 de 9 (X09 sobrevivió a la primera corrida; lo cerró un caso nuevo de U-26) |
 
 **El mutante equivalente X5** quita el estado del *compare-and-set* de aceptar y sigue en verde. No es una prueba faltante: M2 hace que "la propuesta es la validada" implique "el estado es `Pendiente`". Una restricción del motor vuelve redundante una condición del código; la condición se conserva como defensa en profundidad.
 
-**Resultado al cierre:** `npm test` 26 suites (658 ✅ y 1 omitida por diseño) · `npm run test:e2e` 3 suites · 54 ✅ · `npm run test:integracion` 4 suites · 25 ✅ contra PostgreSQL 17 (base desechable) · `npm run test:tz` no se volvió a ejecutar en esta fase (queda en la lista de verificación de cierre).
+**Tras la Fase 6.1b:** `npm test` 685 ✅ y 1 omitida · `npm run test:e2e` 55 ✅ · `npm run test:integracion` 5 suites · 41 ✅.
+
+**Tras la Fase 6.5b:** `npm test` 720 ✅ · `npm run test:e2e` 70 ✅ · `npm run test:integracion` 6 suites · 56 ✅.
+
+**Resultado al cierre de la Fase 5:** `npm test` 26 suites (658 ✅ y 1 omitida por diseño) · `npm run test:e2e` 3 suites · 54 ✅ · `npm run test:integracion` 4 suites · 25 ✅ contra PostgreSQL 17 (base desechable) · `npm run test:tz` no se volvió a ejecutar en esta fase (queda en la lista de verificación de cierre).
 
 ---
 
@@ -194,7 +256,7 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 
 - **N3 · Agotamiento de conexiones (P2028).** Una transacción interactiva espera como máximo `maxWait` (2 s) por una conexión. Con `connection_limit=5`, más de 5 escrituras simultáneas pueden fallar con P2028 y responder 500 en lugar de 409. Necesita un experimento propio antes de operar con carga real: medir el *pooler* de Supabase, fijar `maxWait`/`timeout` de forma explícita y traducir P2028 a 503 con reintento.
 - **N4 · El modo libre de I-11f no recorrió órdenes alternativos.** Los 50 choques los resolvió el *compare-and-set* (0 por la máquina y 0 con doble éxito): al lanzarse a la vez, las dos peticiones siempre leen antes de que alguna escriba, y el modo libre se comportó como la barrera. Los caminos en los que la segunda petición lee **después** de la primera confirmación están cubiertos por las pruebas unitarias, pero no bajo concurrencia real. **Mejora:** un retraso aleatorio y sembrado (de 0 a 300 ms) en una de las dos peticiones, registrando la semilla para reproducir cualquier fallo.
-- **CA-10:** motivo de la reprogramación (K7), plazo de respuesta del solicitante y T10 (§3).
+- **CA-10:** plazo de respuesta del solicitante y T10 (§3). El motivo de la reprogramación (K7) quedó resuelto en la Fase 6.1b (§2.9).
 - **ADR-002:** `remove()` todavía responde 400 con el radicado cuando no existe; falta el 404 uniforme.
 - **E3:** categoría, propósito y recursos siguen editables por el Staff fuera de `Recibido`.
 - **Esquema:** `estado` como enum de Prisma (la migración debe convertir los valores y recrear el `EXCLUDE`).
@@ -216,4 +278,10 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 | `d703856` | 5.5a · CA-10: aceptar (T7) y rechazar (T8), con revalidación y *compare-and-set* estricto (L1 a L9) |
 | `7b6449a` | 5.5b · Invariante K9 garantizado por el motor (aplicado en producción con `npm run db:migrate`) |
 | `0c2ff7b` | 5.6 · Concurrencia: barrera determinista, propiedades e I-19 |
-| — | 5.7 · Este ADR, el contrato del README (§10 a §12) y la Bitácora de la Fase 5 |
+| `008e3a9` | 5.7 · Este ADR, el contrato del README (§10 a §12) y la Bitácora de la Fase 5 |
+| `2f92777` | 6.1b · Motivo de la reprogramación (K7): migración, `@TextoConLongitudReal`, DTO, servicio, proyecciones y pruebas |
+| `ad4822d` | 6.1b.3 · §2.9 y el contrato del README (§8, §11 y §12) |
+| `56adde1` | 6.5b.1 · Motivo del rechazo con `@TextoConLongitudReal` (DTO, unitarias y e2e) |
+| `e6ee26c` | 6.5b.2 · CHECK del motivo del rechazo (migración, `schema.prisma` e integración I-25 a I-29) |
+| `51b223e` | 6.5b.2 · U-26: E5 exige un cambio real a `Rechazado` (cierra el mutante X09) |
+| `f05bb39` | 6.5b.3 · §2.10 y el contrato del README (§2.1, §8, §10 y §11) |

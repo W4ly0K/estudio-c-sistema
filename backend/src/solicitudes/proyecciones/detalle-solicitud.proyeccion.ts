@@ -36,6 +36,7 @@ export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
       modificado_por: true,
       fecha_modificacion: true,
       motivo_rechazo: true,
+      motivo_reprogramacion: true,
     },
   },
 });
@@ -62,6 +63,8 @@ export const SELECT_DETALLE_SOLICITANTE = Prisma.validator<Prisma.SolicitudSelec
       estado_nuevo: true,
       fecha_modificacion: true,
       motivo_rechazo: true,
+      // B4: el solicitante ve por qué el Estudio C le propone otra fecha (Fase 6.1b).
+      motivo_reprogramacion: true,
     },
   },
 });

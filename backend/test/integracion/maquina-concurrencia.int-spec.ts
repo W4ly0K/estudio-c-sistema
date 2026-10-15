@@ -160,7 +160,11 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
     etiqueta: 'T5 proponer', destino: PENDIENTE,
     ejecutar: () => {
       const franja = propuesta(n);
-      return service.proponerReprogramacion(r, { fecha_inicio: franja.inicio, fecha_fin: franja.fin }, STAFF_A);
+      return service.proponerReprogramacion(
+        r,
+        { fecha_inicio: franja.inicio, fecha_fin: franja.fin, motivo: `Propuesta concurrente número ${n}` },
+        STAFF_A,
+      );
     },
   });
   const aceptar = (r: string): Operacion => ({

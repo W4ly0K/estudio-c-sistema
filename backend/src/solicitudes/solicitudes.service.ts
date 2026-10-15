@@ -668,6 +668,9 @@ export class SolicitudesService {
         estado_anterior: existente.estado,
         estado_nuevo: resultado.transicion.destino,
         modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
+        // K7 · Fase 6.1b: la justificación vive en el log de T5 (inmutable, sobrevive a
+        // T7 y T8). El motor exige que exista justo aquí (…_segun_estado_check).
+        motivo_reprogramacion: dto.motivo,
       },
       // K8: proyección del Staff (franja oficial y propuesta), releída en la transacción.
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),

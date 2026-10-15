@@ -1,8 +1,25 @@
 import { Injectable, UnauthorizedException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { Prisma } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
+import type { PerfilUsuario } from './interfaces/perfil-usuario.interface';
+
+/** Lista blanca de columnas del perfil (Fase 6.2 · DS1): el correo no sale. */
+export const SELECT_PERFIL = {
+  id_usuario: true,
+  nombre: true,
+  rol: true,
+} as const satisfies Prisma.UsuarioSelect;
+
+/** El mismo texto que JwtStrategy: el usuario del token ya no existe. */
+export const MENSAJE_PERFIL_SIN_USUARIO = 'La sesión no corresponde a un usuario vigente.';
+
+/** Única traducción de la fila al perfil público: la usan el login y GET /auth/perfil. */
+function perfilDe(usuario: Prisma.UsuarioGetPayload<{ select: typeof SELECT_PERFIL }>): PerfilUsuario {
+  return { id: usuario.id_usuario, nombre: usuario.nombre, rol: usuario.rol };
+}
 
 @Injectable()
 export class AuthService {
@@ -64,11 +81,7 @@ export class AuthService {
       return {
         mensaje: 'Autenticación exitosa',
         token: backendToken,
-        usuario: {
-          id: usuario.id_usuario,
-          nombre: usuario.nombre,
-          rol: usuario.rol,
-        },
+        usuario: perfilDe(usuario),
       };
     } catch (error) {
       // Diferenciamos los errores conocidos (Dominio inválido, falta de payload) de caídas de base de datos
@@ -88,5 +101,22 @@ export class AuthService {
       );
       throw new InternalServerErrorException('Error interno al procesar la autenticación. Contacte soporte.');
     }
+  }
+
+  /**
+   * Fase 6.2 · DS1: GET /auth/perfil. Permite al frontend restaurar la sesión al
+   * recargar. El id llega del JWT ya verificado; nombre y rol se leen de la BD, así
+   * que un cambio de rol o un usuario eliminado se reflejan de inmediato.
+   */
+  async obtenerPerfil(idUsuario: string): Promise<PerfilUsuario> {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id_usuario: idUsuario },
+      select: SELECT_PERFIL,
+    });
+    if (!usuario) {
+      // Eliminado entre la validación del token y esta consulta: fail-closed, como JwtStrategy.
+      throw new UnauthorizedException(MENSAJE_PERFIL_SIN_USUARIO);
+    }
+    return perfilDe(usuario);
   }
 }

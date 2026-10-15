@@ -4,8 +4,11 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
+import { MENSAJE_MOTIVO_REPROGRAMACION } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
+import { MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
   MENSAJE_REPROGRAMACION_PROPUESTA,
   MENSAJE_REPROGRAMAR_EN_RECIBIDO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
@@ -246,7 +249,12 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
   });
 
   describe('POST /solicitudes/:radicado/reprogramacion · CA-10 (Fase 5.4 · K1–K9)', () => {
-    const PROPUESTA = { fecha_inicio: '2026-10-28T09:00:00-05:00', fecha_fin: '2026-10-28T10:00:00-05:00' };
+    const MOTIVO = 'Mantenimiento preventivo del set de grabación';
+    const PROPUESTA = {
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      motivo: MOTIVO,
+    };
     const proponer = (body: object, bearer: string = tokenStaff) =>
       request(app.getHttpServer())
         .post(`/solicitudes/${SOLICITUD_E2E.radicado}/reprogramacion`)
@@ -276,7 +284,11 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
         }),
       );
       expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ estado_nuevo: 'Pendiente de Reprogramación', modificado_por: 'uuid-staff' }),
+        data: expect.objectContaining({
+          estado_nuevo: 'Pendiente de Reprogramación',
+          modificado_por: 'uuid-staff',
+          motivo_reprogramacion: MOTIVO, // K7 · Fase 6.1b
+        }),
       });
     });
 
@@ -286,6 +298,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       const respuesta = await proponer({
         fecha_inicio: '2026-10-31T09:00:00-05:00',
         fecha_fin: '2026-10-31T10:00:00-05:00',
+        motivo: MOTIVO,
       }).expect(400);
 
       expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
@@ -316,6 +329,66 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(JSON.stringify(respuesta.body)).toContain('property estado should not exist');
       expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('40. K7: sin motivo → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async () => {
+      const sinMotivo = { fecha_inicio: PROPUESTA.fecha_inicio, fecha_fin: PROPUESTA.fecha_fin };
+
+      const respuesta = await proponer(sinMotivo).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_REPROGRAMACION]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PATCH /solicitudes/:radicado · T2 con motivo de rechazo (Fase 6.5b · DE1)', () => {
+    /** autorizacion = null: sin cabecera (401). Por defecto, el Staff. */
+    const rechazar = (body: object, autorizacion: string | null = `Bearer ${tokenStaff}`) => {
+      const peticion = request(app.getHttpServer()).patch(`/solicitudes/${SOLICITUD_E2E.radicado}`);
+      return autorizacion === null ? peticion.send(body) : peticion.set('Authorization', autorizacion).send(body);
+    };
+
+    it.each([
+      ['solo espacios (antes pasaba @MinLength)', ' '.repeat(12)],
+      ['de 5 emojis (10 unidades de JavaScript: antes llegaba al CHECK y respondía 500)', '🎬'.repeat(5)],
+      ['de 501 caracteres', 'x'.repeat(501)],
+    ])('41. motivo %s → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async (_caso, motivo_rechazo) => {
+      const respuesta = await rechazar({ estado: 'Rechazado', motivo_rechazo }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_RECHAZO]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('42. motivo válido con espacios en los extremos → 200 y el log guarda el texto recortado con el Staff del token', async () => {
+      await rechazar({ estado: 'Rechazado', motivo_rechazo: '   El set está en mantenimiento esa semana   ' }).expect(200);
+
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'Rechazado',
+          modificado_por: 'uuid-staff',
+          motivo_rechazo: 'El set está en mantenimiento esa semana',
+        }),
+      });
+    });
+
+    it('43. E5 por HTTP: un motivo sin "Rechazado" pasa el pipe y lo rechaza el servicio, sin escribir', async () => {
+      const respuesta = await rechazar({ estado: 'Validado', motivo_rechazo: 'Motivo suficientemente detallado' }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('44. orden 401 → 403 → 400: la identidad y el rol se deciden antes que el cuerpo', async () => {
+      const invalido = { estado: 'Rechazado', motivo_rechazo: ' '.repeat(12) };
+
+      await rechazar(invalido, null).expect(401);
+      await rechazar(invalido, `Bearer ${token}`).expect(403);
+      await rechazar(invalido).expect(400);
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
     });
   });
 });
