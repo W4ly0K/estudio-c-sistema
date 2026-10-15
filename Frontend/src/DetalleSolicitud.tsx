@@ -12,7 +12,7 @@ import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas'
-import { lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
+import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_PANEL } from './rutas'
 
 /**
@@ -214,7 +214,7 @@ function Contenido({
           </h3>
           {propuesta.motivo !== null && (
             <p className="mt-2 text-gray-700">
-              <span className="font-semibold">Motivo informado por el Staff:</span> {propuesta.motivo}
+              <span className="font-semibold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
             </p>
           )}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -232,7 +232,8 @@ function Contenido({
 
       <AccionesSolicitud detalle={detalle} rol={rol} alCompletar={alCompletar} alRecargar={alRecargar} />
 
-      <LineaDeVida linea={lineaDeVida(detalle)} />
+      {/* Pantalla del solicitante (DE2): su perspectiva es fija, no la del rol de la sesión. */}
+      <LineaDeVida linea={lineaDeVida(detalle, 'SOLICITANTE')} />
     </>
   )
 }

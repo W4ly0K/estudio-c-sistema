@@ -1,9 +1,9 @@
 import type { LogSolicitante } from '../api/esquemas'
-import { TRANSICIONES, esEstadoFinal, type Estado } from '../api/maquina-estados'
+import { TRANSICIONES, esEstadoFinal, type Estado, type Rol } from '../api/maquina-estados'
 
 /**
- * Línea de vida de B3, derivada SOLO de lo que manda el servidor: el estado actual y los
- * logs (README del backend §8). Función pura: se prueba sin React ni red.
+ * Línea de vida de B3 (solicitante) y C3 (Staff), derivada SOLO de lo que manda el servidor:
+ * el estado actual y los logs (README del backend §8). Función pura: se prueba sin React ni red.
  */
 
 /** El camino feliz que dibuja el stepper del wireframe (4 nodos). */
@@ -20,9 +20,26 @@ export interface PasoLinea {
   readonly fecha: string | null
 }
 
-export const ACTOR_SOLICITANTE = 'Tú'
-export const ACTOR_STAFF = 'Staff Estudio C'
-export type Actor = typeof ACTOR_SOLICITANTE | typeof ACTOR_STAFF
+/**
+ * Quién MIRA la línea de vida (6.5.2 · DD2). Cambia cómo se NOMBRA a cada actor, nunca
+ * quién fue: eso lo dice la máquina. Es obligatoria en lineaDeVida() a propósito: con un
+ * valor por defecto, una pantalla nueva podría olvidarla y mostrar "Tú" a quien no es.
+ */
+export type Perspectiva = Rol
+
+/** Nombre de cada rol según la perspectiva. `Record` doble: un rol nuevo no compila sin su nombre. */
+export const ACTORES = {
+  SOLICITANTE: { SOLICITANTE: 'Tú', STAFF: 'Staff Estudio C' },
+  STAFF: { SOLICITANTE: 'Solicitante', STAFF: 'Staff' },
+} as const satisfies Readonly<Record<Perspectiva, Readonly<Record<Rol, string>>>>
+export type Actor = (typeof ACTORES)[Perspectiva][Rol]
+
+export const ETIQUETA_MOTIVO_RECHAZO = 'Motivo del rechazo'
+/** El motivo de T5: el solicitante lo recibe "del Staff"; para el Staff es su propia justificación. */
+export const ETIQUETAS_MOTIVO_PROPUESTA: Readonly<Record<Perspectiva, string>> = {
+  SOLICITANTE: 'Motivo informado por el Staff',
+  STAFF: 'Motivo de la reprogramación',
+}
 
 export interface MotivoEvento {
   readonly etiqueta: string
@@ -52,18 +69,19 @@ function enElCamino(estado: Estado): estado is EstadoDelCamino {
 
 /**
  * El backend no envía quién hizo cada cambio al solicitante (minimización, README §8). Se
- * DERIVA de la máquina: cada transición tiene un único rol (PRD §5.5).
+ * DERIVA de la máquina: cada transición tiene un único rol (PRD §5.5). La perspectiva
+ * solo elige el nombre con que se muestra ese rol.
  */
-export function actorDe(desde: Estado, hacia: Estado): Actor | null {
+export function actorDe(desde: Estado, hacia: Estado, perspectiva: Perspectiva): Actor | null {
   const transicion = TRANSICIONES.find((t) => t.origen === desde && t.destino === hacia)
   if (transicion === undefined) return null
-  return transicion.rol === 'SOLICITANTE' ? ACTOR_SOLICITANTE : ACTOR_STAFF
+  return ACTORES[perspectiva][transicion.rol]
 }
 
-function motivoDe(log: LogSolicitante): MotivoEvento | null {
-  if (log.motivo_rechazo !== null) return { etiqueta: 'Motivo del rechazo', texto: log.motivo_rechazo }
+function motivoDe(log: LogSolicitante, perspectiva: Perspectiva): MotivoEvento | null {
+  if (log.motivo_rechazo !== null) return { etiqueta: ETIQUETA_MOTIVO_RECHAZO, texto: log.motivo_rechazo }
   if (log.motivo_reprogramacion !== null) {
-    return { etiqueta: 'Motivo informado por el Staff', texto: log.motivo_reprogramacion }
+    return { etiqueta: ETIQUETAS_MOTIVO_PROPUESTA[perspectiva], texto: log.motivo_reprogramacion }
   }
   return null
 }
@@ -82,7 +100,10 @@ function ultimoLog(ordenados: readonly LogSolicitante[], condicion: (log: LogSol
   return null
 }
 
-export function lineaDeVida({ estado, logs }: { estado: Estado; logs: readonly LogSolicitante[] }): LineaDeVida {
+export function lineaDeVida(
+  { estado, logs }: { estado: Estado; logs: readonly LogSolicitante[] },
+  perspectiva: Perspectiva,
+): LineaDeVida {
   const ordenados = ordenarPorFecha(logs)
 
   const fechaDe = (paso: EstadoDelCamino): string | null =>
@@ -112,8 +133,8 @@ export function lineaDeVida({ estado, logs }: { estado: Estado; logs: readonly L
       desde: log.estado_anterior,
       hacia: log.estado_nuevo,
       fecha: log.fecha_modificacion,
-      actor: actorDe(log.estado_anterior, log.estado_nuevo),
-      motivo: motivoDe(log),
+      actor: actorDe(log.estado_anterior, log.estado_nuevo, perspectiva),
+      motivo: motivoDe(log, perspectiva),
     })),
   }
 }

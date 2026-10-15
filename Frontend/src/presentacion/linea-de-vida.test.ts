@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LogSolicitante } from '../api/esquemas'
-import type { Estado } from '../api/maquina-estados'
-import { ACTOR_SOLICITANTE, ACTOR_STAFF, actorDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
+import { ROLES, TRANSICIONES, type Estado } from '../api/maquina-estados'
+import { ACTORES, actorDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
 
 /** Un log del contrato; `dia` arma la fecha (octubre de 2026, 15:00 UTC = 10:00 Bogotá). */
 function log(desde: Estado, hacia: Estado, dia: number, motivos: Partial<LogSolicitante> = {}): LogSolicitante {
@@ -17,9 +17,9 @@ function log(desde: Estado, hacia: Estado, dia: number, motivos: Partial<LogSoli
 
 const situaciones = (linea: ReturnType<typeof lineaDeVida>) => linea.pasos.map((p) => p.situacion)
 
-describe('lineaDeVida (B3)', () => {
+describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
   it('recién radicada: Recibido es el paso actual, sin fecha (no hay log de la radicación)', () => {
-    const linea = lineaDeVida({ estado: 'Recibido', logs: [] })
+    const linea = lineaDeVida({ estado: 'Recibido', logs: [] }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['actual', 'pendiente', 'pendiente', 'pendiente'])
     expect(linea.pasos.map((p) => p.fecha)).toEqual([null, null, null, null])
@@ -31,18 +31,18 @@ describe('lineaDeVida (B3)', () => {
     const linea = lineaDeVida({
       estado: 'En Producción',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'En Producción', 14)],
-    })
+    }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'completado', 'actual', 'pendiente'])
     expect(linea.pasos[1]?.fecha).toBe('2026-10-12T15:00:00.000Z')
-    expect(linea.eventos.map((e) => e.actor)).toEqual([ACTOR_STAFF, ACTOR_STAFF])
+    expect(linea.eventos.map((e) => e.actor)).toEqual(['Staff Estudio C', 'Staff Estudio C'])
   })
 
   it('entregada: todo completado (el final del camino no queda "actual")', () => {
     const linea = lineaDeVida({
       estado: 'Entregado',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'En Producción', 14), log('En Producción', 'Entregado', 15)],
-    })
+    }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'completado', 'completado', 'completado'])
   })
@@ -51,7 +51,7 @@ describe('lineaDeVida (B3)', () => {
     const linea = lineaDeVida({
       estado: 'Rechazado',
       logs: [log('Recibido', 'Rechazado', 12, { motivo_rechazo: 'La cabina está en mantenimiento.' })],
-    })
+    }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'omitido', 'omitido', 'omitido'])
     expect(linea.desvio).toBe('Rechazado')
@@ -62,10 +62,10 @@ describe('lineaDeVida (B3)', () => {
     const linea = lineaDeVida({
       estado: 'Cancelado por el Usuario',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'Cancelado por el Usuario', 13)],
-    })
+    }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'completado', 'omitido', 'omitido'])
-    expect(linea.eventos[1]?.actor).toBe(ACTOR_SOLICITANTE)
+    expect(linea.eventos[1]?.actor).toBe('Tú')
   })
 
   it('pendiente de reprogramación (T5): no es final, así que el camino sigue pendiente', () => {
@@ -75,7 +75,7 @@ describe('lineaDeVida (B3)', () => {
         log('Recibido', 'Validado', 12),
         log('Validado', 'Pendiente de Reprogramación', 13, { motivo_reprogramacion: 'Mantenimiento de la cabina.' }),
       ],
-    })
+    }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'completado', 'pendiente', 'pendiente'])
     expect(linea.desvio).toBe('Pendiente de Reprogramación')
@@ -90,17 +90,17 @@ describe('lineaDeVida (B3)', () => {
         log('Validado', 'Pendiente de Reprogramación', 13),
         log('Pendiente de Reprogramación', 'Validado', 14),
       ],
-    })
+    }, 'SOLICITANTE')
 
     expect(linea.pasos[1]).toEqual({ estado: 'Validado', situacion: 'actual', fecha: '2026-10-14T15:00:00.000Z' })
-    expect(linea.eventos[2]?.actor).toBe(ACTOR_SOLICITANTE)
+    expect(linea.eventos[2]?.actor).toBe('Tú')
   })
 
   it('ordena por fecha aunque los logs lleguen desordenados', () => {
     const linea = lineaDeVida({
       estado: 'En Producción',
       logs: [log('Validado', 'En Producción', 14), log('Recibido', 'Validado', 12)],
-    })
+    }, 'SOLICITANTE')
 
     expect(linea.eventos.map((e) => e.hacia)).toEqual(['Validado', 'En Producción'])
   })
@@ -108,12 +108,60 @@ describe('lineaDeVida (B3)', () => {
 
 describe('actorDe', () => {
   it('lo deriva de la máquina de estados', () => {
-    expect(actorDe('Recibido', 'Validado')).toBe(ACTOR_STAFF)
-    expect(actorDe('Recibido', 'Cancelado por el Usuario')).toBe(ACTOR_SOLICITANTE)
+    expect(actorDe('Recibido', 'Validado', 'SOLICITANTE')).toBe('Staff Estudio C')
+    expect(actorDe('Recibido', 'Cancelado por el Usuario', 'SOLICITANTE')).toBe('Tú')
   })
 
-  it('un par fuera de la tabla no inventa actor', () => {
-    expect(actorDe('Recibido', 'Entregado')).toBeNull()
+  it.each(ROLES)('perspectiva %s: cada transición se atribuye al rol que la máquina le asigna', (perspectiva) => {
+    for (const t of TRANSICIONES) {
+      expect(actorDe(t.origen, t.destino, perspectiva)).toBe(ACTORES[perspectiva][t.rol])
+    }
+  })
+
+  it.each(ROLES)('perspectiva %s: un par fuera de la tabla no inventa actor', (perspectiva) => {
+    expect(actorDe('Recibido', 'Entregado', perspectiva)).toBeNull()
+  })
+})
+
+describe('lineaDeVida · perspectiva del Staff (6.5.2 · DD2)', () => {
+  const historia = {
+    estado: 'Cancelado por el Usuario',
+    logs: [
+      log('Recibido', 'Validado', 12),
+      log('Validado', 'Pendiente de Reprogramación', 13, { motivo_reprogramacion: 'Mantenimiento de la cabina.' }),
+      log('Pendiente de Reprogramación', 'Cancelado por el Usuario', 14),
+    ],
+  } as const satisfies { estado: Estado; logs: readonly LogSolicitante[] }
+
+  it('el Staff ve "Staff" y "Solicitante"; nunca "Tú"', () => {
+    const linea = lineaDeVida(historia, 'STAFF')
+
+    expect(linea.eventos.map((e) => e.actor)).toEqual(['Staff', 'Staff', 'Solicitante'])
+    expect(JSON.stringify(linea)).not.toContain('Tú')
+  })
+
+  it('misma historia, dos perspectivas: cambian los nombres, no los pasos, el desvío ni las fechas', () => {
+    const delSolicitante = lineaDeVida(historia, 'SOLICITANTE')
+    const delStaff = lineaDeVida(historia, 'STAFF')
+    const hechos = (linea: ReturnType<typeof lineaDeVida>) =>
+      linea.eventos.map(({ desde, hacia, fecha }) => ({ desde, hacia, fecha }))
+
+    expect(delStaff.pasos).toEqual(delSolicitante.pasos)
+    expect(delStaff.desvio).toBe(delSolicitante.desvio)
+    expect(hechos(delStaff)).toEqual(hechos(delSolicitante))
+  })
+
+  it('la etiqueta del motivo de T5 depende de quién mira; la del rechazo, no', () => {
+    expect(lineaDeVida(historia, 'STAFF').eventos[1]?.motivo).toEqual({
+      etiqueta: 'Motivo de la reprogramación',
+      texto: 'Mantenimiento de la cabina.',
+    })
+    const rechazo = {
+      estado: 'Rechazado',
+      logs: [log('Recibido', 'Rechazado', 12, { motivo_rechazo: 'La cabina está en mantenimiento.' })],
+    } as const satisfies { estado: Estado; logs: readonly LogSolicitante[] }
+    expect(lineaDeVida(rechazo, 'STAFF').eventos[0]?.motivo?.etiqueta).toBe('Motivo del rechazo')
+    expect(lineaDeVida(rechazo, 'SOLICITANTE').eventos[0]?.motivo?.etiqueta).toBe('Motivo del rechazo')
   })
 })
 
