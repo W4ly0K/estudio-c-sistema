@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from '../presentacion/acciones-solicitante'
 
 interface DialogoConfirmacionProps {
@@ -37,7 +37,9 @@ export function DialogoConfirmacion({
   const id = useId()
   const dialogoRef = useRef<HTMLDialogElement>(null)
 
-  useEffect(() => {
+  // useLayoutEffect: abrir y cerrar ocurren en el MISMO commit que cambia el contenido; nunca
+  // queda un fotograma con el resultado pintado y el modal todavía abierto encima (ver 6.4.5).
+  useLayoutEffect(() => {
     const elemento = dialogoRef.current
     if (elemento === null) return
     if (abierto && !elemento.open) elemento.showModal()
