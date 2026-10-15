@@ -2,13 +2,14 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado (pasos 6.0 a 6.5) |
+| **Estado** | ✅ Aceptado · Fase 6 completa (pasos 6.0 a 6.6) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
 | **Actualización** | 2026-10-13 · Paso 6.4: vistas del solicitante B1 a B4, rutas, accesibilidad y acciones T3, T6, T7 y T8 (§2.11) |
 | **Actualización** | 2026-10-14 · Paso 6.5b: DE1 resuelta en el backend (ADR-005 §2.10) y deuda de `GET /solicitudes` registrada (§5) |
 | **Actualización** | 2026-10-15 · Paso 6.5: vista del Staff, tablero, detalle C3 y las acciones T1, T2, T4, T5 y T9 (§2.12) |
+| **Actualización** | 2026-10-15 · Paso 6.6: cierre de la fase; historial de implementación completo (§6) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -462,4 +463,5 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `64978e3` | 6.5.3 · El diálogo se abre y cierra con `useLayoutEffect` (carrera del cierre) |
 | `7a189d8` | 6.5.4a · Refactor: `CamposFranja` y `franjaDesdeCampos` extraídos de B2, sin cambio de comportamiento |
 | `5f810f7` | 6.5.4b · T5: el Staff propone una reprogramación con franja y motivo |
-| — | 6.5.5 · §2.12 y el README del frontend |
+| `b0fe862` | 6.5.5 · §2.12 y el README del frontend |
+| — | 6.6 · Cierre: estado final de este ADR e historiales completos (este ADR y ADR-005) |

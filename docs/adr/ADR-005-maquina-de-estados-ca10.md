@@ -6,6 +6,7 @@
 | **Fecha** | 2026-10-09 |
 | **Actualización** | 2026-10-11 · Fase 6.1b: K7 resuelto, motivo de la reprogramación obligatorio y garantizado por el motor (§2.9) |
 | **Actualización** | 2026-10-14 · Fase 6.5b: motivo del rechazo (T2) con longitud real y E5 garantizado por el motor (§2.10) |
+| **Actualización** | 2026-10-15 · Cierre de la Fase 6: historial de implementación completo (§7) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-5-maquina-de-estados` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (404 uniforme y proyecciones por rol en los comandos del solicitante) · [ADR-003](ADR-003-reglas-de-horario.md) (la franja propuesta pasa por las mismas reglas de horario) · [ADR-004](ADR-004-concurrencia-ca06.md) (el motor como garante; este ADR **reemplaza** la reactivación de su Decisión AG) |
@@ -279,8 +280,8 @@ ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_segun_e
 | `0c2ff7b` | 5.6 · Concurrencia: barrera determinista, propiedades e I-19 |
 | `008e3a9` | 5.7 · Este ADR, el contrato del README (§10 a §12) y la Bitácora de la Fase 5 |
 | `2f92777` | 6.1b · Motivo de la reprogramación (K7): migración, `@TextoConLongitudReal`, DTO, servicio, proyecciones y pruebas |
-| — | 6.1b.3 · Esta actualización (§2.9) y el contrato del README (§8, §11 y §12) |
+| `ad4822d` | 6.1b.3 · §2.9 y el contrato del README (§8, §11 y §12) |
 | `56adde1` | 6.5b.1 · Motivo del rechazo con `@TextoConLongitudReal` (DTO, unitarias y e2e) |
 | `e6ee26c` | 6.5b.2 · CHECK del motivo del rechazo (migración, `schema.prisma` e integración I-25 a I-29) |
 | `51b223e` | 6.5b.2 · U-26: E5 exige un cambio real a `Rechazado` (cierra el mutante X09) |
-| — | 6.5b.3 · Esta actualización (§2.10) y el contrato del README (§2.1, §8, §10 y §11) |
+| `f05bb39` | 6.5b.3 · §2.10 y el contrato del README (§2.1, §8, §10 y §11) |
