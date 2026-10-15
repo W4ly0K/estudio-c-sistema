@@ -1,21 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { textoDeError } from './api/errores';
 import { CATEGORIAS, type Categoria, type Solicitud, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
-import { MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes';
 import { useApi } from './api/contexto-api';
+import { CamposFranja } from './componentes/CamposFranja';
 import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
-import { aIsoBogota, hoyEnBogota } from './fechas/bogota';
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
+import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
-
-/**
- * DH4: el cliente solo valida "fin posterior al inicio". Los bloques, los días hábiles
- * y los festivos los decide el servidor (CA-04): aquí solo se informan.
- */
-export const TEXTO_BLOQUES_ATENCION =
-  'Atención: lunes a viernes hábiles, de 8:00 a 12:00 y de 14:00 a 18:00 (hora de Colombia).';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
@@ -23,14 +16,13 @@ interface DashboardProps {
 }
 
 interface FormularioSolicitud {
-  fecha: string;
-  horaInicio: string;
-  horaFin: string;
+  /** Fecha y horas: campos y reglas compartidos con C4 (6.5.4a · presentacion/franja). */
+  franja: ValoresFranja;
   categoria: Categoria;
   proposito: string;
 }
 
-const FORMULARIO_VACIO: FormularioSolicitud = { fecha: '', horaInicio: '', horaFin: '', categoria: 'ESPACIOS', proposito: '' };
+const FORMULARIO_VACIO: FormularioSolicitud = { franja: FRANJA_VACIA, categoria: 'ESPACIOS', proposito: '' };
 
 /**
  * Qué muestra el diálogo. Una unión discriminada en lugar de dos estados sueltos
@@ -52,9 +44,6 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
     titulo: `${id}-titulo`,
     categoria: `${id}-categoria`,
     proposito: `${id}-proposito`,
-    fecha: `${id}-fecha`,
-    horaInicio: `${id}-hora-inicio`,
-    horaFin: `${id}-hora-fin`,
   };
   const [solicitudes, setSolicitudes] = useState<SolicitudPropia[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,26 +90,18 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
     e.preventDefault();
     setErrorValidacion('');
 
-    // DH1 · F2a: la hora elegida ES la hora de Bogotá, desde cualquier equipo. El ISO
-    // lleva el desfase explícito y nunca pasa por la zona del navegador.
-    const fechaInicio = aIsoBogota(form.fecha, form.horaInicio);
-    const fechaFin = aIsoBogota(form.fecha, form.horaFin);
-    if (fechaInicio === null || fechaFin === null) {
-      setErrorValidacion('Revisa la fecha y las horas: no son válidas.');
-      return;
-    }
-
-    // DH4 · F3: la única regla local. "HH:MM" con ceros a la izquierda se compara como texto.
-    if (form.horaFin <= form.horaInicio) {
-      setErrorValidacion(MENSAJE_FIN_NO_POSTERIOR);
+    // DH1 y DH4: las mismas dos reglas de siempre, ahora en franjaDesdeCampos (6.5.4a).
+    const franja = franjaDesdeCampos(form.franja);
+    if (!franja.ok) {
+      setErrorValidacion(franja.error);
       return;
     }
 
     const resultado = await api.crear({
       categoria: form.categoria,
       proposito: form.proposito,
-      fecha_inicio: fechaInicio,
-      fecha_fin: fechaFin,
+      fecha_inicio: franja.inicio,
+      fecha_fin: franja.fin,
     });
 
     if (!resultado.ok) {
@@ -245,31 +226,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                 />
               </div>
 
-              <div>
-                <label htmlFor={ids.fecha} className="block text-gray-600 mb-1">Fecha</label>
-                <input 
-                  id={ids.fecha}
-                  type="date" 
-                  required 
-                  min={hoyEnBogota(new Date())} // DH3 · F2c: hoy en Bogotá, no en UTC
-                  className="w-full border border-outline rounded-sm p-2 text-primary" 
-                  value={form.fecha}
-                  onChange={e => setForm({...form, fecha: e.target.value})} 
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label htmlFor={ids.horaInicio} className="block text-gray-600 mb-1">Hora de inicio</label>
-                  <input id={ids.horaInicio} type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaInicio} onChange={e => setForm({...form, horaInicio: e.target.value})} />
-                </div>
-                <div>
-                  <label htmlFor={ids.horaFin} className="block text-gray-600 mb-1">Hora de finalización</label>
-                  <input id={ids.horaFin} type="time" required className="w-full border border-outline rounded-sm p-2 text-primary" value={form.horaFin} onChange={e => setForm({...form, horaFin: e.target.value})} />
-                </div>
-              </div>
-
-              <p className="text-xs text-gray-500">{TEXTO_BLOQUES_ATENCION}</p>
+              <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
 
               {errorValidacion && (
                 <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded-sm text-xs font-bold text-accent">
