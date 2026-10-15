@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
-import { DETALLE_SOLICITANTE, json } from './test/fixtures-api'
+import { DETALLE_SOLICITANTE, DETALLE_STAFF, json } from './test/fixtures-api'
 
 // El botón real de Google necesita su proveedor y la red. El sustituto entrega una
 // credencial al hacer clic: se prueba la pantalla y el cableado del Estudio C.
@@ -159,6 +159,21 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
+  })
+
+  it('DE2: el STAFF que abre un radicado ve el detalle del Staff (C3), con la proyección completa', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes/EC-2026-0142': () => json(200, DETALLE_STAFF),
+    })
+    mostrarApp('/solicitudes/EC-2026-0142')
+
+    expect(await screen.findByRole('heading', { name: 'EC-2026-0142' })).toBeInTheDocument()
+    expect(screen.getByText('Revisión de solicitud')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'ana@unicesmag.edu.co' })).toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes/EC-2026-0142'])
   })
 
   it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {

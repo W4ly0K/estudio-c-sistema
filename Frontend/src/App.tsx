@@ -3,6 +3,7 @@ import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Navigate, Route, Routes } from 'react-router';
 import Dashboard from './Dashboard';
 import DetalleSolicitud from './DetalleSolicitud';
+import DetalleStaff from './DetalleStaff';
 import TableroStaff from './TableroStaff';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
@@ -38,6 +39,16 @@ function PantallaInicio({ usuario, onLogout }: { usuario: UsuarioSesion; onLogou
       return <TableroStaff usuario={usuario} onLogout={onLogout} />;
     case 'SOLICITANTE':
       return <Dashboard usuario={usuario} onLogout={onLogout} />;
+  }
+}
+
+/** DE2: "/solicitudes/:radicado" muestra el detalle del rol del token (C3 o B3). Solo presentación. */
+function PantallaDetalle({ usuario, onLogout }: { usuario: UsuarioSesion; onLogout: () => void }) {
+  switch (usuario.rol) {
+    case 'STAFF':
+      return <DetalleStaff usuario={usuario} onLogout={onLogout} />;
+    case 'SOLICITANTE':
+      return <DetalleSolicitud usuario={usuario} onLogout={onLogout} />;
   }
 }
 
@@ -95,7 +106,7 @@ function App() {
         <ProveedorApi api={api.solicitudes}>
           <Routes>
             <Route path={RUTA_PANEL} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path={RUTA_DETALLE} element={<DetalleSolicitud usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_DETALLE} element={<PantallaDetalle usuario={sesion.usuario} onLogout={handleLogout} />} />
             <Route path="*" element={<Navigate to={RUTA_PANEL} replace />} />
           </Routes>
         </ProveedorApi>
