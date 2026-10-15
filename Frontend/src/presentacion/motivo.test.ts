@@ -3,7 +3,9 @@ import {
   LIMITES_MOTIVO_RECHAZO,
   evaluarMotivo,
   longitudReal,
+  LIMITES_MOTIVO_REPROGRAMACION,
   motivoParaEnviar,
+  textoAyudaMotivo,
   textoContador,
 } from './motivo'
 
@@ -51,5 +53,14 @@ describe('textoContador', () => {
     expect(contador('x'.repeat(12))).toBe('12 / 500 caracteres.')
     expect(contador('x'.repeat(501))).toBe('Sobra 1 carácter: el máximo es 500.')
     expect(contador('x'.repeat(504))).toBe('Sobran 4 caracteres: el máximo es 500.')
+  })
+})
+
+describe('textoAyudaMotivo', () => {
+  it('se deriva de los límites: si cambian, la ayuda no puede quedar mintiendo', () => {
+    expect(textoAyudaMotivo(LIMITES_MOTIVO_REPROGRAMACION)).toBe(
+      'Entre 10 y 500 caracteres, sin contar los espacios de los extremos.',
+    )
+    expect(textoAyudaMotivo({ minimo: 3, maximo: 7 })).toBe('Entre 3 y 7 caracteres, sin contar los espacios de los extremos.')
   })
 })

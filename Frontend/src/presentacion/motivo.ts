@@ -14,6 +14,14 @@ export interface LimitesMotivo {
 export const LIMITES_MOTIVO_RECHAZO = { minimo: 10, maximo: 500 } as const satisfies LimitesMotivo
 export const LIMITES_MOTIVO_REPROGRAMACION = { minimo: 10, maximo: 500 } as const satisfies LimitesMotivo
 
+/** Ayuda bajo el campo: se DERIVA de los límites, así no puede contradecirlos. */
+export function textoAyudaMotivo({ minimo, maximo }: LimitesMotivo): string {
+  return `Entre ${minimo} y ${maximo} caracteres, sin contar los espacios de los extremos.`
+}
+
+export const TEXTO_AYUDA_MOTIVO_RECHAZO = textoAyudaMotivo(LIMITES_MOTIVO_RECHAZO)
+export const TEXTO_AYUDA_MOTIVO_REPROGRAMACION = textoAyudaMotivo(LIMITES_MOTIVO_REPROGRAMACION)
+
 /** Lo que viaja al servidor: el mismo valor que mide el contador. */
 export function motivoParaEnviar(texto: string): string {
   return texto.trim()

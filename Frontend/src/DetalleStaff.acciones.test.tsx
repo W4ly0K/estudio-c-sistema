@@ -7,9 +7,15 @@ import type { Resultado } from './api/cliente'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleStaff as DatosDetalleStaff } from './api/esquemas'
 import type { Estado } from './api/maquina-estados'
-import { MENSAJE_CAMBIO_CONCURRENTE } from './api/mensajes'
+import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes'
 import type { ApiSolicitudes } from './api/solicitudes'
-import { TEXTO_ACTUALIZANDO, TEXTO_AYUDA_CONFLICTO, TEXTO_ETIQUETA_MOTIVO_RECHAZO } from './componentes/AccionesStaff'
+import {
+  TEXTO_ACTUALIZANDO,
+  TEXTO_AYUDA_CONFLICTO,
+  TEXTO_ETIQUETA_MOTIVO_RECHAZO,
+  TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION,
+} from './componentes/AccionesStaff'
+import { formatearFranja } from './fechas/bogota'
 import { TEXTO_FRANJA_INICIADA } from './presentacion/acciones-staff'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
@@ -59,7 +65,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
   it.each<[Estado, string[]]>([
     ['Recibido', ['Validar', 'Rechazar']],
-    ['Validado', ['Iniciar producción']],
+    ['Validado', ['Iniciar producción', 'Proponer reprogramación']],
     ['En Producción', ['Marcar como entregada']],
   ])('en "%s" la resolución ofrece %j', async (estado, botones) => {
     mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))) })
@@ -282,5 +288,156 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     await screen.findByRole('region', { name: 'Resolución' })
 
     expect(screen.queryByText(TEXTO_FRANJA_INICIADA)).not.toBeInTheDocument()
+  })
+  describe('T5 · proponer reprogramación (6.5.4b)', () => {
+    const VALIDADO = en('Validado')
+    const PENDIENTE = en('Pendiente de Reprogramación')
+
+    interface Propuesta {
+      readonly fecha?: string
+      readonly inicio?: string
+      readonly fin?: string
+      readonly motivo?: string
+    }
+
+    const abrirPropuesta = () => abrir('Proponer reprogramación', 'Proponer una reprogramación')
+
+    /** Llena el formulario de C4 dentro del diálogo (por etiquetas, como lo haría una persona). */
+    function llenar(dialogo: HTMLElement, propuesta: Propuesta = {}) {
+      const {
+        fecha = '2026-10-28',
+        inicio = '09:00',
+        fin = '10:30',
+        motivo = '   Mantenimiento del set de grabación   ',
+      } = propuesta
+      const campos = within(dialogo)
+      fireEvent.change(campos.getByLabelText('Fecha'), { target: { value: fecha } })
+      fireEvent.change(campos.getByLabelText('Hora de inicio'), { target: { value: inicio } })
+      fireEvent.change(campos.getByLabelText('Hora de finalización'), { target: { value: fin } })
+      fireEvent.change(campos.getByLabelText(TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION), { target: { value: motivo } })
+    }
+
+    const confirmarEn = (dialogo: HTMLElement) => within(dialogo).getByRole('button', { name: 'Sí, enviar la propuesta' })
+
+    it('el diálogo dice lo que hará el servidor, muestra la franja actual y el calendario empieza hoy en Bogotá', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      expect(dialogo).toHaveAccessibleDescription(/si la rechaza, la solicitud se cancela.*no se puede retirar/)
+      expect(within(dialogo).getByText(formatearFranja(VALIDADO.fecha_inicio, VALIDADO.fecha_fin))).toBeInTheDocument()
+      expect(within(dialogo).getByLabelText('Fecha')).toHaveAttribute('min', '2026-10-05')
+    })
+
+    it('"Confirmar" sigue bloqueado hasta tener fecha, ambas horas y un motivo válido', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      expect(confirmarEn(dialogo)).toBeDisabled()
+
+      llenar(dialogo, { motivo: 'x'.repeat(9) })
+      expect(confirmarEn(dialogo)).toBeDisabled()
+
+      llenar(dialogo, { fin: '' })
+      expect(confirmarEn(dialogo)).toBeDisabled()
+
+      llenar(dialogo)
+      expect(confirmarEn(dialogo)).toBeEnabled()
+    })
+
+    it('fin no posterior al inicio: aviso local con el texto de CA-04 y no se envía nada (DH4)', async () => {
+      const proponerReprogramacion = vi.fn<ApiSolicitudes['proponerReprogramacion']>()
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      llenar(dialogo, { inicio: '10:00', fin: '09:00' })
+      fireEvent.click(confirmarEn(dialogo))
+
+      expect(within(dialogo).getByRole('alert')).toHaveTextContent(MENSAJE_FIN_NO_POSTERIOR)
+      expect(proponerReprogramacion).not.toHaveBeenCalled()
+      expect(dialogo).toHaveAttribute('open')
+    })
+
+    it('envía la franja en hora de Bogotá y el motivo recortado por SU canal; anuncia y recarga (DR3)', async () => {
+      const proponerReprogramacion = vi
+        .fn<ApiSolicitudes['proponerReprogramacion']>()
+        .mockResolvedValue({ ok: true, datos: { mensaje: 'Propuesta de reprogramación registrada.', solicitud: PENDIENTE } })
+      const detalleStaff = vi
+        .fn<ApiSolicitudes['detalleStaff']>()
+        .mockResolvedValueOnce(ok(VALIDADO))
+        .mockResolvedValueOnce(ok(PENDIENTE))
+      const api = mostrar({ detalleStaff, proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      llenar(dialogo)
+      fireEvent.click(confirmarEn(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Pendiente de Reprogramación".')
+      expect(proponerReprogramacion).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
+        fecha_inicio: '2026-10-28T09:00:00-05:00',
+        fecha_fin: '2026-10-28T10:30:00-05:00',
+        motivo: 'Mantenimiento del set de grabación',
+      })
+      expect(api.actualizarTablero).not.toHaveBeenCalled()
+      await waitFor(() => expect(detalleStaff).toHaveBeenCalledTimes(2))
+      // En Pendiente el Staff ya no tiene acciones: la decisión es del solicitante.
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Resolución' })).not.toBeInTheDocument())
+      expect(dialogo).not.toHaveAttribute('open')
+    })
+
+    it('un 400 del servidor (reglas de horario) se muestra tal cual, sin la ayuda de conflicto ni la recarga', async () => {
+      const mensaje = 'Error CA-04: Solo se pueden reservar días hábiles (lunes a viernes, sin festivos).'
+      const proponerReprogramacion = vi.fn<ApiSolicitudes['proponerReprogramacion']>().mockResolvedValue({
+        ok: false,
+        error: { tipo: 'http', status: 400, mensajes: [mensaje], requiereRecarga: false },
+      })
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      llenar(dialogo, { fecha: '2026-10-31' })
+      fireEvent.click(confirmarEn(dialogo))
+
+      const alerta = await within(dialogo).findByRole('alert')
+      expect(alerta).toHaveTextContent(mensaje)
+      expect(alerta).not.toHaveTextContent(TEXTO_AYUDA_CONFLICTO)
+      expect(within(dialogo).queryByRole('button', { name: 'Recargar la solicitud' })).not.toBeInTheDocument()
+    })
+
+    it('un 409 (CA-06: la propuesta choca con otra reserva) muestra el mensaje, la ayuda y la recarga', async () => {
+      const mensaje = 'Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.'
+      const proponerReprogramacion = vi.fn<ApiSolicitudes['proponerReprogramacion']>().mockResolvedValue({
+        ok: false,
+        error: { tipo: 'http', status: 409, mensajes: [mensaje], requiereRecarga: false },
+      })
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      llenar(dialogo)
+      fireEvent.click(confirmarEn(dialogo))
+
+      const alerta = await within(dialogo).findByRole('alert')
+      expect(alerta).toHaveTextContent(mensaje)
+      expect(alerta).toHaveTextContent(TEXTO_AYUDA_CONFLICTO)
+      expect(within(dialogo).getByRole('button', { name: 'Recargar la solicitud' })).toBeInTheDocument()
+    })
+
+    it('reabrir el diálogo empieza con la franja y el motivo en blanco', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      llenar(dialogo)
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+
+      const otraVez = abrirPropuesta()
+      expect(within(otraVez).getByLabelText('Fecha')).toHaveValue('')
+      expect(within(otraVez).getByLabelText('Hora de inicio')).toHaveValue('')
+      expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION)).toHaveValue('')
+    })
   })
 })

@@ -2,21 +2,25 @@ import { TRANSICIONES, type Estado } from '../api/maquina-estados'
 import type { TextosAccion } from './acciones-solicitante'
 
 /**
- * Acciones del Staff en el detalle C3 (paso 6.5.3 · DA1). Se DERIVAN de la tabla de la
- * máquina, como las del solicitante. Solo las que viajan por el PATCH del tablero (E1):
- * T5 tiene su propia ruta y su formulario de franja (6.5.4). Mostrar un botón no
- * autoriza nada: el servidor vuelve a decidir con el token.
+ * Acciones del Staff en el detalle C3 (6.5.3 · DA1 y 6.5.4 · DR2). Se DERIVAN de la tabla
+ * de la máquina, como las del solicitante. Dos canales: T1, T2, T4 y T9 viajan por el
+ * PATCH del tablero (E1); T5 tiene su propia ruta, con franja y motivo. Mostrar un botón
+ * no autoriza nada: el servidor vuelve a decidir con el token.
  */
-type TransicionStaff = Extract<(typeof TRANSICIONES)[number], { rol: 'STAFF' }>
+export type TransicionStaff = Extract<(typeof TRANSICIONES)[number], { rol: 'STAFF' }>
 export type TransicionDelTableroStaff = Exclude<TransicionStaff, { accion: 'PROPONER_REPROGRAMACION' }>
-export type AccionDelStaff = TransicionDelTableroStaff['accion']
-export type DestinoDelStaff = TransicionDelTableroStaff['destino']
+export type AccionDelStaff = TransicionStaff['accion']
+export type DestinoDelStaff = TransicionStaff['destino']
+/** Los destinos del canal PATCH: deben ser exactamente los que acepta CambiosTablero. */
+export type DestinoDelTableroStaff = TransicionDelTableroStaff['destino']
 
-export function accionesDelStaff(estado: Estado): readonly TransicionDelTableroStaff[] {
-  return TRANSICIONES.filter(
-    (t): t is TransicionDelTableroStaff =>
-      t.rol === 'STAFF' && t.accion !== 'PROPONER_REPROGRAMACION' && t.origen === estado,
-  )
+export function accionesDelStaff(estado: Estado): readonly TransicionStaff[] {
+  return TRANSICIONES.filter((t): t is TransicionStaff => t.rol === 'STAFF' && t.origen === estado)
+}
+
+/** El canal de la transición: todas por el PATCH del tablero, salvo T5 (DR2). */
+export function porElTablero(transicion: TransicionStaff): transicion is TransicionDelTableroStaff {
+  return transicion.accion !== 'PROPONER_REPROGRAMACION'
 }
 
 /**
@@ -56,6 +60,16 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
         titulo: 'Marcar como entregada',
         descripcion: `El radicado ${radicado} pasa a "Entregado", un estado final: no admite más cambios.`,
         confirmar: 'Sí, marcar como entregada',
+        irreversible: true,
+      }
+    case 'PROPONER_REPROGRAMACION':
+      // README §12.2 y ADR-005 §3: la franja oficial sigue ocupada, la propuesta no se
+      // reserva, no existe T10 para retirarla y rechazarla (T8) cancela la solicitud.
+      return {
+        boton: 'Proponer reprogramación',
+        titulo: 'Proponer una reprogramación',
+        descripcion: `El radicado ${radicado} pasa a "Pendiente de Reprogramación" hasta que el solicitante responda: si acepta, pasa a la franja propuesta; si la rechaza, la solicitud se cancela. Mientras tanto conserva su franja actual (${franja}). La propuesta no reserva la nueva franja (si otra solicitud la ocupa antes, aceptarla fallará) y no se puede retirar.`,
+        confirmar: 'Sí, enviar la propuesta',
         irreversible: true,
       }
     default: {
