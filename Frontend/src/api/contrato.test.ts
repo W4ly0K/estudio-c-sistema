@@ -9,6 +9,10 @@ import { CATEGORIAS } from './esquemas'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
+import fuenteDtoRechazo from '../../../backend/src/solicitudes/dto/update-solicitude.dto.ts?raw'
+import fuenteDtoReprogramacion from '../../../backend/src/solicitudes/dto/proponer-reprogramacion.dto.ts?raw'
+import fuenteDecorador from '../../../backend/src/common/validadores/texto-con-longitud-real.decorator.ts?raw'
+import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
 const lf = (texto: string): string => texto.replace(/\r\n/g, '\n')
@@ -78,5 +82,33 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
     expect(MENSAJE_CAMBIO_CONCURRENTE).toBe(
       capturar(fuenteServicio, /export const MENSAJE_CAMBIO_CONCURRENTE =\s*'([^']*)';/, 'MENSAJE_CAMBIO_CONCURRENTE'),
     )
+  })
+})
+
+/** Una constante numérica `export const NOMBRE = 123;` de un archivo del backend. */
+const numeroDelBackend = (fuente: string, nombre: string): number =>
+  Number(capturar(fuente, new RegExp(`export const ${nombre} = (\\d+);`), nombre))
+
+describe('Motivos: el contador del cliente mide como el backend (6.5.3 · DA3)', () => {
+  it('los límites del motivo de rechazo son los del DTO (update-solicitude.dto.ts)', () => {
+    expect(LIMITES_MOTIVO_RECHAZO).toEqual({
+      minimo: numeroDelBackend(fuenteDtoRechazo, 'MOTIVO_RECHAZO_MINIMO'),
+      maximo: numeroDelBackend(fuenteDtoRechazo, 'MOTIVO_RECHAZO_MAXIMO'),
+    })
+  })
+
+  it('los límites del motivo de reprogramación son los del DTO (proponer-reprogramacion.dto.ts)', () => {
+    expect(LIMITES_MOTIVO_REPROGRAMACION).toEqual({
+      minimo: numeroDelBackend(fuenteDtoReprogramacion, 'MOTIVO_REPROGRAMACION_MINIMO'),
+      maximo: numeroDelBackend(fuenteDtoReprogramacion, 'MOTIVO_REPROGRAMACION_MAXIMO'),
+    })
+  })
+
+  it('el algoritmo también: el decorador recorta (.trim()) y cuenta puntos de código ([...texto].length)', () => {
+    // Si el backend cambiara la forma de contar, el contador del cliente mentiría aunque los
+    // límites coincidieran: esta prueba obliga a revisar longitudReal() a propósito.
+    const decorador = lf(fuenteDecorador)
+    expect(decorador).toContain('return [...texto].length;')
+    expect(decorador).toContain("typeof crudo === 'string' ? crudo.trim() : crudo")
   })
 })
