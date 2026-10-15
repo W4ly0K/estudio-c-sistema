@@ -2,12 +2,13 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado (pasos 6.0 a 6.4; la Fase 6 lo amplía en 6.5) |
+| **Estado** | ✅ Aceptado (pasos 6.0 a 6.5) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
 | **Actualización** | 2026-10-13 · Paso 6.4: vistas del solicitante B1 a B4, rutas, accesibilidad y acciones T3, T6, T7 y T8 (§2.11) |
 | **Actualización** | 2026-10-14 · Paso 6.5b: DE1 resuelta en el backend (ADR-005 §2.10) y deuda de `GET /solicitudes` registrada (§5) |
+| **Actualización** | 2026-10-15 · Paso 6.5: vista del Staff, tablero, detalle C3 y las acciones T1, T2, T4, T5 y T9 (§2.12) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-6-frontend` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
@@ -209,6 +210,60 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 | Prueba de nombre accesible | *"Ver seguimiento detalladode EC-…"* | El espacio fuera del `<span className="sr-only">` |
 | Prueba de cierre del diálogo | El `<dialog>` quedaba con `open` al desmontarse | El diálogo, fuera del bloque condicional de los botones |
 
+### 2.12 Vista del Staff (paso 6.5 · Decisiones DE1 a DE6, DT1 a DT3, DD1 a DD5, DA1 a DA5 y DR1 a DR5)
+
+El flujo completo del Staff: tablero por estado, detalle C3 y la resolución con T1 (validar), T2 (rechazar con motivo), T4 (iniciar producción), T9 (marcar como entregada) y T5 (proponer una reprogramación con franja y motivo). Antes de la vista se corrigió el backend (DE1, ADR-005 §2.10): el motivo del rechazo ya se medía mal en el DTO.
+
+**Una URL por pantalla, vista por rol (DE2).** `/` y `/solicitudes/:radicado` muestran la vista del rol que trae el token: `PantallaInicio` y `PantallaDetalle` en `App.tsx`, cada una con un `switch` exhaustivo, así que un rol nuevo no compila hasta tener su pantalla. Es solo presentación: el backend vuelve a decidir con `@Roles` en cada ruta.
+
+**El tablero (DE3, DE5 y DT1 a DT3).**
+- **Un solo `GET /solicitudes`, agrupado en el cliente** por `agruparTablero()` (pura). La **pertenencia** a una columna es una regla y se deriva de la máquina: las cerradas son `ESTADOS_FINALES` y una prueba exige que las activas sean exactamente los estados no finales. El **orden** de las columnas es una decisión de presentación y se declara (`COLUMNAS_ACTIVAS`).
+- Un cajón por cada estado de la máquina: ninguna solicitud puede quedarse sin lugar (invariante probada: la suma se conserva).
+- **Orden:** activas con las urgentes primero, luego la franja más próxima y luego el radicado; cerradas (DT1) de la más reciente a la más antigua. Las fechas se comparan como **instantes** (`Date.parse`), no como texto: `09:00-05:00` (14:00 Z) es posterior a `13:00Z` aunque como texto sea menor. Una fecha ilegible va al final (con `NaN` el comparador sería inconsistente). La entrada no se muta (`[...lista].sort()`; ES2022 no tiene `toSorted`).
+- Columnas siempre presentes, aunque estén vacías. "Pendiente de Reprogramación" dice que espera al solicitante: el Staff no tiene transiciones desde ahí.
+- **DT2:** el aviso de urgentes por revisar (wireframe C2) solo aparece si hay alguna, y sale del mismo GET.
+- **DE5:** sin consultas periódicas. Se recarga al volver a `/` y con "Actualizar", que **no parpadea**: mientras viaja la petición se sigue viendo el último tablero, con el botón deshabilitado. Un error viejo no se muestra.
+- **DT3:** las tarjetas llevan al detalle desde la 6.5.1, con nombre accesible único.
+
+**El detalle C3 (DD1 a DD5).**
+- **DD1 · Una pantalla propia** (`DetalleStaff.tsx`), no `DetalleSolicitud` parametrizado: difieren el tipo de datos, los textos, las secciones y las acciones. Se comparte lo genuinamente común (`LineaDeVida`, insignias, `Encabezado`, el texto del 404 uniforme).
+- **DD2 · La perspectiva es obligatoria** en `lineaDeVida(detalle, perspectiva)`. El actor sigue derivándose de la máquina; la perspectiva solo elige cómo se nombra: "Tú" y "Staff Estudio C" para el solicitante, "Solicitante" y "Staff" para el Staff. Sin valor por defecto, a propósito: una pantalla nueva no puede olvidarla y mostrar "Tú" a quien no es. `ACTORES` es un `Record` doble, así que un rol nuevo no compila sin sus nombres. La etiqueta del motivo de T5 también depende de quién mira.
+- **DD3 · "Inventario total", no "disponible".** La proyección trae `cantidad_total`, no la disponibilidad en la franja, que depende de otras reservas. `filasDeRecursos()` solo alerta lo que el dato sostiene: pedir **más** que el total (pedir exactamente el total no alerta). Una nota bajo la tabla dice que el total no descuenta otras reservas.
+- **DD4 · Duplicación consciente del patrón de carga** por radicado. Con dos usos no se veía la abstracción correcta: el Staff vuelve a pedir el detalle tras una acción y el solicitante pinta lo que devuelve el comando. Se revisa con un tercer uso.
+- **DD5 · El correo del solicitante como `mailto:`.** No autoriza nada; es la acción más frecuente ante una duda.
+
+**La resolución (DA1 a DA5).**
+- **DA1 · Acciones derivadas de la máquina, por canal.** `accionesDelStaff()` filtra `TRANSICIONES` por el rol STAFF. `porElTablero()` separa los canales: T1, T2, T4 y T9 viajan por el `PATCH` del tablero; T5, por su propia ruta. Una prueba de **tipos** (`expectTypeOf`) exige que los destinos del canal `PATCH` sean exactamente los que acepta `CambiosTablero`: si divergen, no compila.
+- **Textos honestos.** Ninguno promete avisos (el sistema no envía notificaciones): el solicitante "lo verá en su panel". Rechazar y finalizar dicen que el estado es final. T4 advierte que el solicitante ya no podrá cancelar en línea. T5 dice que la solicitud **se cancela** si el solicitante rechaza la propuesta, que conserva su franja actual, que la propuesta **no reserva** la nueva franja y que **no se puede retirar** (no existe T10, ADR-005 §3).
+- **DA2 · Tras el éxito, se vuelve a pedir el detalle** (el `PATCH` responde solo las columnas, sin los logs). El aviso lo escribe el cliente con el destino aplicado (*"La solicitud pasó a …"*). Mientras recarga, se ve el detalle anterior con las acciones bloqueadas. Si el comando tuvo éxito pero la recarga falla, se dice exactamente eso (*"La acción quedó registrada, pero no pudimos recargar la solicitud"*) y "Recargar" **no repite** la acción. Hay **dos** recargas distintas: tras un 409 se borra el aviso (lo que se veía ya no vale); tras un error de red se conserva (la acción sí quedó registrada).
+- **DA3 · El motivo se mide como lo mide el backend:** sobre el texto recortado y en puntos de código (`[...texto.trim()].length`), igual que `@TextoConLongitudReal` y que `char_length()`. Se envía el mismo valor que mide el contador. **Sin `maxLength`:** el atributo de HTML cuenta unidades UTF-16 y cortaría 500 emojis en 250; el exceso se muestra y bloquea la confirmación (`puedeConfirmar` en `DialogoConfirmacion`). La prueba de deriva lee con `?raw` los dos DTO y el decorador del backend: vigila los límites **y** el algoritmo de conteo.
+- **DA4 · Zero Trust temporal.** Si la franja de una solicitud en Recibido ya inició, se advierte junto a "Validar", pero el botón sigue habilitado: el reloj del navegador puede estar desfasado y quien decide es el servidor (D7, 409).
+- **DA5 · `AccionesStaff` y `CampoMotivo` como componentes propios**, con el patrón probado de `AccionesSolicitud`: candado síncrono, botones deshabilitados en vuelo, Escape bloqueado y el diálogo fuera de la lista de botones. `CampoMotivo` es reutilizable: los límites llegan por props; el contador va en el `aria-describedby` (sin `aria-live`, que anunciaría cada tecla) y `aria-invalid` solo cuando excede.
+
+**T5, proponer una reprogramación (DR1 a DR5).**
+- **DR1 · Primero el refactor, después la característica.** La 6.5.4a extrajo los campos de franja de B2 a `CamposFranja` y sus dos reglas a `franjaDesdeCampos()` **sin cambiar el comportamiento**. La prueba: `Dashboard.test.tsx` pasó **sin tocar una sola línea**, y el sabotaje de la regla hizo caer sus casos (la red vieja vigila el código mudado). Una prueba unitaria nueva cubrió el hueco que la red no veía (fin **igual** al inicio).
+- **DR2 · Canal tipado:** mandar T5 por el `PATCH` **no compila**, porque `CambiosTablero` no admite "Pendiente de Reprogramación".
+- **DR3 · Recarga uniforme:** aunque `POST …/reprogramacion` ya devuelve la proyección completa, se vuelve a pedir el detalle, como en las otras cuatro acciones. Un solo camino tras el éxito, con la honestidad ya probada.
+- **DR4 · El diálogo** muestra la franja actual, los campos de franja y el motivo, en blanco en cada apertura.
+- **DR5 · Validación local mínima (DH4):** "Confirmar" se bloquea mientras falten campos o el motivo no sea válido; al confirmar, `franjaDesdeCampos()` aplica las dos reglas de B2 y, si falla, el error se muestra sin enviar nada. Días hábiles, bloques, "igual a la franja actual" y CA-06 los decide el servidor, y sus mensajes se muestran tal cual.
+
+**Las dos capas de un 409 (lección de la prueba manual con dos pestañas).** El backend detecta "lo que ves ya no es lo que hay" en dos momentos:
+1. **La máquina, sobre una lectura fresca:** si el cambio de la otra pestaña ya está confirmado, la petición tardía choca con la regla (`TRANSICION_NO_DEFINIDA`, estado final…).
+2. **El *compare-and-set*:** solo cuando dos peticiones se cruzan en los milisegundos entre leer y escribir (`MENSAJE_CAMBIO_CONCURRENTE`). A mano es prácticamente imposible de reproducir; lo cubren las pruebas de integración I-10 e I-11.
+
+Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del servidor y una ayuda en condicional: *"Si la solicitud cambió mientras la tenías abierta… recárgala"*. No compara textos del servidor (DC5), y el condicional la mantiene honesta también ante la franja ya iniciada (D7) o una propuesta que choca con otra reserva (CA-06).
+
+**Lo que atraparon las herramientas y la revisión durante la fase** (errores reales, no sabotajes):
+
+| Dónde | Hallazgo | Corrección |
+|---|---|---|
+| CI (6.4.5) | El foco del título llegaba un fotograma tarde: `findByRole` resolvía antes que el `useEffect` | `useLayoutEffect`: el foco en el mismo *commit* que pinta |
+| Suite completa (6.5.3) | El diálogo seguía `open` tras el éxito: misma carrera, ahora con `close()` | `DialogoConfirmacion` abre y cierra con `useLayoutEffect` |
+| Revisión de las pruebas | `/\bTú\b/` nunca coincidía: en JavaScript la "ú" no es carácter de palabra | `/Tú/`: una prueba en verde que no protegía nada |
+| Revisión de las pruebas | `getByText('Ana')` no encontraba el nombre junto al enlace del correo | El nombre en su propio `<span>` |
+| `react(only-export-components)` | Una constante exportada que **llamaba a una función** en un archivo de componentes | Las ayudas calculadas, a `presentacion/motivo.ts` |
+| Revisión del árbol | El editor guardó una versión vieja de `DetalleStaff.tsx` y `tsc` seguía en verde | Restaurada; lección: **el typecheck no prueba que la integración exista** |
+
 ---
 
 ## 3. Verificación
@@ -231,6 +286,11 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 | Derivar de la máquina | `resumen.test.ts` · `linea-de-vida.test.ts` (12) · `acciones-solicitante.test.ts` (9) |
 | DV2 y B1 a B4 en la UI | `TarjetaSolicitud.test.tsx` · `ExitoRadicado.test.tsx` · `DetalleSolicitud.test.tsx` · `DetalleSolicitud.acciones.test.tsx` (10) · `Dashboard.test.tsx` |
 | DV6 | `Insignias.test.tsx` (13) · consultas por rol, etiqueta y nombre accesible en todas las pruebas de vista · `toHaveFocus` tras cada cambio de pantalla |
+| DE2 | `App.test.tsx`: el STAFF ve el tablero en `/` y C3 en el detalle, y solo se hacen las peticiones esperadas |
+| DE3, DE5 y DT1 a DT3 | `tablero.test.ts` (10: pertenencia derivada, invariante, orden, instantes, fecha ilegible, entrada congelada) · `TableroStaff.test.tsx` (8) |
+| DD1 a DD5 | `linea-de-vida.test.ts` (perspectiva: las 9 transiciones en cada una, y "Tú" ausente para el Staff) · `detalle-staff.test.ts` (límite exacto del inventario) · `DetalleStaff.test.tsx` (8) |
+| DA1 a DA5 | `acciones-staff.test.ts` (tabla por estado, canal y `expectTypeOf`) · `motivo.test.ts` (conteo real y contador) · `contrato.test.ts` (límites de los dos DTO y algoritmo del decorador) · `DetalleStaff.acciones.test.tsx` |
+| DR1 a DR5 | `franja.test.ts` (8) · `Dashboard.test.tsx` **sin cambios** como red del refactor · `DetalleStaff.acciones.test.tsx` (7 casos de T5) |
 
 **Sabotajes (mutaciones manuales, todas detectadas y revertidas):**
 
@@ -258,6 +318,19 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 | 6.4.4 | El texto de T8 sin "CANCELA" | La prueba pura y la de integración de T8 |
 | 6.4.4 | Sin `preventDefault` en el `cancel` del diálogo | "Escape no cierra mientras viaja" |
 | 6.4.4 | Acciones para cualquier rol | "un usuario STAFF no ve las acciones del solicitante" |
+| 6.5.1a | Comparar las fechas como texto | Solo "compara instantes, no textos" |
+| 6.5.1a | Sin la prioridad de urgencia | El orden de las activas (`urgentesEnRecibido` siguió en verde) |
+| 6.5.1b | `PantallaInicio` muestra el panel a todos los roles | El caso DE2 de `App.test` |
+| 6.5.1b | "Actualizar" sin `disabled` · pintar sin `agruparTablero` | El caso DE5 · los casos de columnas y cerradas |
+| 6.5.2a | `actorDe` siempre con la perspectiva del solicitante · `ACTORES.STAFF` invertido · etiqueta del motivo fija | Los casos de la perspectiva del Staff |
+| 6.5.2b | `>=` en `superaInventario` · C3 con la perspectiva del solicitante · `PantallaDetalle` siempre B3 | El límite exacto · el historial con "Tú" · el caso DE2 del detalle |
+| 6.5.3a | `longitudReal` con `.length` · sin recortar · `<` en `franjaYaInicio` · sin excluir T5 | Los emojis · los espacios · el instante exacto · la invariante |
+| 6.5.3a | `MOTIVO_RECHAZO_MINIMO = 9` **en el backend** | La prueba de deriva del frontend |
+| 6.5.3b | Motivo sin recortar · sin `!puedeConfirmar` · `recargando = false` · sin el prefijo de recarga fallida · `reintentar` borra el aviso · sin la ayuda del 409 | El cuerpo de T2 · el bloqueo de T2 · "sin parpadeo" · DA2 (dos aserciones) · los dos casos 409 |
+| 6.5.4a | Invertir la regla en `franjaDesdeCampos` (`horaInicio <= horaFin`) | La red vieja de `Dashboard.test.tsx`, **sin haberla tocado**: la extracción conservó la protección |
+| 6.5.4a | `<` en lugar de `<=` | Solo "fin igual al inicio" en `franja.test.ts`: el punto ciego de la red anterior, ahora cubierto |
+| 6.5.4b | Motivo de T5 sin recortar · sin `franjaCompleta` en `puedeConfirmar` · el texto de T5 sin "no se puede retirar" | El cuerpo de `POST …/reprogramacion` · el botón habilitado con la hora de fin vacía · las pruebas del texto y del diálogo |
+| 6.5.4b | Mandar T5 por el canal del `PATCH` | **`tsc`**: `CambiosTablero` no admite "Pendiente de Reprogramación" (DR2); el error no llega ni a ejecutarse |
 
 **Verificación manual (6.1.3):** login, lista y creación; un token alterado devuelve al login con el aviso de sesión expirada; con el backend apagado aparece el mensaje de red y la UI no se rompe.
 
@@ -278,6 +351,13 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 - una solicitud urgente se ve con borde grueso e insignia, y su confirmación pide avisar al Staff;
 - al navegar al detalle, el foco salta al radicado.
 
+**Verificación manual (6.5):**
+- `/` muestra el tablero al Staff y el panel al solicitante; en móvil, el tablero queda en una columna; "Actualizar" no parpadea;
+- C3: el foco va al radicado, el `mailto:` abre el correo y un radicado inventado muestra *"No encontramos esa solicitud"*;
+- tras validar y cerrarse el diálogo, el foco queda en el radicado;
+- el contador del motivo cuenta bien los emojis, el límite detiene el envío y la advertencia DA4 aparece con la franja vencida;
+- con dos pestañas, validar en una y rechazar en la otra responde 409 de la máquina (capa 1), con "Recargar la solicitud".
+
 **Resultado al cierre de 6.1:** `npm test` del frontend, 11 archivos · 105 ✅.
 
 **Resultado al cierre de 6.2:** frontend `npm test` 13 archivos · 134 ✅ · backend `npm test` 705 ✅ y 1 omitida · `npm run test:e2e` 5 suites · 64 ✅ · CI con los jobs Backend y Frontend en verde, 0 advertencias de lint.
@@ -285,6 +365,8 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 **Resultado al cierre de 6.3:** frontend `npm test` 14 archivos · 185 ✅ y `npm run test:tz` 185 ✅ en cada una de las 4 zonas · CI en verde con el paso nuevo de zonas horarias.
 
 **Resultado al cierre de 6.4:** frontend `npm test` 25 archivos · 270 ✅ y `npm run test:tz` 270 ✅ en cada una de las 4 zonas · `npm run lint` con `jsx-a11y`, 0 advertencias.
+
+**Resultado al cierre de 6.5:** frontend `npm test` 33 archivos · 372 ✅ y `npm run test:tz` 372 ✅ en cada una de las 4 zonas · `npm run lint` 0 errores y 0 advertencias · backend sin cambios desde la 6.5b (`npm test` 720 ✅ · `npm run test:e2e` 70 ✅ · `npm run test:integracion` 56 ✅). El bucle de estrés de los diálogos (30 corridas) no mostró ningún fallo tras la corrección con `useLayoutEffect`.
 
 ---
 
@@ -295,6 +377,7 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
   - un 401 ya no deja un panel muerto, y la sesión sobrevive a una recarga y a una caída del servidor (F4 resuelto);
   - una reserva significa la misma hora real desde cualquier equipo, y se ve igual desde cualquier zona horaria (F2 resuelto); el cliente ya no contradice CA-04 (F3 resuelto);
   - el solicitante sigue y responde sus solicitudes sin salir del sistema (F5 resuelto para el solicitante), con textos que dicen lo que de verdad hará el servidor;
+  - el Staff revisa y resuelve cada solicitud desde el tablero y el detalle C3, incluida la propuesta de reprogramación (F5 resuelto también para el Staff);
   - la API solo responde a los orígenes del frontend en el navegador;
   - las desalineaciones con el backend fallan en el CI, no en producción;
   - los cuerpos ilegales no compilan.
@@ -306,7 +389,10 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
   - restaurar la sesión cuesta una petición (`GET /auth/perfil`) al cargar la página;
   - las reglas de CA-04 distintas de "fin posterior al inicio" se ven al enviar, no al escribir;
   - la suite del frontend corre cinco veces en el CI (una normal y cuatro por zona);
-  - el hosting de producción debe configurarse con *SPA fallback* (§2.11).
+  - el hosting de producción debe configurarse con *SPA fallback* (§2.11);
+  - cada acción del Staff cuesta un GET extra para recargar el detalle (DA2 y DR3);
+  - dos pantallas de detalle con su propio patrón de carga (DD4);
+  - `DialogoConfirmacion` es compartido por los dos roles: un cambio en él afecta a ambos (así apareció la carrera del cierre).
 - **Mantenimiento:** una ruta nueva sigue la lista de verificación del README del frontend (§7): esquema primero, una función por ruta, el cuerpo más estrecho posible y pruebas en el mismo commit.
 
 ## 5. Riesgos y deuda conocida
@@ -315,14 +401,25 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 - **Sesión (DS4, fuera del 6.2):** cerrar la sesión en todas las pestañas a la vez (evento `storage`); cerrarla de forma proactiva al vencer el JWT (hoy se cierra con el primer 401); revocar tokens en el servidor al salir (el JWT es *stateless*: uno robado sigue vigente hasta sus 8 h); la cookie `httpOnly` (DF2).
 - **Backend:** el puerto 3000 sigue fijo en `main.ts`.
 - **Backend:** `findMisSolicitudes()` y `findAll()` usan `include` y devuelven todas las columnas (punto 8 de su lista de verificación). El lector tolerante las descarta, pero viajan por la red.
-- **Backend · DE1 (resuelta en la 6.5b):** `motivo_rechazo` usa ahora `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo (6.5.3) usará `MOTIVO_RECHAZO_MINIMO` y `MOTIVO_RECHAZO_MAXIMO`, vigiladas por la prueba de deriva.
+- **Backend · DE1 (resuelta en la 6.5b):** `motivo_rechazo` usa ahora `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo (6.5.3) usa los mismos límites, vigilados por la prueba de deriva.
 - **Backend · `GET /solicitudes` (hallazgos de la 6.5.0; deuda aceptada, fuera del alcance de la 6.5):**
   - `?categoria=` con un valor fuera del enum llega a Prisma sin validar: `PrismaClientValidationError` y, previsiblemente, 500 en lugar de 400 (no reproducido todavía);
   - `?estado=` con un estado inventado responde 200 con `[]` en lugar de 400;
   - sin paginación: devuelve todas las solicitudes, finales incluidas. El tablero las carga en un solo GET y las agrupa en el cliente (DE3), así que el volumen crece sin límite;
   - corrección prevista: un DTO de consulta con `@IsIn` para los dos filtros y paginación (o acotar los estados finales por fecha) cuando el volumen lo pida.
 - **Formulario B2:** no permite elegir recursos (el contrato sí los acepta).
-- **Vista del Staff:** llega en la 6.5. Editar las fechas de una solicitud en Recibido queda fuera (DE6): una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado).
+- **Vista del Staff · fuera de la 6.5 (DE6):**
+  - editar las fechas de una solicitud en Recibido: una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado); DA4 lo advierte, pero solo queda rechazarla;
+  - el calendario C1, los recursos C5, las alertas C6 y la exportación C7;
+  - filtros del tablero, y que el Staff cree solicitudes;
+  - la disponibilidad real de un recurso en la franja (DD3): necesita una consulta del backend;
+  - T10, retirar una propuesta de reprogramación (ADR-005 §3).
+- **Hallazgos de la 6.5, pendientes:**
+  - el diálogo B2 de `Dashboard` aún abre y cierra con `useEffect`: la misma clase de carrera que se corrigió en `DialogoConfirmacion`;
+  - el diálogo del solicitante no muestra la ayuda contextual ante un 409 (sí la recarga);
+  - `CamposFranja` sigue editable mientras viaja la petición de T5 (sin efecto: el cuerpo ya se envió);
+  - el candado `useRef` contra el doble envío no se puede ejercitar en jsdom (el segundo clic cae sobre un botón ya deshabilitado);
+  - optimización opcional de DR3: pintar la proyección que ya devuelve T5 en lugar de volver a pedirla.
 - **CI:** `actions/checkout` y `setup-node` `@v4` corren sobre Node 20 (aviso de obsolescencia): subir a `@v5` junto con la fijación por SHA, en los dos jobs.
 - **Identidad visual:** la fuente Roboto se declara en el tema pero no se carga.
 
@@ -355,4 +452,14 @@ El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b),
 | `9fce27e` | 6.4.5 · §2.11 y el README |
 | `7828d80` | 6.4.5 · El foco del título con `useLayoutEffect` (carrera con `findByRole` en el CI) |
 | `56adde1` · `e6ee26c` · `51b223e` | 6.5b · Motivo del rechazo en el backend (DE1, ADR-005 §2.10) |
-| — | 6.5b.3 · Esta actualización (§5) |
+| `f05bb39` | 6.5b.3 · §5 (DE1 resuelta y deuda de `GET /solicitudes`) |
+| `619f392` | 6.5.1a · `agruparTablero()`: columnas derivadas de la máquina, orden por urgencia y fecha |
+| `4623800` | 6.5.1b · Ruta `/` por rol y tablero del Staff con columnas, cerradas plegadas y "Actualizar" |
+| `95e08ad` | 6.5.2a · Línea de vida por perspectiva |
+| `d2321c4` | 6.5.2b · Detalle del Staff (C3): solicitante, recursos con inventario y línea de vida |
+| `cd6a629` | 6.5.3a · Motivo con longitud real, acciones del Staff derivadas de la máquina y deriva de límites |
+| `84b42ee` | 6.5.3b · T1, T2, T4 y T9 en el detalle del Staff con confirmación y recarga |
+| `64978e3` | 6.5.3 · El diálogo se abre y cierra con `useLayoutEffect` (carrera del cierre) |
+| `7a189d8` | 6.5.4a · Refactor: `CamposFranja` y `franjaDesdeCampos` extraídos de B2, sin cambio de comportamiento |
+| `5f810f7` | 6.5.4b · T5: el Staff propone una reprogramación con franja y motivo |
+| — | 6.5.5 · §2.12 y el README del frontend |

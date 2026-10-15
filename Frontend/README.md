@@ -67,21 +67,34 @@ src/
 │   ├── contexto-api.ts   ContextoApi y useApi(): la api para las vistas (lanza fuera del proveedor)
 │   ├── ProveedorApi.tsx  <ProveedorApi api={…}>: la App inyecta la api real; las pruebas, una falsa
 │   └── contrato.test.ts  Prueba de deriva contra el código del backend
-├── componentes/          Piezas de las vistas: Encabezado, Insignias, TarjetaSolicitud, ExitoRadicado (B1b),
-│                         LineaDeVida, AccionesSolicitud y DialogoConfirmacion (<dialog> nativo)
+├── componentes/          Piezas de las vistas (solo componentes y literales: Fast Refresh)
+│   ├── Encabezado, Insignias, LineaDeVida     Comunes a los dos roles
+│   ├── DialogoConfirmacion  <dialog> nativo; abre y cierra con useLayoutEffect; puedeConfirmar opcional
+│   ├── TarjetaSolicitud, ExitoRadicado, AccionesSolicitud   Solicitante (B1, B1b, B3 y B4)
+│   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1, T2, T4, T5 y T9
+│   ├── CampoMotivo        Motivo con contador de caracteres reales (T2 y T5), sin maxLength
+│   └── CamposFranja       Fecha y horas en hora de Bogotá (B2 y T5), controlado
 ├── config/entorno.ts     Variables de entorno validadas (fail-fast)
 ├── fechas/bogota.ts      Fechas SIEMPRE en la hora de Bogotá: aIsoBogota, hoyEnBogota y formatear*
-├── presentacion/         Funciones PURAS de la vista: etiquetas, resumen del panel, lineaDeVida y las
-│                         acciones del solicitante con sus textos (derivadas de la máquina de estados)
+├── presentacion/         Funciones PURAS de la vista (se prueban sin React)
+│   ├── etiquetas, resumen               Nombres de categoría y resumen del panel B1
+│   ├── linea-de-vida    lineaDeVida(detalle, perspectiva): actores y motivos según quién mira
+│   ├── acciones-solicitante, acciones-staff   Acciones derivadas de la máquina, con sus textos honestos y su canal
+│   ├── tablero          agruparTablero(): columnas derivadas de la máquina, orden por urgencia e instante
+│   ├── detalle-staff    filasDeRecursos(): inventario TOTAL; alerta solo si se supera
+│   ├── motivo           Límites y longitud real del motivo, igual que el backend; textos de ayuda
+│   └── franja           franjaDesdeCampos(): las dos reglas locales de una franja (DH1 y DH4)
 ├── sesion/
 │   ├── token.ts          Único módulo que conoce localStorage (con try/catch)
 │   ├── maquina-sesion.ts Máquina pura de la sesión: estados, eventos y reducirSesion()
 │   └── use-sesion.ts     Hook dueño de la sesión: conecta la máquina con el token, el perfil y el 401
 ├── test/                 setup.ts (jest-dom y el polyfill de <dialog>) y fixtures-api.ts (cargas, fetch y api falsos)
 ├── rutas.ts              Las rutas, en un solo lugar: RUTA_PANEL, RUTA_DETALLE y rutaDetalle(radicado)
-├── App.tsx               Una pantalla por estado de la sesión; con sesión, las rutas dentro de <ProveedorApi>
+├── App.tsx               Una pantalla por estado de la sesión; con sesión, las rutas por ROL (PantallaInicio y PantallaDetalle)
 ├── Dashboard.tsx         Panel del solicitante (B1, B1b y el formulario B2)
-└── DetalleSolicitud.tsx  Detalle (B3), propuesta (B4) y acciones; "cargando" se deriva, no se guarda
+├── DetalleSolicitud.tsx  Detalle del solicitante (B3), propuesta (B4) y acciones; "cargando" se deriva
+├── TableroStaff.tsx      Tablero del Staff: un solo GET, columnas por estado, cerradas plegadas y "Actualizar"
+└── DetalleStaff.tsx      Detalle del Staff (C3): proyección completa, recursos, resolución y recarga honesta
 ```
 
 ## 4. Cómo se habla con la API
@@ -150,25 +163,31 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 11. Pruebas en el mismo commit: la función con el fetch falso (`crearEntornoDePrueba`) y el componente con una api falsa inyectada (`apiFalsa()` dentro de `<ProveedorApi>`).
 12. **Accesibilidad:** busca en las pruebas por rol, etiqueta y nombre accesible (`getByRole`, `getByLabelText`), nunca por clases. Diálogos con `<dialog>` y `showModal()`; tras cambiar de pantalla, el foco al título. Si `jsx-a11y` marca algo, se corrige; no se silencia.
 13. **Si el backend rechaza algo, el texto dice qué pasará de verdad** (ADR-006 §2.11): ni promesas que la máquina no cumple ni datos que no se guardan.
+14. **Efectos que tocan el DOM de forma síncrona** (`focus()`, `showModal()`, `close()`) van en `useLayoutEffect`: así ocurren en el mismo *commit* que pinta el cambio. Con `useEffect` queda un fotograma intermedio, y las pruebas con `findBy…` lo ven como un fallo intermitente (ADR-006 §2.12).
+15. **Un archivo de componentes exporta solo componentes y literales** (`react/only-export-components`, Fast Refresh). Un texto que se calcula (por ejemplo, con una función) vive en `presentacion/`.
+16. **Un límite de texto se mide como lo mide el backend** (`longitudReal()` en `presentacion/motivo.ts`), nunca con `maxLength`, y sus constantes quedan vigiladas por `contrato.test.ts`.
 
 ## 8. Pruebas
 
 - `src/api/*.test.ts`: esquemas, máquina (oráculo de las 14 combinaciones de estado y rol), cliente (18 casos de transporte y error), una prueba por ruta y la **prueba de deriva**.
-- **Prueba de deriva (`contrato.test.ts`):** lee como texto (`?raw` de Vite) `backend/src/solicitudes/reglas/maquina-estados.ts`, `backend/prisma/schema.prisma` y `backend/src/solicitudes/solicitudes.service.ts`, y compara estados, acciones, transiciones, roles, categorías, el mensaje concurrente y el aviso de "fin posterior al inicio" (`horario.validator.ts`). Exige encontrar exactamente 9 transiciones: un cambio de formato en el backend falla en lugar de pasar sin comparar nada. `vitest.config.ts` permite leer `..` solo en las pruebas.
+- **Prueba de deriva (`contrato.test.ts`):** lee como texto (`?raw` de Vite) `backend/src/solicitudes/reglas/maquina-estados.ts`, `backend/prisma/schema.prisma` y `backend/src/solicitudes/solicitudes.service.ts`, y compara estados, acciones, transiciones, roles, categorías, el mensaje concurrente y el aviso de "fin posterior al inicio" (`horario.validator.ts`). Desde la 6.5.3 también lee los dos DTO de motivos y el decorador `@TextoConLongitudReal`: compara los límites **y** el algoritmo de conteo. Exige encontrar exactamente 9 transiciones: un cambio de formato en el backend falla en lugar de pasar sin comparar nada. `vitest.config.ts` permite leer `..` solo en las pruebas.
 - Las variables de entorno de las pruebas son ficticias y viven en `vitest.config.ts`: las pruebas no dependen del `.env.local` de nadie.
 - `src/sesion/*.test.ts`: la máquina con una tabla de transiciones (incluidos los eventos ignorados, verificados con `toBe`) y el hook con `renderHook` y un `fetch` falso por ruta.
 - `src/fechas/bogota.test.ts`: el canario del desfase de Bogotá, entradas inválidas, el día de "hoy" a las 19:30 y el formato. `Dashboard.test.tsx` fija el reloj con `vi.setSystemTime` para el mínimo del calendario.
 - **`npm run test:tz`** repite toda la suite en 4 zonas y verifica antes que cada proceso de verdad tomó su zona (sin eso, el verde podría ser falso).
 - Las vistas se prueban con `apiFalsa()` dentro de `<ProveedorApi>` y un `MemoryRouter`. jsdom no implementa `showModal()`: el polyfill de `src/test/setup.ts` imita las reglas del navegador que importan (`InvalidStateError` al abrir dos veces y el evento `close`).
 - Las funciones de `presentacion/` se prueban sin React: ahí vive la lógica de la vista.
+- Un refactor se verifica con la red existente **sin tocarla**: en la 6.5.4a, `Dashboard.test.tsx` pasó sin cambiar una línea tras extraer `CamposFranja`.
 
-## 9. Vistas del solicitante y despliegue
+## 9. Vistas y despliegue
 
-| Ruta | Pantalla |
-|---|---|
-| `/` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) |
-| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) |
-| cualquier otra | Vuelve a `/` |
+Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo presentación; el backend vuelve a decidir con `@Roles`.
+
+| Ruta | SOLICITANTE | STAFF |
+|---|---|---|
+| `/` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación y En Producción; cerradas plegadas; aviso de urgentes |
+| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, resolución (validar, rechazar, iniciar producción, entregar, proponer reprogramación) e historial |
+| cualquier otra | Vuelve a `/` | Vuelve a `/` |
 
 - **Despliegue en producción:** el servidor debe responder `index.html` en **cualquier** ruta (*SPA fallback*). `npm run dev` ya lo hace; un hosting estático, no por defecto. Sin eso, recargar o abrir un enlace directo a `/solicitudes/EC-…` responde 404.
 - Ajena o inexistente se ven igual: *"No encontramos esa solicitud"* (404 uniforme del backend).
@@ -176,5 +195,5 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 ## 10. Pendiente en la Fase 6
 
 - ✅ **6.5b · Backend (cerrada):** `motivo_rechazo` con `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo usará `MOTIVO_RECHAZO_MINIMO` y `MOTIVO_RECHAZO_MAXIMO` con su prueba de deriva.
-- **6.5 · Vista del Staff:** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (decisiones DE1 a DE6).
+- ✅ **6.5 · Vista del Staff (cerrada):** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (ADR-006 §2.12). Lo que quedó fuera está en ADR-006 §5.
 - **6.6 · Cierre:** bitácora, ADR y PR de la fase.
