@@ -313,6 +313,27 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       motivo_rechazo: 'La franja venció sin respuesta del Estudio',
     })
   })
+
+  it('Fase 7 · B3: al rechazar, "Confirmar" bloqueado explica por qué (visible y como descripción accesible) y la razón se va con un motivo válido', async () => {
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
+    await esperarDetalle()
+
+    const dialogo = abrir('Rechazar', 'Rechazar la solicitud')
+    const confirmar = within(dialogo).getByRole('button', { name: 'Sí, rechazar' })
+    const pideMotivo = 'Para confirmar, escribe un motivo de al menos 10 caracteres.'
+    expect(confirmar).toBeDisabled()
+    expect(confirmar).toHaveAccessibleDescription(pideMotivo)
+    expect(within(dialogo).getByText(pideMotivo)).toBeVisible()
+
+    const campo = within(dialogo).getByLabelText(TEXTO_ETIQUETA_MOTIVO_RECHAZO)
+    fireEvent.change(campo, { target: { value: 'x'.repeat(501) } })
+    expect(confirmar).toHaveAccessibleDescription('Para confirmar, acorta el motivo a 500 caracteres como máximo.')
+
+    fireEvent.change(campo, { target: { value: 'El set está en mantenimiento esa semana' } })
+    expect(confirmar).toBeEnabled()
+    expect(confirmar).not.toHaveAttribute('aria-describedby')
+    expect(within(dialogo).queryByText(pideMotivo)).not.toBeInTheDocument()
+  })
   describe('T5 · proponer reprogramación (6.5.4b)', () => {
     const VALIDADO = en('Validado')
     const PENDIENTE = en('Pendiente de Reprogramación')
@@ -368,6 +389,23 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
       llenar(dialogo)
       expect(confirmarEn(dialogo)).toBeEnabled()
+    })
+
+    it('Fase 7 · B3: "Confirmar" bloqueado explica primero la franja que falta, luego el motivo, y sin razón se habilita', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      const pideFranja = 'Para confirmar, elige la fecha y las dos horas de la nueva franja.'
+      expect(confirmarEn(dialogo)).toHaveAccessibleDescription(pideFranja)
+      expect(within(dialogo).getByText(pideFranja)).toBeVisible()
+
+      llenar(dialogo, { motivo: 'corto' })
+      expect(confirmarEn(dialogo)).toHaveAccessibleDescription('Para confirmar, escribe un motivo de al menos 10 caracteres.')
+
+      llenar(dialogo)
+      expect(confirmarEn(dialogo)).toBeEnabled()
+      expect(confirmarEn(dialogo)).not.toHaveAttribute('aria-describedby')
     })
 
     it('fin no posterior al inicio: aviso local con el texto de CA-04 y no se envía nada (DH4)', async () => {

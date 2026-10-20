@@ -1,10 +1,13 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { ESTADOS, type Estado } from '../api/maquina-estados'
 import type { DestinoDelTablero } from '../api/solicitudes'
+import { FRANJA_VACIA, type ValoresFranja } from './franja'
 import {
+  TEXTO_RAZON_FRANJA_INCOMPLETA,
   accionesDelStaff,
   franjaYaInicio,
   porElTablero,
+  razonBloqueoDelStaff,
   textoExito,
   textosDelStaff,
   type AccionDelStaff,
@@ -82,6 +85,34 @@ describe('textosDelStaff: textos honestos', () => {
   it('el aviso de éxito nombra el destino aplicado, también el de T5', () => {
     expect(textoExito('Validado')).toBe('La solicitud pasó a "Validado".')
     expect(textoExito('Pendiente de Reprogramación')).toBe('La solicitud pasó a "Pendiente de Reprogramación".')
+  })
+})
+
+describe('razonBloqueoDelStaff (Fase 7 · B3)', () => {
+  const FRANJA: ValoresFranja = { fecha: '2026-10-28', horaInicio: '09:00', horaFin: '10:30' }
+  const MOTIVO = 'Mantenimiento del set de grabación'
+  const PIDE_MOTIVO = 'Para confirmar, escribe un motivo de al menos 10 caracteres.'
+
+  it.each<AccionDelStaff>(['APROBAR', 'INICIAR_PRODUCCION', 'FINALIZAR'])('%s no tiene formulario: nada la bloquea', (accion) => {
+    expect(razonBloqueoDelStaff(accion, '', FRANJA_VACIA)).toBeUndefined()
+  })
+
+  it('RECHAZAR (T2): explica el motivo que falta o sobra; con un motivo válido no bloquea', () => {
+    expect(razonBloqueoDelStaff('RECHAZAR', '', FRANJA_VACIA)).toBe(PIDE_MOTIVO)
+    expect(razonBloqueoDelStaff('RECHAZAR', 'x'.repeat(501), FRANJA_VACIA)).toBe(
+      'Para confirmar, acorta el motivo a 500 caracteres como máximo.',
+    )
+    // T2 no usa franja: una franja vacía no lo bloquea.
+    expect(razonBloqueoDelStaff('RECHAZAR', MOTIVO, FRANJA_VACIA)).toBeUndefined()
+  })
+
+  it('PROPONER_REPROGRAMACION (T5): primero la franja (orden del formulario), después el motivo', () => {
+    expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', '', FRANJA_VACIA)).toBe(TEXTO_RAZON_FRANJA_INCOMPLETA)
+    expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', MOTIVO, { ...FRANJA, horaFin: '' })).toBe(
+      TEXTO_RAZON_FRANJA_INCOMPLETA,
+    )
+    expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', 'corto', FRANJA)).toBe(PIDE_MOTIVO)
+    expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', MOTIVO, FRANJA)).toBeUndefined()
   })
 })
 
