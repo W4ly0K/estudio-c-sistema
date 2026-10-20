@@ -1,4 +1,5 @@
 import { franjaYaInicio } from './acciones-staff'
+import { TEXTO_BLOQUES_ATENCION } from './franja'
 import { compararInstantes, compararRadicados, type Ordenable } from './tablero'
 
 /**
@@ -101,6 +102,21 @@ export function atajosDelStaff(resumen: ResumenInicioStaff): readonly AtajoInici
     },
   ]
 }
+
+/** Fase 7 · C5: cuántas próximas reservas muestra el inicio; el resto, en "Mis solicitudes". */
+export const MAXIMO_PROXIMAS_INICIO = 3
+
+/**
+ * Fase 7 · C5: el recordatorio de reglas del inicio del solicitante. El horario REUTILIZA el
+ * texto del formulario B2 (una sola fuente): si el horario cambia, no puede quedar uno viejo.
+ * Solo informa: los días hábiles, los bloques y CA-06 los decide el servidor (DH4).
+ */
+export const REGLAS_ESTUDIO_C: readonly string[] = [
+  TEXTO_BLOQUES_ATENCION,
+  'Reserva con al menos 5 días hábiles de anticipación: con menos, la solicitud queda marcada como urgente y conviene avisar al Staff.',
+  'Un mismo horario no se puede reservar dos veces: si ya está ocupado, el sistema te lo dirá al enviar.',
+  'Si el Staff te propone otra franja, acéptala o recházala desde tu solicitud: mientras tanto queda en espera.',
+]
 
 /** Lo mínimo que necesita el resumen del solicitante. */
 export interface ParaResumenSolicitante extends Ordenable {

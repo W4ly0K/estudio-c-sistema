@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { ESTADOS, ESTADOS_FINALES, type Estado } from '../api/maquina-estados'
-import { atajosDelStaff, resumenInicioSolicitante, resumenInicioStaff, type ParaResumenSolicitante } from './inicio'
+import { TEXTO_BLOQUES_ATENCION } from './franja'
+import {
+  REGLAS_ESTUDIO_C,
+  atajosDelStaff,
+  resumenInicioSolicitante,
+  resumenInicioStaff,
+  type ParaResumenSolicitante,
+} from './inicio'
 import { agruparTablero } from './tablero'
 
 const AHORA = new Date('2026-10-20T15:00:00.000Z')
@@ -107,6 +114,14 @@ describe('atajosDelStaff (Fase 7 · C4)', () => {
       expect(atajo.ayuda.length).toBeGreaterThan(0)
       expect(atajo.ayuda).not.toMatch(/notific|avisar|se le avisar/i)
     }
+  })
+})
+
+describe('REGLAS_ESTUDIO_C (Fase 7 · C5)', () => {
+  it('el horario es el MISMO texto del formulario B2 (una sola fuente) y ninguna regla promete avisos', () => {
+    expect(REGLAS_ESTUDIO_C[0]).toBe(TEXTO_BLOQUES_ATENCION)
+    expect(new Set(REGLAS_ESTUDIO_C).size).toBe(REGLAS_ESTUDIO_C.length)
+    for (const regla of REGLAS_ESTUDIO_C) expect(regla).not.toMatch(/notific|te avisaremos|recibirás un correo/i)
   })
 })
 
