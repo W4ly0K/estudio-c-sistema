@@ -6,7 +6,7 @@ import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleSolicitante } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
-import { RUTA_DETALLE, RUTA_PANEL } from './rutas'
+import { RUTA_DETALLE, RUTA_MIS_SOLICITUDES } from './rutas'
 import { DETALLE_SOLICITANTE, LOG, apiFalsa } from './test/fixtures-api'
 
 const USUARIO = { id: 'uuid', nombre: 'Ana Pérez', rol: 'SOLICITANTE' } as const
@@ -18,7 +18,7 @@ function mostrar(detalleSolicitante: ApiSolicitudes['detalleSolicitante'], ruta 
       <Link to="/solicitudes/EC-2026-0200">Ir a otra solicitud</Link>
       <ProveedorApi api={apiFalsa({ detalleSolicitante })}>
         <Routes>
-          <Route path={RUTA_PANEL} element={<p>Panel</p>} />
+          <Route path={RUTA_MIS_SOLICITUDES} element={<p>Panel</p>} />
           <Route path={RUTA_DETALLE} element={<DetalleSolicitud usuario={USUARIO} onLogout={() => undefined} />} />
         </Routes>
       </ProveedorApi>
@@ -105,7 +105,7 @@ describe('DetalleSolicitud (B3)', () => {
     const titulo = await screen.findByRole('heading', { name: TEXTO_NO_ENCONTRADA })
     expect(titulo).toHaveFocus()
     expect(screen.queryByText(/no pertenece|no es tuya/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Volver al panel/ })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: /Volver al panel/ })).toHaveAttribute('href', RUTA_MIS_SOLICITUDES)
   })
 
   it('al pasar a otro radicado no muestra el anterior mientras carga el nuevo', async () => {

@@ -176,6 +176,32 @@ describe('App', () => {
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes/EC-2026-0142'])
   })
 
+  it('Fase 7 · C1: el STAFF en "/tablero" ve el tablero, con las mismas peticiones que en "/"', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes': () => json(200, []),
+    })
+    mostrarApp('/tablero')
+
+    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
+  })
+
+  it('Fase 7 · C1: el solicitante en "/mis-solicitudes" ve su panel, con las mismas peticiones que en "/"', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, LOGIN.usuario),
+      '/solicitudes/mis-solicitudes': () => json(200, []),
+    })
+    mostrarApp('/mis-solicitudes')
+
+    expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes/mis-solicitudes'])
+  })
+
   it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     servidorFalso({

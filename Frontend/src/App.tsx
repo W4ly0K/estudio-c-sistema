@@ -9,7 +9,7 @@ import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
 import { textoDeError } from './api/errores';
-import { RUTA_DETALLE, RUTA_PANEL } from './rutas';
+import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
@@ -100,14 +100,18 @@ function App() {
       );
 
     case 'autenticada':
-      // DV1: rutas solo con sesión. Una ruta desconocida vuelve al panel. La URL se conserva
+      // DV1: rutas solo con sesión. Una ruta desconocida vuelve al inicio. La URL se conserva
       // durante el login: quien abre un enlace sin sesión llega a él después de entrar.
+      // Fase 7 · C1: "/tablero" y "/mis-solicitudes" son ALIAS de "/" (la misma vista por rol)
+      // hasta que la guarda de rol (C2) restrinja cada una a su rol. Nadie ve nada nuevo.
       return (
         <ProveedorApi api={api.solicitudes}>
           <Routes>
-            <Route path={RUTA_PANEL} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_INICIO} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_TABLERO} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_MIS_SOLICITUDES} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
             <Route path={RUTA_DETALLE} element={<PantallaDetalle usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path="*" element={<Navigate to={RUTA_PANEL} replace />} />
+            <Route path="*" element={<Navigate to={RUTA_INICIO} replace />} />
           </Routes>
         </ProveedorApi>
       );
