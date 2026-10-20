@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ESTADOS, ESTADOS_FINALES, type Estado } from '../api/maquina-estados'
-import { resumenInicioSolicitante, resumenInicioStaff, type ParaResumenSolicitante } from './inicio'
+import { atajosDelStaff, resumenInicioSolicitante, resumenInicioStaff, type ParaResumenSolicitante } from './inicio'
 import { agruparTablero } from './tablero'
 
 const AHORA = new Date('2026-10-20T15:00:00.000Z')
@@ -79,6 +79,34 @@ describe('resumenInicioStaff (Fase 7 · C3)', () => {
     ])
 
     expect(resumenInicioStaff(todas, AHORA).urgentesEnRecibido).toBe(agruparTablero(todas).urgentesEnRecibido)
+  })
+})
+
+describe('atajosDelStaff (Fase 7 · C4)', () => {
+  const CEROS = { urgentesEnRecibido: 0, vencidasEnRecibido: 0, esperandoAlSolicitante: 0, enProduccion: 0 }
+
+  it('cuatro atajos en orden de lectura: primero lo que pide acción del Staff', () => {
+    expect(atajosDelStaff(CEROS).map((a) => a.clave)).toEqual(['urgentes', 'vencidas', 'esperando', 'produccion'])
+  })
+
+  it('cada atajo lleva su número del resumen', () => {
+    const atajos = atajosDelStaff({ urgentesEnRecibido: 1, vencidasEnRecibido: 2, esperandoAlSolicitante: 3, enProduccion: 4 })
+    expect(atajos.map((a) => a.cantidad)).toEqual([1, 2, 3, 4])
+  })
+
+  it('solo urgentes y vencidas piden atención, y solo si hay alguna', () => {
+    expect(atajosDelStaff(CEROS).some((a) => a.requiereAtencion)).toBe(false)
+    const conTodo = atajosDelStaff({ urgentesEnRecibido: 1, vencidasEnRecibido: 1, esperandoAlSolicitante: 9, enProduccion: 9 })
+    expect(conTodo.filter((a) => a.requiereAtencion).map((a) => a.clave)).toEqual(['urgentes', 'vencidas'])
+  })
+
+  it('títulos distintos y ayudas no vacías; ninguna promete avisos que el sistema no envía', () => {
+    const atajos = atajosDelStaff(CEROS)
+    expect(new Set(atajos.map((a) => a.titulo)).size).toBe(atajos.length)
+    for (const atajo of atajos) {
+      expect(atajo.ayuda.length).toBeGreaterThan(0)
+      expect(atajo.ayuda).not.toMatch(/notific|avisar|se le avisar/i)
+    }
   })
 })
 

@@ -52,6 +52,56 @@ export function resumenInicioStaff(solicitudes: readonly ParaResumenStaff[], aho
   return { urgentesEnRecibido, vencidasEnRecibido, esperandoAlSolicitante, enProduccion }
 }
 
+/** Fase 7 · C4: cada atajo del inicio del Staff. La vista solo los pinta, en este orden. */
+export type ClaveAtajoStaff = 'urgentes' | 'vencidas' | 'esperando' | 'produccion'
+
+export interface AtajoInicio {
+  readonly clave: ClaveAtajoStaff
+  readonly titulo: string
+  /** Qué significa el número y, si aplica, qué hacer: va como descripción accesible del enlace. */
+  readonly ayuda: string
+  readonly cantidad: number
+  /** El Staff tiene algo que hacer YA (se resalta). Las otras dos son informativas. */
+  readonly requiereAtencion: boolean
+}
+
+/**
+ * Orden de lectura: primero lo que pide acción del Staff (urgentes, vencidas), después lo que
+ * espera a otros o está en curso. Textos honestos: dicen lo que el sistema hará y nada más.
+ */
+export function atajosDelStaff(resumen: ResumenInicioStaff): readonly AtajoInicio[] {
+  return [
+    {
+      clave: 'urgentes',
+      titulo: 'Urgentes por revisar',
+      ayuda: 'En Recibido, con menos de 5 días hábiles de anticipación.',
+      cantidad: resumen.urgentesEnRecibido,
+      requiereAtencion: resumen.urgentesEnRecibido > 0,
+    },
+    {
+      clave: 'vencidas',
+      titulo: 'Recibidas con la franja vencida',
+      ayuda: 'Ya no se pueden validar: si no se van a atender, recházalas con un motivo.',
+      cantidad: resumen.vencidasEnRecibido,
+      requiereAtencion: resumen.vencidasEnRecibido > 0,
+    },
+    {
+      clave: 'esperando',
+      titulo: 'Esperan al solicitante',
+      ayuda: 'Propuestas de reprogramación pendientes de su respuesta.',
+      cantidad: resumen.esperandoAlSolicitante,
+      requiereAtencion: false,
+    },
+    {
+      clave: 'produccion',
+      titulo: 'En producción',
+      ayuda: 'Actividades en curso, por marcar como entregadas.',
+      cantidad: resumen.enProduccion,
+      requiereAtencion: false,
+    },
+  ]
+}
+
 /** Lo mínimo que necesita el resumen del solicitante. */
 export interface ParaResumenSolicitante extends Ordenable {
   readonly fecha_propuesta_inicio: string | null
