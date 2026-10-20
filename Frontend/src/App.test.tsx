@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
+import { TEXTO_SIN_PROXIMAS } from './InicioSolicitante'
 import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
 import { DETALLE_SOLICITANTE, DETALLE_STAFF, json } from './test/fixtures-api'
@@ -59,7 +60,7 @@ describe('App', () => {
     expect(screen.queryByText('Panel de Solicitudes')).not.toBeInTheDocument()
   })
 
-  it('login correcto: guarda el token y el panel pide las solicitudes con ese token', async () => {
+  it('login correcto: guarda el token y el inicio pide las solicitudes con ese token (C6)', async () => {
     const fetchFalso = servidorFalso({
       '/auth/google/login': () => json(201, LOGIN),
       '/solicitudes/mis-solicitudes': () => json(200, []),
@@ -68,7 +69,8 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
 
-    expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
+    expect(await screen.findByText(TEXTO_SIN_PROXIMAS)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Hola, Ana Pérez' })).toBeInTheDocument()
     expect(screen.getByText('Ana Pérez')).toBeInTheDocument()
     expect(localStorage.getItem('estudio_c_token')).toBe('jwt-de-la-app')
     const peticionLista = fetchFalso.mock.calls.find(([url]) => url.endsWith('/solicitudes/mis-solicitudes'))
@@ -148,7 +150,7 @@ describe('App', () => {
     expect(screen.getByText('Seguimiento de solicitud')).toBeInTheDocument()
   })
 
-  it('DE2: con sesión de STAFF, "/" muestra el tablero (un solo GET /solicitudes) y no el panel del solicitante', async () => {
+  it('Fase 7 · C6: con sesión de STAFF, "/" muestra su inicio (un solo GET /solicitudes), no el tablero ni el panel', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     const fetchFalso = servidorFalso({
       '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
@@ -156,7 +158,9 @@ describe('App', () => {
     })
     mostrarApp()
 
-    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: 'Atajos del Staff' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Hola, Staff Estudio C' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXTO_TITULO_TABLERO })).not.toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
   })
@@ -172,6 +176,9 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'EC-2026-0142' })).toBeInTheDocument()
     expect(screen.getByText('Revisión de solicitud')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ana@unicesmag.edu.co' })).toBeInTheDocument()
+    // C6: en el detalle ninguna entrada de la navegación es la página actual.
+    const navegacion = screen.getByRole('navigation', { name: 'Navegación principal' })
+    expect(within(navegacion).queryByRole('link', { current: 'page' })).not.toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes/EC-2026-0142'])
   })
@@ -202,7 +209,7 @@ describe('App', () => {
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes/mis-solicitudes'])
   })
 
-  it('Fase 7 · C2: el solicitante que escribe "/tablero" vuelve a su panel, sin pedir GET /solicitudes ni ver el tablero', async () => {
+  it('Fase 7 · C2: el solicitante que escribe "/tablero" vuelve a su inicio, sin pedir GET /solicitudes ni ver el tablero', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     // El servidor falso LANZA ante una ruta no declarada: si el tablero se montara, la prueba caería.
     const fetchFalso = servidorFalso({
@@ -211,14 +218,14 @@ describe('App', () => {
     })
     mostrarApp('/tablero')
 
-    expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
+    expect(await screen.findByText(TEXTO_SIN_PROXIMAS)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXTO_TITULO_TABLERO })).not.toBeInTheDocument()
     expect(screen.queryByText(/autoriza|denegad|permiso|prohibid/i)).not.toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes/mis-solicitudes'])
   })
 
-  it('Fase 7 · C2: el STAFF que escribe "/mis-solicitudes" vuelve al tablero, sin pedir las solicitudes propias', async () => {
+  it('Fase 7 · C2: el STAFF que escribe "/mis-solicitudes" vuelve a su inicio, sin pedir las solicitudes propias', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     const fetchFalso = servidorFalso({
       '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
@@ -226,13 +233,13 @@ describe('App', () => {
     })
     mostrarApp('/mis-solicitudes')
 
-    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: 'Atajos del Staff' })).toBeInTheDocument()
     expect(screen.queryByText(/autoriza|denegad|permiso|prohibid/i)).not.toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
   })
 
-  it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {
+  it('con sesión, una ruta desconocida vuelve al inicio (DV1 · C6)', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     servidorFalso({
       '/auth/perfil': () => json(200, LOGIN.usuario),
@@ -240,6 +247,64 @@ describe('App', () => {
     })
     mostrarApp('/una/ruta/que/no/existe')
 
+    expect(await screen.findByText(TEXTO_SIN_PROXIMAS)).toBeInTheDocument()
+  })
+
+  it('Fase 7 · C6: el STAFF navega del inicio al tablero desde el encabezado y aria-current sigue a la pantalla', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes': () => json(200, []),
+    })
+    mostrarApp()
+    await screen.findByRole('navigation', { name: 'Atajos del Staff' })
+
+    const navegacion = screen.getByRole('navigation', { name: 'Navegación principal' })
+    expect(within(navegacion).getAllByRole('link').map((l) => l.textContent)).toEqual(['Inicio', 'Tablero'])
+    expect(within(navegacion).getByRole('link', { name: 'Inicio' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navegacion).getByRole('link', { name: 'Tablero' })).not.toHaveAttribute('aria-current')
+
+    fireEvent.click(within(navegacion).getByRole('link', { name: 'Tablero' }))
+
+    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    const enElTablero = screen.getByRole('navigation', { name: 'Navegación principal' })
+    expect(within(enElTablero).getByRole('link', { name: 'Tablero' })).toHaveAttribute('aria-current', 'page')
+    expect(within(enElTablero).getByRole('link', { name: 'Inicio' })).not.toHaveAttribute('aria-current')
+    // Cada pantalla pide lo suyo: un GET para el inicio y otro para el tablero.
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes', '/solicitudes'])
+  })
+
+  it('Fase 7 · C6: el solicitante ve Inicio y Mis solicitudes (nunca el Tablero) y llega a su panel desde el encabezado', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    servidorFalso({
+      '/auth/perfil': () => json(200, LOGIN.usuario),
+      '/solicitudes/mis-solicitudes': () => json(200, []),
+    })
+    mostrarApp()
+    await screen.findByText(TEXTO_SIN_PROXIMAS)
+
+    const navegacion = screen.getByRole('navigation', { name: 'Navegación principal' })
+    expect(within(navegacion).getAllByRole('link').map((l) => l.textContent)).toEqual(['Inicio', 'Mis solicitudes'])
+    expect(within(navegacion).getByRole('link', { current: 'page' })).toHaveTextContent('Inicio')
+
+    fireEvent.click(within(navegacion).getByRole('link', { name: 'Mis solicitudes' }))
+
     expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
+    const enElPanel = screen.getByRole('navigation', { name: 'Navegación principal' })
+    expect(within(enElPanel).getByRole('link', { current: 'page' })).toHaveTextContent('Mis solicitudes')
+  })
+
+  it('Fase 7 · C6: desde el inicio del Staff, un atajo lleva al tablero', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes': () => json(200, []),
+    })
+    mostrarApp()
+
+    fireEvent.click(await screen.findByRole('link', { name: /Recibidas con la franja vencida/ }))
+
+    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
   })
 })
