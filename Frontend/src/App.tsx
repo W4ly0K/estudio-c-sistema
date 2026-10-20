@@ -5,6 +5,7 @@ import Dashboard from './Dashboard';
 import DetalleSolicitud from './DetalleSolicitud';
 import DetalleStaff from './DetalleStaff';
 import TableroStaff from './TableroStaff';
+import { SoloRol } from './componentes/SoloRol';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
@@ -102,14 +103,29 @@ function App() {
     case 'autenticada':
       // DV1: rutas solo con sesión. Una ruta desconocida vuelve al inicio. La URL se conserva
       // durante el login: quien abre un enlace sin sesión llega a él después de entrar.
-      // Fase 7 · C1: "/tablero" y "/mis-solicitudes" son ALIAS de "/" (la misma vista por rol)
-      // hasta que la guarda de rol (C2) restrinja cada una a su rol. Nadie ve nada nuevo.
+      // Fase 7 · C2: "/tablero" es solo del STAFF y "/mis-solicitudes" solo del SOLICITANTE.
+      // Con otro rol, SoloRol vuelve a "/" en silencio y sin montar la pantalla ajena. Es solo
+      // presentación: el backend decide con @Roles. "/" sigue mostrando la vista del rol (C6).
       return (
         <ProveedorApi api={api.solicitudes}>
           <Routes>
             <Route path={RUTA_INICIO} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path={RUTA_TABLERO} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path={RUTA_MIS_SOLICITUDES} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route
+              path={RUTA_TABLERO}
+              element={
+                <SoloRol rol="STAFF" usuario={sesion.usuario}>
+                  <TableroStaff usuario={sesion.usuario} onLogout={handleLogout} />
+                </SoloRol>
+              }
+            />
+            <Route
+              path={RUTA_MIS_SOLICITUDES}
+              element={
+                <SoloRol rol="SOLICITANTE" usuario={sesion.usuario}>
+                  <Dashboard usuario={sesion.usuario} onLogout={handleLogout} />
+                </SoloRol>
+              }
+            />
             <Route path={RUTA_DETALLE} element={<PantallaDetalle usuario={sesion.usuario} onLogout={handleLogout} />} />
             <Route path="*" element={<Navigate to={RUTA_INICIO} replace />} />
           </Routes>

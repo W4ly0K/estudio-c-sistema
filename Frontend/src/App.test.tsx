@@ -202,6 +202,36 @@ describe('App', () => {
     expect(rutas).toEqual(['/auth/perfil', '/solicitudes/mis-solicitudes'])
   })
 
+  it('Fase 7 · C2: el solicitante que escribe "/tablero" vuelve a su panel, sin pedir GET /solicitudes ni ver el tablero', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    // El servidor falso LANZA ante una ruta no declarada: si el tablero se montara, la prueba caería.
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, LOGIN.usuario),
+      '/solicitudes/mis-solicitudes': () => json(200, []),
+    })
+    mostrarApp('/tablero')
+
+    expect(await screen.findByText('No tienes solicitudes registradas aún.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXTO_TITULO_TABLERO })).not.toBeInTheDocument()
+    expect(screen.queryByText(/autoriza|denegad|permiso|prohibid/i)).not.toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes/mis-solicitudes'])
+  })
+
+  it('Fase 7 · C2: el STAFF que escribe "/mis-solicitudes" vuelve al tablero, sin pedir las solicitudes propias', async () => {
+    localStorage.setItem('estudio_c_token', 'jwt-guardado')
+    const fetchFalso = servidorFalso({
+      '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
+      '/solicitudes': () => json(200, []),
+    })
+    mostrarApp('/mis-solicitudes')
+
+    expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
+    expect(screen.queryByText(/autoriza|denegad|permiso|prohibid/i)).not.toBeInTheDocument()
+    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
+  })
+
   it('con sesión, una ruta desconocida vuelve al panel (DV1)', async () => {
     localStorage.setItem('estudio_c_token', 'jwt-guardado')
     servidorFalso({
