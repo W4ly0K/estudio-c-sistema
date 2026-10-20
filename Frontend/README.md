@@ -68,7 +68,8 @@ src/
 │   ├── ProveedorApi.tsx  <ProveedorApi api={…}>: la App inyecta la api real; las pruebas, una falsa
 │   └── contrato.test.ts  Prueba de deriva contra el código del backend
 ├── componentes/          Piezas de las vistas (solo componentes y literales: Fast Refresh)
-│   ├── Encabezado, Insignias, LineaDeVida     Comunes a los dos roles
+│   ├── Encabezado, Insignias, LineaDeVida     Comunes a los dos roles; el encabezado navega por rol (NavLink y aria-current)
+│   ├── SoloRol            Guarda de presentación: con otro rol vuelve a "/" en silencio y sin montar la pantalla
 │   ├── DialogoConfirmacion  <dialog> nativo; abre y cierra con useLayoutEffect; puedeConfirmar opcional
 │   ├── TarjetaSolicitud, ExitoRadicado, AccionesSolicitud   Solicitante (B1, B1b, B3 y B4)
 │   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1, T2, T4, T5 y T9
@@ -81,6 +82,8 @@ src/
 │   ├── linea-de-vida    lineaDeVida(detalle, perspectiva): actores y motivos según quién mira
 │   ├── acciones-solicitante, acciones-staff   Acciones derivadas de la máquina, con sus textos honestos y su canal
 │   ├── tablero          agruparTablero(): columnas derivadas de la máquina, orden por urgencia e instante
+│   ├── inicio           Resúmenes y atajos del inicio por rol, y las reglas del Estudio C (Fase 7)
+│   ├── navegacion       navegacionDelRol(): los enlaces del encabezado de cada rol (Fase 7)
 │   ├── detalle-staff    filasDeRecursos(): inventario TOTAL; alerta solo si se supera
 │   ├── motivo           Límites y longitud real del motivo, igual que el backend; textos de ayuda
 │   └── franja           franjaDesdeCampos(): las dos reglas locales de una franja (DH1 y DH4)
@@ -89,8 +92,10 @@ src/
 │   ├── maquina-sesion.ts Máquina pura de la sesión: estados, eventos y reducirSesion()
 │   └── use-sesion.ts     Hook dueño de la sesión: conecta la máquina con el token, el perfil y el 401
 ├── test/                 setup.ts (jest-dom y el polyfill de <dialog>) y fixtures-api.ts (cargas, fetch y api falsos)
-├── rutas.ts              Las rutas, en un solo lugar: RUTA_PANEL, RUTA_DETALLE y rutaDetalle(radicado)
-├── App.tsx               Una pantalla por estado de la sesión; con sesión, las rutas por ROL (PantallaInicio y PantallaDetalle)
+├── rutas.ts              Las rutas, en un solo lugar: una constante por pantalla (RUTA_INICIO, RUTA_TABLERO, RUTA_MIS_SOLICITUDES), RUTA_DETALLE y rutaDetalle(radicado)
+├── App.tsx               Una pantalla por estado de la sesión; con sesión, las rutas por ROL (PantallaInicio, SoloRol y PantallaDetalle)
+├── InicioStaff.tsx       Inicio del Staff: cuatro atajos hacia el tablero (urgentes, vencidas, esperando, en producción)
+├── InicioSolicitante.tsx Inicio del solicitante: pendientes de su respuesta, próximas reservas y reglas
 ├── Dashboard.tsx         Panel del solicitante (B1, B1b y el formulario B2)
 ├── DetalleSolicitud.tsx  Detalle del solicitante (B3), propuesta (B4) y acciones; "cargando" se deriva
 ├── TableroStaff.tsx      Tablero del Staff: un solo GET, columnas por estado, cerradas plegadas y "Actualizar"
@@ -181,11 +186,13 @@ El Estudio C está en Pasto: toda fecha se crea y se muestra en la hora de Bogot
 
 ## 9. Vistas y despliegue
 
-Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo presentación; el backend vuelve a decidir con `@Roles`.
+Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo presentación; el backend vuelve a decidir con `@Roles`. Desde la Fase 7, `/` es el **inicio** de cada rol y el encabezado navega entre sus pantallas (ADR-006 §2.13).
 
 | Ruta | SOLICITANTE | STAFF |
 |---|---|---|
-| `/` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación y En Producción; cerradas plegadas; aviso de urgentes |
+| `/` | Inicio: pendientes de su respuesta, próximas reservas, "Nueva solicitud" y las reglas del Estudio C | Inicio: atajos con contador (urgentes, recibidas con la franja vencida, esperando al solicitante, en producción) |
+| `/mis-solicitudes` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) | Vuelve a `/` en silencio (`SoloRol`) |
+| `/tablero` | Vuelve a `/` en silencio (`SoloRol`) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación y En Producción; cerradas plegadas; aviso de urgentes |
 | `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, resolución (validar, rechazar, iniciar producción, entregar, proponer reprogramación) e historial |
 | cualquier otra | Vuelve a `/` | Vuelve a `/` |
 

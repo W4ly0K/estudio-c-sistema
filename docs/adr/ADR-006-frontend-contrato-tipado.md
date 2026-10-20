@@ -165,7 +165,7 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b), formulario (B2), detalle con línea de vida (B3) y respuesta a la propuesta de reprogramación (B4), con cancelar (T3, T6), aceptar (T7) y rechazar (T8).
 
 **Rutas y api (DV1).**
-- react-router 7: `BrowserRouter` en `main.tsx` y rutas **solo con sesión**. `src/rutas.ts` es la única fuente de las rutas (`RUTA_PANEL`, `RUTA_DETALLE`, `rutaDetalle()`), así que los enlaces y el `<Routes>` no pueden divergir. Una ruta desconocida vuelve a `/`.
+- react-router 7: `BrowserRouter` en `main.tsx` y rutas **solo con sesión**. `src/rutas.ts` es la única fuente de las rutas (`RUTA_PANEL`, `RUTA_DETALLE`, `rutaDetalle()`; desde la Fase 7, una constante por pantalla: §2.13), así que los enlaces y el `<Routes>` no pueden divergir. Una ruta desconocida vuelve a `/`.
 - `rutaDetalle()` codifica el radicado igual que la api. react-router decodifica el parámetro (`%2F` → `/`) y la api lo vuelve a codificar: el viaje de ida y vuelta tiene su prueba.
 - La api llega por Context (`ProveedorApi` / `useApi`). `useApi()` lanza un error fuera del proveedor: mejor un error claro que un `undefined` silencioso.
 - **Despliegue:** el hosting debe responder `index.html` en cualquier ruta (*SPA fallback*). Vite lo hace en desarrollo; un servidor estático en producción, no. Sin eso, F5 en `/solicitudes/EC-…` responde 404.
@@ -264,6 +264,81 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | Revisión de las pruebas | `getByText('Ana')` no encontraba el nombre junto al enlace del correo | El nombre en su propio `<span>` |
 | `react(only-export-components)` | Una constante exportada que **llamaba a una función** en un archivo de componentes | Las ayudas calculadas, a `presentacion/motivo.ts` |
 | Revisión del árbol | El editor guardó una versión vieja de `DetalleStaff.tsx` y `tsc` seguía en verde | Restaurada; lección: **el typecheck no prueba que la integración exista** |
+
+
+### 2.13 Fase 7 · Frente C: inicio por rol y navegación (pasos C1 a C6 · Decisiones DN1 a DN7)
+
+> **Bloque autocontenido, a propósito.** Las decisiones, la verificación, la deuda y el historial del Frente C viven aquí y no en §3, §5 ni §6. La rama del Frente B (`fix/fase-7-rechazo-vencidas`) sí edita esas secciones; si las dos ramas las tocaran, la integración chocaría. Al integrar ambas ramas en `develop`, el encabezado y el historial de §6 se unifican en un solo paso.
+
+**Rama:** `feature/fase-7-menu-inicio`, desde `develop` (`6e19b3f`). **Diagnóstico:** Fase 7, Frente C (Q-C1: los atajos del plan; Q-C2: el Staff no radica; Q-C3: sin Agenda en la Fase 7).
+
+**Decisiones.**
+- **DN1 · Primero el refactor, después la característica (C1, el método de DR1).** `RUTA_PANEL` significaba a la vez "inicio", "tablero" y "panel". Se reemplazó por una constante **por pantalla**: `RUTA_INICIO` (`/`), `RUTA_TABLERO` (`/tablero`) y `RUTA_MIS_SOLICITUDES` (`/mis-solicitudes`). En C1, las dos nuevas fueron **alias** de `/` y nadie vio nada distinto. "Volver al tablero" y "Volver al panel" pasaron a apuntar a su pantalla y no a `/`: sin eso, cuando `/` se convirtió en el inicio (C6), "Volver" habría llevado al menú. La red: ninguna prueba existente cambió lo que comprobaba, salvo esos dos `href`. Las rutas de pantalla son estáticas y el detalle (`/solicitudes/:radicado`) no captura ninguna (prueba con el `matchPath` real).
+- **DN2 · `SoloRol`, una guarda silenciosa (C2).** `/tablero` es solo del STAFF y `/mis-solicitudes` solo del SOLICITANTE. Con otro rol, `<Navigate to="/" replace />`:
+  - **sin montar** la pantalla ajena: no se dispara ninguna petición que el backend rechazaría con 403;
+  - **sin mensaje** de "no autorizado": no se confirma que la página exista, el mismo espíritu del 404 uniforme (Decisión H, ADR-002);
+  - con **`replace`**: la ruta ajena no queda en el historial.
+
+  Es **presentación**, no seguridad: el backend vuelve a decidir con `@Roles` en cada petición.
+- **DN3 · El inicio se calcula con funciones puras (C3 a C6).** `presentacion/inicio.ts` (`resumenInicioStaff`, `atajosDelStaff`, `resumenInicioSolicitante`, `REGLAS_ESTUDIO_C`) y `presentacion/navegacion.ts` (`navegacionDelRol`). Las vistas solo pintan.
+  - "Vencida" usa **`franjaYaInicio`**, el mismo criterio de DA4 y de D7 en el servidor: un inicio igual a "ahora" ya cuenta. Con el reloj del navegador, **advierte, no decide** (la pantalla lo dice).
+  - El inicio ordena con **los mismos comparadores del tablero** (`compararInstantes` y `compararRadicados`, ahora exportados): instantes y no textos, fechas ilegibles al final.
+  - Las urgentes del inicio **coinciden** con el aviso del tablero (DT2): una prueba compara las dos funciones con una solicitud de cada estado.
+  - Los `switch` sobre el rol son exhaustivos (`never`): un rol nuevo no compila hasta tener su inicio y su navegación.
+- **DN4 · Sin endpoints nuevos.** Cada pantalla hace **un solo** GET: el inicio del Staff reutiliza `GET /solicitudes` y el del solicitante, `GET /solicitudes/mis-solicitudes`. Hereda la deuda de paginación de §5.
+- **DN5 · Inicio del Staff (C4).** Cuatro atajos hacia `/tablero`, en orden de acción: urgentes por revisar, **recibidas con la franja vencida** (cuya ayuda remite a la salida del Frente B: rechazarlas con un motivo), las que esperan al solicitante y las que están en producción.
+  - Solo urgentes y vencidas se resaltan, y solo si hay alguna. El resaltado va **por la forma** (borde grueso y ⚠ oculto para el lector de pantalla), no solo por el color (DV6).
+  - Cada enlace se nombra "número + título" y su ayuda es la **descripción accesible** (`aria-describedby`).
+  - Si la carga falla, se dice y se ofrece "Reintentar"; nunca se fingen ceros.
+- **DN6 · Inicio del solicitante (C5).**
+  - "Pendientes de tu respuesta" va **arriba y solo si hay alguna** (bloquean al Estudio), con la propuesta más próxima primero; una propuesta vencida sigue ahí porque rechazarla (T8) es una salida válida.
+  - "Tus próximas reservas": como máximo `MAXIMO_PROXIMAS_INICIO` (3), y si no hay, lo dice.
+  - Reutiliza **`TarjetaSolicitud`**, las mismas tarjetas del panel B1.
+  - Las reglas reutilizan **`TEXTO_BLOQUES_ATENCION`** del formulario B2 (una sola fuente) y no dependen del servidor: se ven aunque la carga falle.
+  - "Nueva solicitud" lleva a `/mis-solicitudes`, donde vive el formulario B2.
+- **DN7 · `/` es el inicio de cada rol y el encabezado navega (C6).** `PantallaInicio` conserva su `switch` exhaustivo, ahora hacia `InicioStaff` e `InicioSolicitante`.
+  - El encabezado tiene una `<nav aria-label="Navegación principal">` con **`NavLink`**: React Router pone `aria-current="page"` en la pantalla vigente, así que no se calcula a mano y no puede desincronizarse de la URL.
+  - **`end`** en cada enlace: sin él, "Inicio" (`/`) quedaría marcado en `/tablero`.
+  - En el detalle de un radicado **ninguna** entrada es la página actual.
+  - `navegacionDelRol` **nunca ofrece** una ruta que `SoloRol` devolvería a `/`: la navegación y la guarda dicen lo mismo, y una prueba lo fija.
+
+**Lo que atraparon las pruebas durante el frente:**
+
+| Paso | Hallazgo | Corrección |
+|---|---|---|
+| C6 | La prueba de la línea de vida del solicitante buscaba `findAllByRole('listitem')` en toda la pantalla. Desde C6 el encabezado tiene `<li>` y se dibuja **antes** que el detalle: la búsqueda terminaba con los de la navegación y el filtro quedaba vacío. Falló en las 4 zonas, porque no dependía de la fecha. | La búsqueda se acotó a su región (`within(línea de vida)`), como ya hacían las de "Historial de cambios" y "Propuesta de reprogramación". Lección: una búsqueda global `findAll…` termina con **el primer** elemento que aparezca, no con el que se espera. |
+| C3 | Una prueba accedía a `.proposito` sobre una unión de tipos en la que uno de los dos objetos no lo tenía | `toHaveProperty('proposito', …)`; lo detectó `tsc` antes de correr la suite |
+
+**Verificación.**
+
+| Decisión | Pruebas que la protegen |
+|---|---|
+| DN1 | `rutas.test.ts` (+2: pantallas distintas, absolutas y estáticas; el detalle no captura ninguna) · `App.test.tsx` (`/tablero` y `/mis-solicitudes` con las mismas peticiones que `/`) · `DetalleStaff.test.tsx` y `DetalleSolicitud.test.tsx` (los `href` de "Volver") |
+| DN2 | `SoloRol.test.tsx` (2: con el rol correcto se queda; con otro va a `/` **sin montar** la pantalla y sin textos de "no autorizado") · `App.test.tsx` (2: el servidor falso **lanza** ante una ruta no declarada, así que montar la pantalla ajena haría caer la prueba) |
+| DN3 y DN4 | `inicio.test.ts` (19: frontera de D7, fecha ilegible, finales que no suman, coincidencia con `agruparTablero`, orden y límite de próximas, identidad y entrada congelada, atajos y reglas) · `navegacion.test.ts` (5) |
+| DN5 | `InicioStaff.test.tsx` (6: un solo GET, textos exactos de una mezcla real, `href` y descripción accesible, resaltado por forma, ceros, Q-C2 y Q-C3, error y "Reintentar") |
+| DN6 | `InicioSolicitante.test.tsx` (7: un solo GET, orden de secciones, pendientes solo si hay, máximo 3, sin próximas, reglas, error con las reglas visibles) |
+| DN7 | `App.test.tsx` (+3: el Staff navega y `aria-current` lo sigue; el solicitante nunca ve "Tablero"; un atajo lleva al tablero; y en el detalle ningún enlace es la página actual) |
+
+**Resultado del Frente C (C1 a C6):** frontend `npm test` 420 ✅ (372 en `develop` al empezar: +4 en C1, +4 en C2, +14 en C3, +10 en C4, +8 en C5 y +8 en C6) · `npm run test:tz` 420 ✅ en cada una de las 4 zonas · `npm run typecheck` sin errores. El lint solo corre en el CI (ver §2.1) y se verificará al abrir el PR. Backend sin cambios.
+
+**Deuda del Frente C:**
+- "Nueva solicitud" lleva al panel; el formulario B2 como página propia (`/solicitudes/nueva`) queda como decisión aparte (la ruta está libre: DN1).
+- El encabezado con navegación no se ha verificado a mano en un ancho de móvil.
+- Los contadores heredan la falta de paginación de `GET /solicitudes` (§5).
+- Al integrar con el Frente B: unificar el encabezado de este ADR y el historial de §6 (las dos ramas los extienden).
+
+**Historial del Frente C:**
+
+| Commit | Paso |
+|---|---|
+| `d3a04a4` | C1 · Refactor: una constante de ruta por pantalla, con alias de `/` y sin cambio de comportamiento |
+| `9c50f20` | C2 · `SoloRol`: guarda de rol silenciosa para `/tablero` y `/mis-solicitudes` |
+| `efb0da9` | C3 · `resumenInicioStaff` y `resumenInicioSolicitante` como funciones puras; comparadores del tablero exportados |
+| `eb5c09e` | C4 · Pantalla de inicio del Staff y `atajosDelStaff` |
+| `97c4cb3` | C5 · Pantalla de inicio del solicitante y `REGLAS_ESTUDIO_C` |
+| `9bd33ee` | C6 · `/` muestra el inicio del rol y el encabezado navega con `NavLink`; la prueba de la línea de vida acotada a su región |
+| — | C7 · Este bloque y el README del frontend |
 
 ---
 
