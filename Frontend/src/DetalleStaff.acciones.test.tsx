@@ -289,6 +289,30 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
     expect(screen.queryByText(TEXTO_FRANJA_INICIADA)).not.toBeInTheDocument()
   })
+
+  it('Fase 7 · B1: con la franja ya TERMINADA, la advertencia DA4 no bloquea el rechazo y T2 sale por el PATCH (D7 solo frena T1)', async () => {
+    // La franja del fixture es el 15-oct de 14:00 a 16:00 Z: el 16-oct ya terminó del todo.
+    vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+    const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+
+    // El escenario es el de una vencida: la advertencia está a la vista...
+    expect(await screen.findByText(TEXTO_FRANJA_INICIADA)).toBeInTheDocument()
+    // ...y aun así la salida que deja D7 (rechazar con motivo) sigue disponible.
+    expect(screen.getByRole('button', { name: 'Rechazar' })).toBeEnabled()
+
+    const dialogo = abrir('Rechazar', 'Rechazar la solicitud')
+    fireEvent.change(within(dialogo).getByLabelText(TEXTO_ETIQUETA_MOTIVO_RECHAZO), {
+      target: { value: 'La franja venció sin respuesta del Estudio' },
+    })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, rechazar' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Rechazado".')
+    expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
+      estado: 'Rechazado',
+      motivo_rechazo: 'La franja venció sin respuesta del Estudio',
+    })
+  })
   describe('T5 · proponer reprogramación (6.5.4b)', () => {
     const VALIDADO = en('Validado')
     const PENDIENTE = en('Pendiente de Reprogramación')
