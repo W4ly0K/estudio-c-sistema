@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado · Fase 6 completa (pasos 6.0 a 6.6) |
+| **Estado** | ✅ Aceptado · Fase 6 completa (pasos 6.0 a 6.6) · Fase 7: Frentes B y C (§2.12 y §2.13) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
@@ -11,10 +11,11 @@
 | **Actualización** | 2026-10-15 · Paso 6.5: vista del Staff, tablero, detalle C3 y las acciones T1, T2, T4, T5 y T9 (§2.12) |
 | **Actualización** | 2026-10-15 · Paso 6.6: cierre de la fase; historial de implementación completo (§6) |
 | **Actualización** | 2026-10-20 · Fase 7, Frente B: el rechazo de una solicitud vencida queda fijado por una prueba y "Confirmar" explica por qué está bloqueado (DR5 ampliada, §2.12, §3, §5 y §6) |
+| **Actualización** | 2026-10-21 · Fase 7, Frente C: inicio por rol, guarda `SoloRol`, navegación con `aria-current` y encabezado mobile-first (§2.13); integración con el Frente B y unificación de este ADR (§6) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
-| **Rama** | `feat/fase-6-frontend` · Fase 7, Frente B: `fix/fase-7-rechazo-vencidas` |
+| **Rama** | `feat/fase-6-frontend` · Fase 7, Frente B: `fix/fase-7-rechazo-vencidas` (PR #8) · Fase 7, Frente C: `feature/fase-7-menu-inicio` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
-| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) · Diagnóstico de la Fase 7 (Frente B, H-B2) |
+| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) · Diagnóstico de la Fase 7 (Frentes B y C) |
 
 ---
 
@@ -279,7 +280,7 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 
 ### 2.13 Fase 7 · Frente C: inicio por rol y navegación (pasos C1 a C8 · Decisiones DN1 a DN8)
 
-> **Bloque autocontenido, a propósito.** Las decisiones, la verificación, la deuda y el historial del Frente C viven aquí y no en §3, §5 ni §6. La rama del Frente B (`fix/fase-7-rechazo-vencidas`) sí edita esas secciones; si las dos ramas las tocaran, la integración chocaría. Al integrar ambas ramas en `develop`, el encabezado y el historial de §6 se unifican en un solo paso.
+> **Bloque autocontenido, a propósito.** Las decisiones, la verificación, la deuda y el historial del Frente C viven aquí y no en §3, §5 ni §6. La rama del Frente B (`fix/fase-7-rechazo-vencidas`) sí edita esas secciones; si las dos ramas las tocaran, la integración chocaría. Al integrar ambas ramas en `develop`, el encabezado y el historial de §6 se unifican en un solo paso. **Unificado el 2026-10-21 (paso I4):** tras el PR #8 del Frente B, `develop` se integró en esta rama sin conflictos, y el encabezado y §6 ya citan los dos frentes.
 
 **Rama:** `feature/fase-7-menu-inicio`, desde `develop` (`6e19b3f`). **Diagnóstico:** Fase 7, Frente C (Q-C1: los atajos del plan; Q-C2: el Staff no radica; Q-C3: sin Agenda en la Fase 7).
 
@@ -345,9 +346,9 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 **Deuda del Frente C:**
 - "Nueva solicitud" lleva al panel; el formulario B2 como página propia (`/solicitudes/nueva`) queda como decisión aparte (la ruta está libre: DN1).
 - ~~El encabezado con navegación no se ha verificado a mano en un ancho de móvil.~~ **Resuelta en C8** (DN8): verificado a 320, 375 y 800 px.
-- El reloj fijo de `Dashboard.test.tsx` (`496a6b5`) debe llegar a `develop` y a la rama del Frente B: sin él, su CI falla desde el 21 de octubre (plan de integración, pasos I2 a I5).
+- ~~El reloj fijo de `Dashboard.test.tsx` (`496a6b5`) debe llegar a `develop` y a la rama del Frente B: sin él, su CI falla desde el 21 de octubre.~~ **Resuelta:** llegó a la rama B con `cherry-pick` (`92e2b24`) y a `develop` con el PR #8 (`8c4f1d8`).
 - Los contadores heredan la falta de paginación de `GET /solicitudes` (§5).
-- Al integrar con el Frente B: unificar el encabezado de este ADR y el historial de §6 (las dos ramas los extienden).
+- ~~Al integrar con el Frente B: unificar el encabezado de este ADR y el historial de §6 (las dos ramas los extienden).~~ **Resuelta en I4** (`2e58f16` y la unificación de este ADR).
 
 **Historial del Frente C:**
 
@@ -362,7 +363,8 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `6f25bdf` | C7 · Este bloque y el README del frontend |
 | `496a6b5` | Reloj fijo en `Dashboard.test.tsx` (la bomba de tiempo de la Fase 6) |
 | `0f7b8ed` | C8 · El encabezado se apila en móvil y no desborda con nombres largos (DN8) |
-| — | I1 · Cierre documental del Frente C |
+| `12c377f` | I1 · Cierre documental del Frente C |
+| `2e58f16` | I4 · `develop` (con el Frente B) integrado en esta rama, sin conflictos: 444 ✅ y `test:tz` 444 ✅ con los dos frentes juntos |
 
 ---
 
@@ -572,4 +574,10 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `83aed40` | Fase 7 · B1 · Prueba de caracterización: una solicitud con la franja vencida se puede rechazar (T2) |
 | `721c23d` | Fase 7 · B2 · `DialogoConfirmacion` explica por qué está bloqueado (`razonBloqueo`, forma y `aria-describedby`) |
 | `5f6ed28` | Fase 7 · B3 · `razonBloqueoDelStaff` como única regla: la razón en T2 y en T5 |
-| — | Fase 7 · B4 · DR5 ampliada en este ADR |
+| `bab4494` | Fase 7 · B4 · DR5 ampliada en este ADR |
+| `92e2b24` | Fase 7 · I2 · Reloj fijo en `Dashboard.test.tsx` llevado a la rama B (`cherry-pick -x` de `496a6b5`) |
+| `8c4f1d8` | Fase 7 · I3 · Merge del PR #8 (`fix/fase-7-rechazo-vencidas` → `develop`): CI en verde, primer lint del Frente B |
+| `d3a04a4` … `0f7b8ed` | Fase 7 · Frente C, C1 a C8 (y el reloj fijo `496a6b5`): detalle commit a commit en §2.13 |
+| `12c377f` | Fase 7 · I1 · Cierre documental del Frente C |
+| `2e58f16` | Fase 7 · I4 · `develop` integrado en la rama del Frente C, sin conflictos (444 ✅ con los dos frentes) |
+| — | Fase 7 · I4 · Unificación de este ADR: encabezado, §2.13 y §6 |
