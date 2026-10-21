@@ -13,7 +13,7 @@ import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
-import { RUTA_PANEL } from './rutas'
+import { RUTA_INICIO, RUTA_MIS_SOLICITUDES } from './rutas'
 
 /**
  * README del backend §8: ajena o inexistente responden el MISMO 404. La UI tampoco los
@@ -101,13 +101,13 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
     if (carga.tipo !== 'cargando') tituloRef.current?.focus()
   }, [carga.tipo])
 
-  if (radicado === undefined) return <Navigate to={RUTA_PANEL} replace />
+  if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
       <Encabezado usuario={usuario} onLogout={onLogout} titulo="Seguimiento de solicitud" />
       <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
-        <Link to={RUTA_PANEL} className="inline-block text-sm font-medium text-primary underline">
+        <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al panel
         </Link>
         {carga.tipo === 'cargando' && <p className="text-sm text-gray-500">Cargando la solicitud...</p>}

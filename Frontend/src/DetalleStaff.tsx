@@ -14,7 +14,7 @@ import { textoExito, type DestinoDelStaff } from './presentacion/acciones-staff'
 import { filasDeRecursos } from './presentacion/detalle-staff'
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
-import { RUTA_PANEL } from './rutas'
+import { RUTA_INICIO, RUTA_TABLERO } from './rutas'
 
 export const TEXTO_NO_ENCONTRADA_AYUDA_STAFF = 'Revisa el número de radicado o vuelve al tablero.'
 /** UI honesta: tras T5 la decisión es del solicitante (T7 o T8); el Staff no puede retirar la propuesta. */
@@ -117,13 +117,13 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   /** Reintento tras un error de carga: conserva el aviso (la acción sí quedó registrada). */
   const reintentar = () => setVersion((v) => v + 1)
 
-  if (radicado === undefined) return <Navigate to={RUTA_PANEL} replace />
+  if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
       <Encabezado usuario={usuario} onLogout={onLogout} titulo="Revisión de solicitud" />
       <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
-        <Link to={RUTA_PANEL} className="inline-block text-sm font-medium text-primary underline">
+        <Link to={RUTA_TABLERO} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al tablero
         </Link>
         {avisoVisible !== null && (

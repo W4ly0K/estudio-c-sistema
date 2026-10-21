@@ -4,12 +4,15 @@ import { Navigate, Route, Routes } from 'react-router';
 import Dashboard from './Dashboard';
 import DetalleSolicitud from './DetalleSolicitud';
 import DetalleStaff from './DetalleStaff';
+import InicioSolicitante from './InicioSolicitante';
+import InicioStaff from './InicioStaff';
 import TableroStaff from './TableroStaff';
+import { SoloRol } from './componentes/SoloRol';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
 import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
 import { textoDeError } from './api/errores';
-import { RUTA_DETALLE, RUTA_PANEL } from './rutas';
+import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
@@ -32,13 +35,14 @@ function PantallaCentrada({ children }: { children: ReactNode }) {
  * DE2: una sola URL por pantalla. "/" muestra la vista del rol que trae el token. Es solo
  * presentación: el backend vuelve a decidir con @Roles en cada ruta. El `switch` es
  * exhaustivo: un rol nuevo en la máquina no compila hasta tener su pantalla.
+ * Fase 7 · C6: "/" es el INICIO de cada rol; el tablero y el panel viven en sus propias rutas.
  */
 function PantallaInicio({ usuario, onLogout }: { usuario: UsuarioSesion; onLogout: () => void }) {
   switch (usuario.rol) {
     case 'STAFF':
-      return <TableroStaff usuario={usuario} onLogout={onLogout} />;
+      return <InicioStaff usuario={usuario} onLogout={onLogout} />;
     case 'SOLICITANTE':
-      return <Dashboard usuario={usuario} onLogout={onLogout} />;
+      return <InicioSolicitante usuario={usuario} onLogout={onLogout} />;
   }
 }
 
@@ -100,14 +104,33 @@ function App() {
       );
 
     case 'autenticada':
-      // DV1: rutas solo con sesión. Una ruta desconocida vuelve al panel. La URL se conserva
+      // DV1: rutas solo con sesión. Una ruta desconocida vuelve al inicio. La URL se conserva
       // durante el login: quien abre un enlace sin sesión llega a él después de entrar.
+      // Fase 7 · C2: "/tablero" es solo del STAFF y "/mis-solicitudes" solo del SOLICITANTE.
+      // Con otro rol, SoloRol vuelve a "/" en silencio y sin montar la pantalla ajena. Es solo
+      // presentación: el backend decide con @Roles. "/" es el inicio de cada rol (C6).
       return (
         <ProveedorApi api={api.solicitudes}>
           <Routes>
-            <Route path={RUTA_PANEL} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route path={RUTA_INICIO} element={<PantallaInicio usuario={sesion.usuario} onLogout={handleLogout} />} />
+            <Route
+              path={RUTA_TABLERO}
+              element={
+                <SoloRol rol="STAFF" usuario={sesion.usuario}>
+                  <TableroStaff usuario={sesion.usuario} onLogout={handleLogout} />
+                </SoloRol>
+              }
+            />
+            <Route
+              path={RUTA_MIS_SOLICITUDES}
+              element={
+                <SoloRol rol="SOLICITANTE" usuario={sesion.usuario}>
+                  <Dashboard usuario={sesion.usuario} onLogout={handleLogout} />
+                </SoloRol>
+              }
+            />
             <Route path={RUTA_DETALLE} element={<PantallaDetalle usuario={sesion.usuario} onLogout={handleLogout} />} />
-            <Route path="*" element={<Navigate to={RUTA_PANEL} replace />} />
+            <Route path="*" element={<Navigate to={RUTA_INICIO} replace />} />
           </Routes>
         </ProveedorApi>
       );

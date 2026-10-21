@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado · Fase 6 completa (pasos 6.0 a 6.6) |
+| **Estado** | ✅ Aceptado · Fase 6 completa (pasos 6.0 a 6.6) · Fase 7: Frentes B y C (§2.12 y §2.13) |
 | **Fecha** | 2026-10-11 |
 | **Actualización** | 2026-10-12 · Paso 6.2: CORS con lista blanca, `GET /auth/perfil` y la sesión como máquina de estados (§2.7 a §2.9) |
 | **Actualización** | 2026-10-12 · Paso 6.3: fechas en la hora de Bogotá y pruebas en cuatro zonas horarias; F2 y F3 resueltos (§2.10) |
@@ -11,10 +11,11 @@
 | **Actualización** | 2026-10-15 · Paso 6.5: vista del Staff, tablero, detalle C3 y las acciones T1, T2, T4, T5 y T9 (§2.12) |
 | **Actualización** | 2026-10-15 · Paso 6.6: cierre de la fase; historial de implementación completo (§6) |
 | **Actualización** | 2026-10-20 · Fase 7, Frente B: el rechazo de una solicitud vencida queda fijado por una prueba y "Confirmar" explica por qué está bloqueado (DR5 ampliada, §2.12, §3, §5 y §6) |
+| **Actualización** | 2026-10-21 · Fase 7, Frente C: inicio por rol, guarda `SoloRol`, navegación con `aria-current` y encabezado mobile-first (§2.13); integración con el Frente B y unificación de este ADR (§6) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
-| **Rama** | `feat/fase-6-frontend` · Fase 7, Frente B: `fix/fase-7-rechazo-vencidas` |
+| **Rama** | `feat/fase-6-frontend` · Fase 7, Frente B: `fix/fase-7-rechazo-vencidas` (PR #8) · Fase 7, Frente C: `feature/fase-7-menu-inicio` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
-| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) · Diagnóstico de la Fase 7 (Frente B, H-B2) |
+| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) · Diagnóstico de la Fase 7 (Frentes B y C) |
 
 ---
 
@@ -166,7 +167,7 @@ El Estudio C es un lugar físico en Pasto: "8:00" significa las 8:00 de Colombia
 El flujo completo del solicitante: panel (B1), confirmación del radicado (B1b), formulario (B2), detalle con línea de vida (B3) y respuesta a la propuesta de reprogramación (B4), con cancelar (T3, T6), aceptar (T7) y rechazar (T8).
 
 **Rutas y api (DV1).**
-- react-router 7: `BrowserRouter` en `main.tsx` y rutas **solo con sesión**. `src/rutas.ts` es la única fuente de las rutas (`RUTA_PANEL`, `RUTA_DETALLE`, `rutaDetalle()`), así que los enlaces y el `<Routes>` no pueden divergir. Una ruta desconocida vuelve a `/`.
+- react-router 7: `BrowserRouter` en `main.tsx` y rutas **solo con sesión**. `src/rutas.ts` es la única fuente de las rutas (`RUTA_PANEL`, `RUTA_DETALLE`, `rutaDetalle()`; desde la Fase 7, una constante por pantalla: §2.13), así que los enlaces y el `<Routes>` no pueden divergir. Una ruta desconocida vuelve a `/`.
 - `rutaDetalle()` codifica el radicado igual que la api. react-router decodifica el parámetro (`%2F` → `/`) y la api lo vuelve a codificar: el viaje de ida y vuelta tiene su prueba.
 - La api llega por Context (`ProveedorApi` / `useApi`). `useApi()` lanza un error fuera del proveedor: mejor un error claro que un `undefined` silencioso.
 - **Despliegue:** el hosting debe responder `index.html` en cualquier ruta (*SPA fallback*). Vite lo hace en desarrollo; un servidor estático en producción, no. Sin eso, F5 en `/solicitudes/EC-…` responde 404.
@@ -275,6 +276,95 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | Revisión de las pruebas | `getByText('Ana')` no encontraba el nombre junto al enlace del correo | El nombre en su propio `<span>` |
 | `react(only-export-components)` | Una constante exportada que **llamaba a una función** en un archivo de componentes | Las ayudas calculadas, a `presentacion/motivo.ts` |
 | Revisión del árbol | El editor guardó una versión vieja de `DetalleStaff.tsx` y `tsc` seguía en verde | Restaurada; lección: **el typecheck no prueba que la integración exista** |
+
+
+### 2.13 Fase 7 · Frente C: inicio por rol y navegación (pasos C1 a C8 · Decisiones DN1 a DN8)
+
+> **Bloque autocontenido, a propósito.** Las decisiones, la verificación, la deuda y el historial del Frente C viven aquí y no en §3, §5 ni §6. La rama del Frente B (`fix/fase-7-rechazo-vencidas`) sí edita esas secciones; si las dos ramas las tocaran, la integración chocaría. Al integrar ambas ramas en `develop`, el encabezado y el historial de §6 se unifican en un solo paso. **Unificado el 2026-10-21 (paso I4):** tras el PR #8 del Frente B, `develop` se integró en esta rama sin conflictos, y el encabezado y §6 ya citan los dos frentes.
+
+**Rama:** `feature/fase-7-menu-inicio`, desde `develop` (`6e19b3f`). **Diagnóstico:** Fase 7, Frente C (Q-C1: los atajos del plan; Q-C2: el Staff no radica; Q-C3: sin Agenda en la Fase 7).
+
+**Decisiones.**
+- **DN1 · Primero el refactor, después la característica (C1, el método de DR1).** `RUTA_PANEL` significaba a la vez "inicio", "tablero" y "panel". Se reemplazó por una constante **por pantalla**: `RUTA_INICIO` (`/`), `RUTA_TABLERO` (`/tablero`) y `RUTA_MIS_SOLICITUDES` (`/mis-solicitudes`). En C1, las dos nuevas fueron **alias** de `/` y nadie vio nada distinto. "Volver al tablero" y "Volver al panel" pasaron a apuntar a su pantalla y no a `/`: sin eso, cuando `/` se convirtió en el inicio (C6), "Volver" habría llevado al menú. La red: ninguna prueba existente cambió lo que comprobaba, salvo esos dos `href`. Las rutas de pantalla son estáticas y el detalle (`/solicitudes/:radicado`) no captura ninguna (prueba con el `matchPath` real).
+- **DN2 · `SoloRol`, una guarda silenciosa (C2).** `/tablero` es solo del STAFF y `/mis-solicitudes` solo del SOLICITANTE. Con otro rol, `<Navigate to="/" replace />`:
+  - **sin montar** la pantalla ajena: no se dispara ninguna petición que el backend rechazaría con 403;
+  - **sin mensaje** de "no autorizado": no se confirma que la página exista, el mismo espíritu del 404 uniforme (Decisión H, ADR-002);
+  - con **`replace`**: la ruta ajena no queda en el historial.
+
+  Es **presentación**, no seguridad: el backend vuelve a decidir con `@Roles` en cada petición.
+- **DN3 · El inicio se calcula con funciones puras (C3 a C6).** `presentacion/inicio.ts` (`resumenInicioStaff`, `atajosDelStaff`, `resumenInicioSolicitante`, `REGLAS_ESTUDIO_C`) y `presentacion/navegacion.ts` (`navegacionDelRol`). Las vistas solo pintan.
+  - "Vencida" usa **`franjaYaInicio`**, el mismo criterio de DA4 y de D7 en el servidor: un inicio igual a "ahora" ya cuenta. Con el reloj del navegador, **advierte, no decide** (la pantalla lo dice).
+  - El inicio ordena con **los mismos comparadores del tablero** (`compararInstantes` y `compararRadicados`, ahora exportados): instantes y no textos, fechas ilegibles al final.
+  - Las urgentes del inicio **coinciden** con el aviso del tablero (DT2): una prueba compara las dos funciones con una solicitud de cada estado.
+  - Los `switch` sobre el rol son exhaustivos (`never`): un rol nuevo no compila hasta tener su inicio y su navegación.
+- **DN4 · Sin endpoints nuevos.** Cada pantalla hace **un solo** GET: el inicio del Staff reutiliza `GET /solicitudes` y el del solicitante, `GET /solicitudes/mis-solicitudes`. Hereda la deuda de paginación de §5.
+- **DN5 · Inicio del Staff (C4).** Cuatro atajos hacia `/tablero`, en orden de acción: urgentes por revisar, **recibidas con la franja vencida** (cuya ayuda remite a la salida del Frente B: rechazarlas con un motivo), las que esperan al solicitante y las que están en producción.
+  - Solo urgentes y vencidas se resaltan, y solo si hay alguna. El resaltado va **por la forma** (borde grueso y ⚠ oculto para el lector de pantalla), no solo por el color (DV6).
+  - Cada enlace se nombra "número + título" y su ayuda es la **descripción accesible** (`aria-describedby`).
+  - Si la carga falla, se dice y se ofrece "Reintentar"; nunca se fingen ceros.
+- **DN6 · Inicio del solicitante (C5).**
+  - "Pendientes de tu respuesta" va **arriba y solo si hay alguna** (bloquean al Estudio), con la propuesta más próxima primero; una propuesta vencida sigue ahí porque rechazarla (T8) es una salida válida.
+  - "Tus próximas reservas": como máximo `MAXIMO_PROXIMAS_INICIO` (3), y si no hay, lo dice.
+  - Reutiliza **`TarjetaSolicitud`**, las mismas tarjetas del panel B1.
+  - Las reglas reutilizan **`TEXTO_BLOQUES_ATENCION`** del formulario B2 (una sola fuente) y no dependen del servidor: se ven aunque la carga falle.
+  - "Nueva solicitud" lleva a `/mis-solicitudes`, donde vive el formulario B2.
+- **DN7 · `/` es el inicio de cada rol y el encabezado navega (C6).** `PantallaInicio` conserva su `switch` exhaustivo, ahora hacia `InicioStaff` e `InicioSolicitante`.
+  - El encabezado tiene una `<nav aria-label="Navegación principal">` con **`NavLink`**: React Router pone `aria-current="page"` en la pantalla vigente, así que no se calcula a mano y no puede desincronizarse de la URL.
+  - **`end`** en cada enlace: sin él, "Inicio" (`/`) quedaría marcado en `/tablero`.
+  - En el detalle de un radicado **ninguna** entrada es la página actual.
+  - `navegacionDelRol` **nunca ofrece** una ruta que `SoloRol` devolvería a `/`: la navegación y la guarda dicen lo mismo, y una prueba lo fija.
+- **DN8 · Encabezado mobile-first, sin menú hamburguesa (C8).** La auditoría manual a 320 y 375 px, con un nombre real largo, mostró que la fila única sin `flex-wrap` se desbordaba: el nombre se montaba sobre la navegación, los enlaces no se podían tocar, "Salir" quedaba fuera de la pantalla al volver a iniciar sesión y el encabezado fijo tapaba el contenido y el foco.
+  - **Se descartó el menú hamburguesa:** con dos enlaces escondería la navegación y agregaría estado, `aria-expanded` y manejo del foco sin necesidad.
+  - **En móvil, tres filas apiladas** (`flex-col`): marca, navegación y usuario. **Desde `md`, una fila que puede partirse** (`md:flex-row md:flex-wrap`): entre `md` y `lg`, con un nombre largo, el bloque del usuario baja a la derecha en lugar de desbordar.
+  - **El orden del DOM es el orden visual en todos los anchos** (ningún `order-*`): el recorrido con Tab coincide con lo que se ve (WCAG 1.3.2 y 2.4.3).
+  - **El nombre envuelve** (`min-w-0` y `break-words`) y nunca se trunca. **Áreas táctiles de 44 px** (`min-h-11`, una sola constante) en los enlaces y en "Salir", que además no se comprime (`shrink-0`).
+  - **Fijo (`sticky`) solo desde `md`.** En móvil el encabezado se desplaza con la página. Desde `md`, `scroll-padding-top: 8rem` en `html` (`index.css`) evita que el foco quede escondido bajo el encabezado fijo.
+
+**Lo que atraparon las pruebas durante el frente:**
+
+| Paso | Hallazgo | Corrección |
+|---|---|---|
+| C6 | La prueba de la línea de vida del solicitante buscaba `findAllByRole('listitem')` en toda la pantalla. Desde C6 el encabezado tiene `<li>` y se dibuja **antes** que el detalle: la búsqueda terminaba con los de la navegación y el filtro quedaba vacío. Falló en las 4 zonas, porque no dependía de la fecha. | La búsqueda se acotó a su región (`within(línea de vida)`), como ya hacían las de "Historial de cambios" y "Propuesta de reprogramación". Lección: una búsqueda global `findAll…` termina con **el primer** elemento que aparezca, no con el que se espera. |
+| C3 | Una prueba accedía a `.proposito` sobre una unión de tipos en la que uno de los dos objetos no lo tenía | `toHaveProperty('proposito', …)`; lo detectó `tsc` antes de correr la suite |
+| C8 (manual) | A 320 y 375 px el encabezado de C6 se desbordaba (detector de la consola: 6 elementos fuera del ancho) | DN8. Lección: jsdom no calcula el diseño; la responsividad se verifica en el navegador y las pruebas fijan el **contrato estructural** que impide la regresión |
+| C8 | Una **bomba de tiempo de la Fase 6**: `Dashboard.test.tsx` escribía la fecha fija `2026-10-20` con el reloj real. Desde el 21 de octubre, el `min` del calendario (hoy en Bogotá) quedó por encima, la validación nativa frenó el envío y `crear()` nunca se llamó. Afecta también a `develop` y a la rama del Frente B. | Reloj fijo para todo el archivo (`vi.useFakeTimers({ toFake: ['Date'] })` y `setSystemTime` el 20 de octubre a las 05:00 de Bogotá), en un commit propio para llevarlo a las demás ramas. Sin cambios en el componente. |
+
+**Verificación.**
+
+| Decisión | Pruebas que la protegen |
+|---|---|
+| DN1 | `rutas.test.ts` (+2: pantallas distintas, absolutas y estáticas; el detalle no captura ninguna) · `App.test.tsx` (`/tablero` y `/mis-solicitudes` con las mismas peticiones que `/`) · `DetalleStaff.test.tsx` y `DetalleSolicitud.test.tsx` (los `href` de "Volver") |
+| DN2 | `SoloRol.test.tsx` (2: con el rol correcto se queda; con otro va a `/` **sin montar** la pantalla y sin textos de "no autorizado") · `App.test.tsx` (2: el servidor falso **lanza** ante una ruta no declarada, así que montar la pantalla ajena haría caer la prueba) |
+| DN3 y DN4 | `inicio.test.ts` (19: frontera de D7, fecha ilegible, finales que no suman, coincidencia con `agruparTablero`, orden y límite de próximas, identidad y entrada congelada, atajos y reglas) · `navegacion.test.ts` (5) |
+| DN5 | `InicioStaff.test.tsx` (6: un solo GET, textos exactos de una mezcla real, `href` y descripción accesible, resaltado por forma, ceros, Q-C2 y Q-C3, error y "Reintentar") |
+| DN6 | `InicioSolicitante.test.tsx` (7: un solo GET, orden de secciones, pendientes solo si hay, máximo 3, sin próximas, reglas, error con las reglas visibles) |
+| DN7 | `App.test.tsx` (+3: el Staff navega y `aria-current` lo sigue; el solicitante nunca ve "Tablero"; un atajo lleva al tablero; y en el detalle ningún enlace es la página actual) |
+| DN8 | `Encabezado.test.tsx` (7: orden del DOM marca → navegación → nombre → "Salir"; ningún `order-*`; `flex-col` y `md:flex-row md:flex-wrap`; el nombre largo completo, con `break-words`, sin `truncate`; `min-h-11` en los 3 controles; `md:sticky` y no `sticky`; `aria-current`) · **verificación manual** en DevTools a 320, 375 y 800 px con el nombre largo: sin scroll horizontal, el encabezado apilado y el orden del DOM respetado |
+
+**Resultado del Frente C (C1 a C8):** frontend `npm test` 39 archivos · 427 ✅ (372 en `develop` al empezar: +4 en C1, +4 en C2, +14 en C3, +10 en C4, +8 en C5, +8 en C6 y +7 en C8) · `npm run test:tz` 427 ✅ en cada una de las 4 zonas · `npm run typecheck` sin errores · verificación manual del encabezado a 320, 375 y 800 px. El lint solo corre en el CI (ver §2.1) y se verificará al abrir el PR. Backend sin cambios.
+
+**Deuda del Frente C:**
+- "Nueva solicitud" lleva al panel; el formulario B2 como página propia (`/solicitudes/nueva`) queda como decisión aparte (la ruta está libre: DN1).
+- ~~El encabezado con navegación no se ha verificado a mano en un ancho de móvil.~~ **Resuelta en C8** (DN8): verificado a 320, 375 y 800 px.
+- ~~El reloj fijo de `Dashboard.test.tsx` (`496a6b5`) debe llegar a `develop` y a la rama del Frente B: sin él, su CI falla desde el 21 de octubre.~~ **Resuelta:** llegó a la rama B con `cherry-pick` (`92e2b24`) y a `develop` con el PR #8 (`8c4f1d8`).
+- Los contadores heredan la falta de paginación de `GET /solicitudes` (§5).
+- ~~Al integrar con el Frente B: unificar el encabezado de este ADR y el historial de §6 (las dos ramas los extienden).~~ **Resuelta en I4** (`2e58f16` y la unificación de este ADR).
+
+**Historial del Frente C:**
+
+| Commit | Paso |
+|---|---|
+| `d3a04a4` | C1 · Refactor: una constante de ruta por pantalla, con alias de `/` y sin cambio de comportamiento |
+| `9c50f20` | C2 · `SoloRol`: guarda de rol silenciosa para `/tablero` y `/mis-solicitudes` |
+| `efb0da9` | C3 · `resumenInicioStaff` y `resumenInicioSolicitante` como funciones puras; comparadores del tablero exportados |
+| `eb5c09e` | C4 · Pantalla de inicio del Staff y `atajosDelStaff` |
+| `97c4cb3` | C5 · Pantalla de inicio del solicitante y `REGLAS_ESTUDIO_C` |
+| `9bd33ee` | C6 · `/` muestra el inicio del rol y el encabezado navega con `NavLink`; la prueba de la línea de vida acotada a su región |
+| `6f25bdf` | C7 · Este bloque y el README del frontend |
+| `496a6b5` | Reloj fijo en `Dashboard.test.tsx` (la bomba de tiempo de la Fase 6) |
+| `0f7b8ed` | C8 · El encabezado se apila en móvil y no desborda con nombres largos (DN8) |
+| `12c377f` | I1 · Cierre documental del Frente C |
+| `2e58f16` | I4 · `develop` (con el Frente B) integrado en esta rama, sin conflictos: 444 ✅ y `test:tz` 444 ✅ con los dos frentes juntos |
 
 ---
 
@@ -484,4 +574,10 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `83aed40` | Fase 7 · B1 · Prueba de caracterización: una solicitud con la franja vencida se puede rechazar (T2) |
 | `721c23d` | Fase 7 · B2 · `DialogoConfirmacion` explica por qué está bloqueado (`razonBloqueo`, forma y `aria-describedby`) |
 | `5f6ed28` | Fase 7 · B3 · `razonBloqueoDelStaff` como única regla: la razón en T2 y en T5 |
-| — | Fase 7 · B4 · DR5 ampliada en este ADR |
+| `bab4494` | Fase 7 · B4 · DR5 ampliada en este ADR |
+| `92e2b24` | Fase 7 · I2 · Reloj fijo en `Dashboard.test.tsx` llevado a la rama B (`cherry-pick -x` de `496a6b5`) |
+| `8c4f1d8` | Fase 7 · I3 · Merge del PR #8 (`fix/fase-7-rechazo-vencidas` → `develop`): CI en verde, primer lint del Frente B |
+| `d3a04a4` … `0f7b8ed` | Fase 7 · Frente C, C1 a C8 (y el reloj fijo `496a6b5`): detalle commit a commit en §2.13 |
+| `12c377f` | Fase 7 · I1 · Cierre documental del Frente C |
+| `2e58f16` | Fase 7 · I4 · `develop` integrado en la rama del Frente C, sin conflictos (444 ✅ con los dos frentes) |
+| — | Fase 7 · I4 · Unificación de este ADR: encabezado, §2.13 y §6 |

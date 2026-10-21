@@ -13,7 +13,7 @@ import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleStaff as DatosDetalleStaff } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { formatearFranja } from './fechas/bogota'
-import { RUTA_DETALLE, RUTA_PANEL } from './rutas'
+import { RUTA_DETALLE, RUTA_TABLERO } from './rutas'
 import { DETALLE_STAFF, LOG, apiFalsa } from './test/fixtures-api'
 
 const STAFF = { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' } as const
@@ -31,7 +31,7 @@ function mostrar(detalleStaff: ApiSolicitudes['detalleStaff'], ruta = '/solicitu
     <MemoryRouter initialEntries={[ruta]}>
       <ProveedorApi api={api}>
         <Routes>
-          <Route path={RUTA_PANEL} element={<p>Tablero</p>} />
+          <Route path={RUTA_TABLERO} element={<p>Tablero</p>} />
           <Route path={RUTA_DETALLE} element={<DetalleStaff usuario={STAFF} onLogout={() => undefined} />} />
         </Routes>
       </ProveedorApi>
@@ -146,7 +146,7 @@ describe('DetalleStaff (C3 · 6.5.2)', () => {
     const titulo = await screen.findByRole('heading', { name: TEXTO_NO_ENCONTRADA })
     expect(titulo).toHaveFocus()
     expect(screen.getByText(TEXTO_NO_ENCONTRADA_AYUDA_STAFF)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Volver al tablero/ })).toHaveAttribute('href', RUTA_PANEL)
+    expect(screen.getByRole('link', { name: /Volver al tablero/ })).toHaveAttribute('href', RUTA_TABLERO)
   })
 
   it('sin conexión: lo dice, en lugar de fingir que no existe', async () => {

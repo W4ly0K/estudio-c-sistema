@@ -46,4 +46,16 @@
   textarea::placeholder {
     color: var(--color-gray-400);
   }
+
+  /*
+   * Fase 7 · C8: desde md el encabezado es fijo (sticky). Al mover el foco o saltar a un
+   * ancla, el navegador deja este margen arriba: nada enfocado queda escondido bajo el
+   * encabezado. Holgado a propósito: entre md y lg el encabezado puede ocupar dos líneas.
+   * En móvil no hace falta: allí el encabezado no es fijo.
+   */
+  @media (min-width: 48rem) {
+    html {
+      scroll-padding-top: 8rem;
+    }
+  }
 }

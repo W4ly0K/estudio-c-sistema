@@ -42,8 +42,9 @@ export interface Tablero<T> {
  * Compara INSTANTES, no textos: "09:00-05:00" (14:00 Z) es posterior a "13:00Z", aunque
  * como texto sea menor. Una fecha ilegible no rompe el orden (NaN haría inconsistente
  * al comparador): va al final, en cualquier sentido.
+ * Exportada en la Fase 7 (C3): el inicio ordena con el MISMO criterio que el tablero.
  */
-function compararInstantes(a: string, b: string, sentido: 1 | -1): number {
+export function compararInstantes(a: string, b: string, sentido: 1 | -1): number {
   const instanteA = Date.parse(a)
   const instanteB = Date.parse(b)
   const aIlegible = Number.isNaN(instanteA)
@@ -56,7 +57,7 @@ function compararInstantes(a: string, b: string, sentido: 1 | -1): number {
 }
 
 /** Desempate determinista por unidades de código (no depende del idioma del navegador). */
-function compararRadicados(a: Ordenable, b: Ordenable): number {
+export function compararRadicados(a: { readonly radicado: string }, b: { readonly radicado: string }): number {
   if (a.radicado === b.radicado) return 0
   return a.radicado < b.radicado ? -1 : 1
 }
