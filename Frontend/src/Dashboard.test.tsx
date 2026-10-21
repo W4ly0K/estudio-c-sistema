@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from './Dashboard'
 import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
@@ -33,6 +33,21 @@ function llenarFormulario(contenedor: HTMLElement, inicio = '08:00', fin = '10:0
 }
 
 describe('Dashboard con la api inyectada', () => {
+  // Reloj fijo para TODO el archivo: el martes 20 de octubre de 2026, 05:00 en Bogotá
+  // (10:00 Z). `llenarFormulario` elige ese día y el calendario B2 pone `min` = hoy en
+  // Bogotá (F2c): con el reloj real, desde el 21 de octubre el `<input type="date">`
+  // quedaba por debajo del mínimo, la validación nativa frenaba el submit y `crear` nunca
+  // se llamaba. Solo se finge `Date`: los temporizadores reales siguen moviendo
+  // `findBy…`/`waitFor` (con todos falsos, las esperas no avanzarían).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-20T10:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('muestra las solicitudes que entrega la api', async () => {
     const api = apiFalsa({
       misSolicitudes: vi.fn<ApiSolicitudes['misSolicitudes']>().mockResolvedValue({ ok: true, datos: [PROPIA] }),
@@ -106,10 +121,6 @@ describe('Dashboard con la api inyectada', () => {
   })
 
   describe('fechas en la hora de Bogotá (Fase 6.3 · F2 y F3)', () => {
-    afterEach(() => {
-      vi.useRealTimers()
-    })
-
     /** Abre el formulario, lo llena y lo envía; devuelve el cuerpo que recibió `crear`. */
     async function enviar(inicio: string, fin: string) {
       const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
