@@ -51,6 +51,30 @@ export function evaluarMotivo(texto: string, { minimo, maximo }: LimitesMotivo):
   return { longitud, estado, valido: estado === 'valido' }
 }
 
+/**
+ * Fase 7 · B3: por qué el motivo todavía no deja confirmar (el `razonBloqueo` del diálogo).
+ * Se DERIVA de los límites, como la ayuda: si cambian, la razón no puede quedar mintiendo.
+ * `undefined` cuando el motivo es válido (no hay nada que explicar).
+ */
+export function razonMotivoInvalido(
+  { estado }: EvaluacionMotivo,
+  { minimo, maximo }: LimitesMotivo,
+): string | undefined {
+  switch (estado) {
+    case 'vacio':
+    case 'corto':
+      return `Para confirmar, escribe un motivo de al menos ${minimo} caracteres.`
+    case 'largo':
+      return `Para confirmar, acorta el motivo a ${maximo} caracteres como máximo.`
+    case 'valido':
+      return undefined
+    default: {
+      const imposible: never = estado
+      return imposible
+    }
+  }
+}
+
 const caracteres = (n: number): string => (n === 1 ? '1 carácter' : `${n} caracteres`)
 
 /** Texto del contador: dice qué falta o qué sobra, no solo un número. */

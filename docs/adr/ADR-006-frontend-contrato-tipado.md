@@ -10,10 +10,11 @@
 | **Actualización** | 2026-10-14 · Paso 6.5b: DE1 resuelta en el backend (ADR-005 §2.10) y deuda de `GET /solicitudes` registrada (§5) |
 | **Actualización** | 2026-10-15 · Paso 6.5: vista del Staff, tablero, detalle C3 y las acciones T1, T2, T4, T5 y T9 (§2.12) |
 | **Actualización** | 2026-10-15 · Paso 6.6: cierre de la fase; historial de implementación completo (§6) |
+| **Actualización** | 2026-10-20 · Fase 7, Frente B: el rechazo de una solicitud vencida queda fijado por una prueba y "Confirmar" explica por qué está bloqueado (DR5 ampliada, §2.12, §3, §5 y §6) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
-| **Rama** | `feat/fase-6-frontend` |
+| **Rama** | `feat/fase-6-frontend` · Fase 7, Frente B: `fix/fase-7-rechazo-vencidas` |
 | **Complementa a** | [ADR-005](ADR-005-maquina-de-estados-ca10.md) (el frontend consume T1–T9 y CA-10, incluido el motivo de §2.9) · [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (una proyección por rol; 404 uniforme) · [ADR-001](ADR-001-identidad-zero-trust.md) (la identidad sale del JWT, nunca del cuerpo) |
-| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) |
+| **Relacionado con** | README del backend §8 a §12 (contrato) · README del frontend · Diagnóstico de la Fase 6 (F1 a F7) · Diagnóstico de la Fase 7 (Frente B, H-B2) |
 
 ---
 
@@ -246,7 +247,17 @@ El flujo completo del Staff: tablero por estado, detalle C3 y la resolución con
 - **DR2 · Canal tipado:** mandar T5 por el `PATCH` **no compila**, porque `CambiosTablero` no admite "Pendiente de Reprogramación".
 - **DR3 · Recarga uniforme:** aunque `POST …/reprogramacion` ya devuelve la proyección completa, se vuelve a pedir el detalle, como en las otras cuatro acciones. Un solo camino tras el éxito, con la honestidad ya probada.
 - **DR4 · El diálogo** muestra la franja actual, los campos de franja y el motivo, en blanco en cada apertura.
-- **DR5 · Validación local mínima (DH4):** "Confirmar" se bloquea mientras falten campos o el motivo no sea válido; al confirmar, `franjaDesdeCampos()` aplica las dos reglas de B2 y, si falla, el error se muestra sin enviar nada. Días hábiles, bloques, "igual a la franja actual" y CA-06 los decide el servidor, y sus mensajes se muestran tal cual.
+- **DR5 · Validación local mínima (DH4):** "Confirmar" se bloquea mientras falten campos o el motivo no sea válido; al confirmar, `franjaDesdeCampos()` aplica las dos reglas de B2 y, si falla, el error se muestra sin enviar nada. Días hábiles, bloques, "igual a la franja actual" y CA-06 los decide el servidor, y sus mensajes se muestran tal cual. **Ampliada en la Fase 7:** el bloqueo dice su razón (ver abajo).
+
+**Fase 7 · Frente B: la razón visible del bloqueo (DR5 ampliada).**
+- **Síntoma.** El Staff reportó que no podía rechazar las solicitudes vencidas en `Recibido`. El diagnóstico descartó el backend: D7 solo frena T1 (`update()` evalúa la franja únicamente cuando la acción es `APROBAR`) y la prueba U-25 ya fijaba que rechazar una franja vencida sigue permitido. La causa estaba en la vista (hipótesis H-B2, confirmada a mano en el paso B0): el diálogo de rechazo abre con el motivo en blanco, así que "Confirmar" **siempre** empieza bloqueado; con `opacity-60` el rojo de una acción irreversible parecía activo, y un botón deshabilitado no responde al clic ni recibe el foco. El bloqueo era correcto (es el mismo de `@TextoConLongitudReal` y del CHECK R2); lo que fallaba era explicarlo.
+- **Decisión: se conserva el bloqueo y se explica (opción 1).** Se descartó la opción 2, el botón siempre habilitado con validación al confirmar: daba marcha atrás a DR5 y cambiaba el contrato de todos los diálogos.
+  - `DialogoConfirmacion` recibe el prop opcional `razonBloqueo`. Solo aparece cuando lo bloquea el **contenido** (`!enCurso && !puedeConfirmar`): en vuelo, el botón ya dice "Procesando…".
+  - **Accesibilidad:** la razón se muestra sobre los botones y se enlaza al de confirmar con `aria-describedby`; sin razón no queda ninguna referencia vacía. El bloqueo se distingue por la **forma** (gris, borde punteado, `cursor-not-allowed`) y no solo por el color, con el mismo criterio de DV6.
+  - **Una sola fuente:** `razonBloqueoDelStaff(accion, motivo, franja)` es la única regla local de confirmación del Staff y `AccionesStaff` deriva `puedeConfirmar = razonBloqueo === undefined`. La regla y su explicación no pueden divergir: no existe un botón bloqueado sin razón ni una razón con el botón habilitado.
+  - **Textos derivados de los límites** (`razonMotivoInvalido`), como la ayuda del campo. En T5 se explica primero la franja que falta y después el motivo: el orden del formulario.
+  - **Alcance:** el prop es opcional, así que los diálogos del solicitante no cambian. T1, T4 y T9 no tienen formulario y nunca se bloquean por contenido.
+- **Prueba de caracterización (B1).** Antes de tocar el componente, una prueba fijó lo que ya funcionaba: con la franja **terminada**, la advertencia DA4 está visible, "Rechazar" sigue habilitado y T2 sale por el `PATCH` con el motivo recortado. Es la contraparte en la vista de U-25: si alguien "arregla" las vencidas ocultando el botón, la prueba lo frena.
 
 **Las dos capas de un 409 (lección de la prueba manual con dos pestañas).** El backend detecta "lo que ves ya no es lo que hay" en dos momentos:
 1. **La máquina, sobre una lectura fresca:** si el cambio de la otra pestaña ya está confirmado, la petición tardía choca con la regla (`TRANSICION_NO_DEFINIDA`, estado final…).
@@ -380,6 +391,7 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | DD1 a DD5 | `linea-de-vida.test.ts` (perspectiva: las 9 transiciones en cada una, y "Tú" ausente para el Staff) · `detalle-staff.test.ts` (límite exacto del inventario) · `DetalleStaff.test.tsx` (8) |
 | DA1 a DA5 | `acciones-staff.test.ts` (tabla por estado, canal y `expectTypeOf`) · `motivo.test.ts` (conteo real y contador) · `contrato.test.ts` (límites de los dos DTO y algoritmo del decorador) · `DetalleStaff.acciones.test.tsx` |
 | DR1 a DR5 | `franja.test.ts` (8) · `Dashboard.test.tsx` **sin cambios** como red del refactor · `DetalleStaff.acciones.test.tsx` (7 casos de T5) |
+| DR5 ampliada (Fase 7 · B) | `DialogoConfirmacion.test.tsx` (7: descripción accesible, forma del bloqueo, retorno al color, en vuelo, sin prop, razón vacía) · `motivo.test.ts` y `acciones-staff.test.ts` (`razonMotivoInvalido` y `razonBloqueoDelStaff`, +7) · `DetalleStaff.acciones.test.tsx` (B1: rechazo con la franja terminada; B3: la razón en T2 y en T5) |
 
 **Sabotajes (mutaciones manuales, todas detectadas y revertidas):**
 
@@ -447,6 +459,8 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 - el contador del motivo cuenta bien los emojis, el límite detiene el envío y la advertencia DA4 aparece con la franja vencida;
 - con dos pestañas, validar en una y rechazar en la otra responde 409 de la máquina (capa 1), con "Recargar la solicitud".
 
+**Verificación manual (Fase 7 · B0, antes de los cambios):** en una solicitud de `Recibido` con la franja vencida (`EC-2026-3513`), "Validar" respondió 409 con el mensaje de D7; en "Rechazar", "Confirmar" apareció bloqueado sin explicación y se habilitó al décimo carácter; el `PATCH` respondió 200 y la solicitud pasó a "Rechazado".
+
 **Resultado al cierre de 6.1:** `npm test` del frontend, 11 archivos · 105 ✅.
 
 **Resultado al cierre de 6.2:** frontend `npm test` 13 archivos · 134 ✅ · backend `npm test` 705 ✅ y 1 omitida · `npm run test:e2e` 5 suites · 64 ✅ · CI con los jobs Backend y Frontend en verde, 0 advertencias de lint.
@@ -456,6 +470,8 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 **Resultado al cierre de 6.4:** frontend `npm test` 25 archivos · 270 ✅ y `npm run test:tz` 270 ✅ en cada una de las 4 zonas · `npm run lint` con `jsx-a11y`, 0 advertencias.
 
 **Resultado al cierre de 6.5:** frontend `npm test` 33 archivos · 372 ✅ y `npm run test:tz` 372 ✅ en cada una de las 4 zonas · `npm run lint` 0 errores y 0 advertencias · backend sin cambios desde la 6.5b (`npm test` 720 ✅ · `npm run test:e2e` 70 ✅ · `npm run test:integracion` 56 ✅). El bucle de estrés de los diálogos (30 corridas) no mostró ningún fallo tras la corrección con `useLayoutEffect`.
+
+**Resultado de la Fase 7 · Frente B (B1 a B3):** frontend `npm test` 389 ✅ (372 al cierre de la Fase 6: +1 en B1, +7 en B2 y +9 en B3) y `npm run test:tz` 389 ✅ en cada una de las 4 zonas · `npm run typecheck` sin errores. Backend sin cambios.
 
 ---
 
@@ -498,7 +514,7 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
   - corrección prevista: un DTO de consulta con `@IsIn` para los dos filtros y paginación (o acotar los estados finales por fecha) cuando el volumen lo pida.
 - **Formulario B2:** no permite elegir recursos (el contrato sí los acepta).
 - **Vista del Staff · fuera de la 6.5 (DE6):**
-  - editar las fechas de una solicitud en Recibido: una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado); DA4 lo advierte, pero solo queda rechazarla;
+  - editar las fechas de una solicitud en Recibido: una solicitud en Recibido con la franja vencida no se puede aprobar (409) ni reprogramar (T5 exige Validado); DA4 lo advierte, pero solo queda rechazarla. Desde la Fase 7 (B1 a B3) ese rechazo está fijado por una prueba y "Confirmar" explica su bloqueo; la edición de fechas sigue pendiente (Diagnóstico de la Fase 7, B.5, opción a) y las preguntas de negocio Q-B1 a Q-B3 están abiertas;
   - el calendario C1, los recursos C5, las alertas C6 y la exportación C7;
   - filtros del tablero, y que el Staff cree solicitudes;
   - la disponibilidad real de un recurso en la franja (DD3): necesita una consulta del backend;
@@ -553,3 +569,7 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `5f810f7` | 6.5.4b · T5: el Staff propone una reprogramación con franja y motivo |
 | `b0fe862` | 6.5.5 · §2.12 y el README del frontend |
 | — | 6.6 · Cierre: estado final de este ADR e historiales completos (este ADR y ADR-005) |
+| `83aed40` | Fase 7 · B1 · Prueba de caracterización: una solicitud con la franja vencida se puede rechazar (T2) |
+| `721c23d` | Fase 7 · B2 · `DialogoConfirmacion` explica por qué está bloqueado (`razonBloqueo`, forma y `aria-describedby`) |
+| `5f6ed28` | Fase 7 · B3 · `razonBloqueoDelStaff` como única regla: la razón en T2 y en T5 |
+| — | Fase 7 · B4 · DR5 ampliada en este ADR |

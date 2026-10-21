@@ -5,6 +5,7 @@ import {
   longitudReal,
   LIMITES_MOTIVO_REPROGRAMACION,
   motivoParaEnviar,
+  razonMotivoInvalido,
   textoAyudaMotivo,
   textoContador,
 } from './motivo'
@@ -53,6 +54,29 @@ describe('textoContador', () => {
     expect(contador('x'.repeat(12))).toBe('12 / 500 caracteres.')
     expect(contador('x'.repeat(501))).toBe('Sobra 1 carácter: el máximo es 500.')
     expect(contador('x'.repeat(504))).toBe('Sobran 4 caracteres: el máximo es 500.')
+  })
+})
+
+describe('razonMotivoInvalido (Fase 7 · B3)', () => {
+  const razon = (texto: string) => razonMotivoInvalido(evaluarMotivo(texto, LIMITES), LIMITES)
+
+  it('vacío o corto pide el mínimo; largo pide acortar; válido no explica nada', () => {
+    expect(razon('')).toBe('Para confirmar, escribe un motivo de al menos 10 caracteres.')
+    expect(razon('   ')).toBe('Para confirmar, escribe un motivo de al menos 10 caracteres.')
+    expect(razon('x'.repeat(9))).toBe('Para confirmar, escribe un motivo de al menos 10 caracteres.')
+    expect(razon('x'.repeat(501))).toBe('Para confirmar, acorta el motivo a 500 caracteres como máximo.')
+    expect(razon('x'.repeat(10))).toBeUndefined()
+    expect(razon('x'.repeat(500))).toBeUndefined()
+  })
+
+  it('se deriva de los límites: si cambian, la razón no puede quedar mintiendo', () => {
+    const limites = { minimo: 3, maximo: 7 }
+    expect(razonMotivoInvalido(evaluarMotivo('ab', limites), limites)).toBe(
+      'Para confirmar, escribe un motivo de al menos 3 caracteres.',
+    )
+    expect(razonMotivoInvalido(evaluarMotivo('x'.repeat(8), limites), limites)).toBe(
+      'Para confirmar, acorta el motivo a 7 caracteres como máximo.',
+    )
   })
 })
 

@@ -10,18 +10,18 @@ import {
   accionesDelStaff,
   franjaYaInicio,
   porElTablero,
+  razonBloqueoDelStaff,
   textosDelStaff,
   type DestinoDelStaff,
   type TransicionDelTableroStaff,
   type TransicionStaff,
 } from '../presentacion/acciones-staff'
-import { FRANJA_VACIA, franjaCompleta, franjaDesdeCampos, type ValoresFranja } from '../presentacion/franja'
+import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from '../presentacion/franja'
 import {
   LIMITES_MOTIVO_RECHAZO,
   LIMITES_MOTIVO_REPROGRAMACION,
   TEXTO_AYUDA_MOTIVO_RECHAZO,
   TEXTO_AYUDA_MOTIVO_REPROGRAMACION,
-  evaluarMotivo,
   motivoParaEnviar,
 } from '../presentacion/motivo'
 import { CampoMotivo } from './CampoMotivo'
@@ -87,12 +87,10 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const accion = seleccionada?.accion ?? null
 
   // DR5 · "Confirmar" se bloquea mientras el formulario de la acción no esté completo.
-  const puedeConfirmar =
-    accion === 'RECHAZAR'
-      ? evaluarMotivo(motivo, LIMITES_MOTIVO_RECHAZO).valido
-      : accion === 'PROPONER_REPROGRAMACION'
-        ? franjaCompleta(franja) && evaluarMotivo(motivo, LIMITES_MOTIVO_REPROGRAMACION).valido
-        : true
+  // Fase 7 · B3: una sola fuente: se habilita exactamente cuando no hay una razón para
+  // bloquearlo, y esa misma razón es la que el diálogo muestra (H-B2).
+  const razonBloqueo = accion === null ? undefined : razonBloqueoDelStaff(accion, motivo, franja)
+  const puedeConfirmar = razonBloqueo === undefined
 
   const abrir = (transicion: TransicionStaff) => {
     setError(null)
@@ -200,6 +198,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         irreversible={textos?.irreversible ?? false}
         enCurso={enCurso}
         puedeConfirmar={puedeConfirmar}
+        razonBloqueo={razonBloqueo}
         onConfirmar={() => void confirmar()}
         onCerrar={cerrar}
       >
