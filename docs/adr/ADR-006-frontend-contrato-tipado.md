@@ -266,7 +266,7 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | Revisión del árbol | El editor guardó una versión vieja de `DetalleStaff.tsx` y `tsc` seguía en verde | Restaurada; lección: **el typecheck no prueba que la integración exista** |
 
 
-### 2.13 Fase 7 · Frente C: inicio por rol y navegación (pasos C1 a C6 · Decisiones DN1 a DN7)
+### 2.13 Fase 7 · Frente C: inicio por rol y navegación (pasos C1 a C8 · Decisiones DN1 a DN8)
 
 > **Bloque autocontenido, a propósito.** Las decisiones, la verificación, la deuda y el historial del Frente C viven aquí y no en §3, §5 ni §6. La rama del Frente B (`fix/fase-7-rechazo-vencidas`) sí edita esas secciones; si las dos ramas las tocaran, la integración chocaría. Al integrar ambas ramas en `develop`, el encabezado y el historial de §6 se unifican en un solo paso.
 
@@ -301,6 +301,12 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
   - **`end`** en cada enlace: sin él, "Inicio" (`/`) quedaría marcado en `/tablero`.
   - En el detalle de un radicado **ninguna** entrada es la página actual.
   - `navegacionDelRol` **nunca ofrece** una ruta que `SoloRol` devolvería a `/`: la navegación y la guarda dicen lo mismo, y una prueba lo fija.
+- **DN8 · Encabezado mobile-first, sin menú hamburguesa (C8).** La auditoría manual a 320 y 375 px, con un nombre real largo, mostró que la fila única sin `flex-wrap` se desbordaba: el nombre se montaba sobre la navegación, los enlaces no se podían tocar, "Salir" quedaba fuera de la pantalla al volver a iniciar sesión y el encabezado fijo tapaba el contenido y el foco.
+  - **Se descartó el menú hamburguesa:** con dos enlaces escondería la navegación y agregaría estado, `aria-expanded` y manejo del foco sin necesidad.
+  - **En móvil, tres filas apiladas** (`flex-col`): marca, navegación y usuario. **Desde `md`, una fila que puede partirse** (`md:flex-row md:flex-wrap`): entre `md` y `lg`, con un nombre largo, el bloque del usuario baja a la derecha en lugar de desbordar.
+  - **El orden del DOM es el orden visual en todos los anchos** (ningún `order-*`): el recorrido con Tab coincide con lo que se ve (WCAG 1.3.2 y 2.4.3).
+  - **El nombre envuelve** (`min-w-0` y `break-words`) y nunca se trunca. **Áreas táctiles de 44 px** (`min-h-11`, una sola constante) en los enlaces y en "Salir", que además no se comprime (`shrink-0`).
+  - **Fijo (`sticky`) solo desde `md`.** En móvil el encabezado se desplaza con la página. Desde `md`, `scroll-padding-top: 8rem` en `html` (`index.css`) evita que el foco quede escondido bajo el encabezado fijo.
 
 **Lo que atraparon las pruebas durante el frente:**
 
@@ -308,6 +314,8 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 |---|---|---|
 | C6 | La prueba de la línea de vida del solicitante buscaba `findAllByRole('listitem')` en toda la pantalla. Desde C6 el encabezado tiene `<li>` y se dibuja **antes** que el detalle: la búsqueda terminaba con los de la navegación y el filtro quedaba vacío. Falló en las 4 zonas, porque no dependía de la fecha. | La búsqueda se acotó a su región (`within(línea de vida)`), como ya hacían las de "Historial de cambios" y "Propuesta de reprogramación". Lección: una búsqueda global `findAll…` termina con **el primer** elemento que aparezca, no con el que se espera. |
 | C3 | Una prueba accedía a `.proposito` sobre una unión de tipos en la que uno de los dos objetos no lo tenía | `toHaveProperty('proposito', …)`; lo detectó `tsc` antes de correr la suite |
+| C8 (manual) | A 320 y 375 px el encabezado de C6 se desbordaba (detector de la consola: 6 elementos fuera del ancho) | DN8. Lección: jsdom no calcula el diseño; la responsividad se verifica en el navegador y las pruebas fijan el **contrato estructural** que impide la regresión |
+| C8 | Una **bomba de tiempo de la Fase 6**: `Dashboard.test.tsx` escribía la fecha fija `2026-10-20` con el reloj real. Desde el 21 de octubre, el `min` del calendario (hoy en Bogotá) quedó por encima, la validación nativa frenó el envío y `crear()` nunca se llamó. Afecta también a `develop` y a la rama del Frente B. | Reloj fijo para todo el archivo (`vi.useFakeTimers({ toFake: ['Date'] })` y `setSystemTime` el 20 de octubre a las 05:00 de Bogotá), en un commit propio para llevarlo a las demás ramas. Sin cambios en el componente. |
 
 **Verificación.**
 
@@ -319,12 +327,14 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | DN5 | `InicioStaff.test.tsx` (6: un solo GET, textos exactos de una mezcla real, `href` y descripción accesible, resaltado por forma, ceros, Q-C2 y Q-C3, error y "Reintentar") |
 | DN6 | `InicioSolicitante.test.tsx` (7: un solo GET, orden de secciones, pendientes solo si hay, máximo 3, sin próximas, reglas, error con las reglas visibles) |
 | DN7 | `App.test.tsx` (+3: el Staff navega y `aria-current` lo sigue; el solicitante nunca ve "Tablero"; un atajo lleva al tablero; y en el detalle ningún enlace es la página actual) |
+| DN8 | `Encabezado.test.tsx` (7: orden del DOM marca → navegación → nombre → "Salir"; ningún `order-*`; `flex-col` y `md:flex-row md:flex-wrap`; el nombre largo completo, con `break-words`, sin `truncate`; `min-h-11` en los 3 controles; `md:sticky` y no `sticky`; `aria-current`) · **verificación manual** en DevTools a 320, 375 y 800 px con el nombre largo: sin scroll horizontal, el encabezado apilado y el orden del DOM respetado |
 
-**Resultado del Frente C (C1 a C6):** frontend `npm test` 420 ✅ (372 en `develop` al empezar: +4 en C1, +4 en C2, +14 en C3, +10 en C4, +8 en C5 y +8 en C6) · `npm run test:tz` 420 ✅ en cada una de las 4 zonas · `npm run typecheck` sin errores. El lint solo corre en el CI (ver §2.1) y se verificará al abrir el PR. Backend sin cambios.
+**Resultado del Frente C (C1 a C8):** frontend `npm test` 39 archivos · 427 ✅ (372 en `develop` al empezar: +4 en C1, +4 en C2, +14 en C3, +10 en C4, +8 en C5, +8 en C6 y +7 en C8) · `npm run test:tz` 427 ✅ en cada una de las 4 zonas · `npm run typecheck` sin errores · verificación manual del encabezado a 320, 375 y 800 px. El lint solo corre en el CI (ver §2.1) y se verificará al abrir el PR. Backend sin cambios.
 
 **Deuda del Frente C:**
 - "Nueva solicitud" lleva al panel; el formulario B2 como página propia (`/solicitudes/nueva`) queda como decisión aparte (la ruta está libre: DN1).
-- El encabezado con navegación no se ha verificado a mano en un ancho de móvil.
+- ~~El encabezado con navegación no se ha verificado a mano en un ancho de móvil.~~ **Resuelta en C8** (DN8): verificado a 320, 375 y 800 px.
+- El reloj fijo de `Dashboard.test.tsx` (`496a6b5`) debe llegar a `develop` y a la rama del Frente B: sin él, su CI falla desde el 21 de octubre (plan de integración, pasos I2 a I5).
 - Los contadores heredan la falta de paginación de `GET /solicitudes` (§5).
 - Al integrar con el Frente B: unificar el encabezado de este ADR y el historial de §6 (las dos ramas los extienden).
 
@@ -338,7 +348,10 @@ Por eso, ante **cualquier** 409, el diálogo del Staff muestra el mensaje del se
 | `eb5c09e` | C4 · Pantalla de inicio del Staff y `atajosDelStaff` |
 | `97c4cb3` | C5 · Pantalla de inicio del solicitante y `REGLAS_ESTUDIO_C` |
 | `9bd33ee` | C6 · `/` muestra el inicio del rol y el encabezado navega con `NavLink`; la prueba de la línea de vida acotada a su región |
-| — | C7 · Este bloque y el README del frontend |
+| `6f25bdf` | C7 · Este bloque y el README del frontend |
+| `496a6b5` | Reloj fijo en `Dashboard.test.tsx` (la bomba de tiempo de la Fase 6) |
+| `0f7b8ed` | C8 · El encabezado se apila en móvil y no desborda con nombres largos (DN8) |
+| — | I1 · Cierre documental del Frente C |
 
 ---
 
