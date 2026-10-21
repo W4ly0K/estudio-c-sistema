@@ -1,5 +1,7 @@
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
 import type { TextosAccion } from './acciones-solicitante'
+import { franjaCompleta, type ValoresFranja } from './franja'
+import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION, evaluarMotivo, razonMotivoInvalido } from './motivo'
 
 /**
  * Acciones del Staff en el detalle C3 (6.5.3 · DA1 y 6.5.4 · DR2). Se DERIVAN de la tabla
@@ -72,6 +74,33 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
         confirmar: 'Sí, enviar la propuesta',
         irreversible: true,
       }
+    default: {
+      const imposible: never = accion
+      return imposible
+    }
+  }
+}
+
+/** Fase 7 · B3: T5 sin franja completa. Va antes que el motivo: es el orden del formulario. */
+export const TEXTO_RAZON_FRANJA_INCOMPLETA = 'Para confirmar, elige la fecha y las dos horas de la nueva franja.'
+
+/**
+ * Fase 7 · B3: por qué "Confirmar" sigue bloqueado para esta acción, o `undefined` si nada lo
+ * bloquea. Es la ÚNICA regla local de confirmación del Staff: AccionesStaff deriva
+ * `puedeConfirmar` de aquí, así que la regla y su explicación no pueden divergir. Solo cubre
+ * lo que la vista sabe sin el servidor (DR5): días hábiles, bloques y CA-06 los decide él.
+ */
+export function razonBloqueoDelStaff(accion: AccionDelStaff, motivo: string, franja: ValoresFranja): string | undefined {
+  switch (accion) {
+    case 'RECHAZAR':
+      return razonMotivoInvalido(evaluarMotivo(motivo, LIMITES_MOTIVO_RECHAZO), LIMITES_MOTIVO_RECHAZO)
+    case 'PROPONER_REPROGRAMACION':
+      if (!franjaCompleta(franja)) return TEXTO_RAZON_FRANJA_INCOMPLETA
+      return razonMotivoInvalido(evaluarMotivo(motivo, LIMITES_MOTIVO_REPROGRAMACION), LIMITES_MOTIVO_REPROGRAMACION)
+    case 'APROBAR':
+    case 'INICIAR_PRODUCCION':
+    case 'FINALIZAR':
+      return undefined
     default: {
       const imposible: never = accion
       return imposible
