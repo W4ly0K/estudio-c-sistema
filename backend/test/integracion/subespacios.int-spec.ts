@@ -1,5 +1,10 @@
-import { CategoriaSolicitud, Prisma, PrismaClient, SubEspacio } from '@prisma/client';
-import { esViolacionDeTraslapeCa06 } from '../../src/solicitudes/errores/traslape-ca06';
+import { ConflictException, Logger } from '@nestjs/common';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario, SubEspacio } from '@prisma/client';
+import { esViolacionDeTraslapeCa06, MENSAJE_CA06 } from '../../src/solicitudes/errores/traslape-ca06';
+import { SolicitudesService } from '../../src/solicitudes/solicitudes.service';
+import type { PrismaService } from '../../src/prisma/prisma.service';
+import type { UsuarioAutenticado } from '../../src/auth/interfaces/usuario-autenticado.interface';
+import { RelojFijo } from '../utils/reloj-fijo';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 
 /**
@@ -7,9 +12,13 @@ import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
  * (PRD v2.2 §5.1; ADR-007 SE1, SE2, SE7, NA1 y P-1).
  *  - I-31: ALINEACIÓN. Columnas, DEFAULT temporal y los seis CHECK del log, con la
  *    definición exacta que guarda el motor.
- *  - I-32: COMPORTAMIENTO del motor. La tabla del PRD §5.1 sin pasar por el servicio
- *    (el servicio usará el sub-espacio desde 7A.4).
- * El comportamiento completo de la API llega con la batería de 7A.6.
+ *  - I-32: COMPORTAMIENTO del motor. La tabla del PRD §5.1 sin pasar por el servicio.
+ *  - I-33 (7A.6): el SERVICIO crea por sub-espacio, también en carreras: la capa amable
+ *    y el motor deciden lo mismo y el resultado no depende del orden.
+ *  - I-34 (7A.6): T1, T5 y T7 con sub-espacio contra la base real (CHECK del log A1 a A3 y
+ *    F1 a F3, compare-and-set y EXCLUDE), también en carreras.
+ * Las carreras son LIBRES (PostgreSQL decide el orden): se verifican propiedades que valen
+ * en cualquier orden. El código HTTP (201/409) lo fijan las pruebas e2e; aquí, el servicio.
  */
 const USUARIO = 'uuid-integracion-subespacios';
 const bogota = (dia: string, hhmm: string): Date => new Date(`2026-10-${dia}T${hhmm}:00-05:00`);
@@ -200,6 +209,292 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
         },
       });
       expect(await prisma.log_Auditoria.count()).toBe(1);
+    });
+  });
+  describe('Servicio contra la base real (7A.6)', () => {
+    /** Lunes 5-oct-2026, 10:00 en Bogotá: las franjas de octubre y noviembre están por delante. */
+    const AHORA = new Date('2026-10-05T10:00:00-05:00');
+    const STAFF = USUARIO;
+    const STAFF_B = 'uuid-integracion-subespacios-b';
+    const SOLICITANTE: UsuarioAutenticado = Object.freeze({
+      id: 'uuid-solicitante-subespacios',
+      correo: 'solicitante-subespacios@prueba.local',
+      rol: RolUsuario.SOLICITANTE,
+    });
+    const MOTIVO = 'El Estudio C necesita reorganizar los espacios esa semana';
+    let service: SolicitudesService;
+    let avisos: jest.SpyInstance;
+    let azar: jest.SpyInstance;
+
+    beforeEach(async () => {
+      await prisma.usuario.createMany({
+        data: [
+          { id_usuario: STAFF_B, nombre: 'Staff B', correo: 'staff-b-subespacios@prueba.local', rol: RolUsuario.STAFF },
+          { id_usuario: SOLICITANTE.id, nombre: 'Solicitante', correo: SOLICITANTE.correo, rol: RolUsuario.SOLICITANTE },
+        ],
+      });
+      service = new SolicitudesService(prisma as unknown as PrismaService, new RelojFijo(AHORA));
+      // El aviso de "carrera resuelta por el motor" (Decisión AF) se cuenta, no se imprime.
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      // Radicados distintos y deterministas (como I-1): una colisión del radicado (backlog)
+      // no debe confundirse con un resultado de CA-06.
+      let secuencia = 0;
+      azar = jest.spyOn(Math, 'random').mockImplementation(() => (secuencia++ % 9000) / 9000);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+      azar.mockRestore();
+    });
+
+    /** Martes 27-oct (hábil) por defecto, dentro del bloque de la mañana. */
+    const crear = (subEspacio: SubEspacio, dia = '27', desde = '09:00', hasta = '10:00') =>
+      service.create(
+        {
+          categoria: CategoriaSolicitud.VIDEO,
+          proposito: 'Batería de integración de sub-espacios',
+          fecha_inicio: bogota(dia, desde),
+          fecha_fin: bogota(dia, hasta),
+          sub_espacio: subEspacio,
+        },
+        SOLICITANTE.id,
+      );
+
+    const separar = (resultados: PromiseSettledResult<unknown>[]) => ({
+      exitos: resultados.filter((r) => r.status === 'fulfilled').length,
+      rechazos: resultados.flatMap((r): unknown[] => (r.status === 'rejected' ? [r.reason] : [])),
+    });
+
+    const esConflictoCa06 = (error: unknown): boolean =>
+      error instanceof ConflictException && error.message === MENSAJE_CA06;
+
+    /** Solicitudes que ocupan la franja (estado activo) en cada sub-espacio. */
+    const ocupacion = async (): Promise<Record<SubEspacio, number>> => {
+      const filas = await prisma.solicitud.groupBy({
+        by: ['sub_espacio'],
+        where: { estado: { notIn: ['Rechazado', 'Cancelado por el Usuario', 'No atendida'] } },
+        _count: { _all: true },
+      });
+      const conteo: Record<SubEspacio, number> = { CABINA_AUDIO: 0, ESTUDIO_GRABACION: 0, ESTUDIO_COMPLETO: 0 };
+      for (const fila of filas) conteo[fila.sub_espacio] = fila._count._all;
+      return conteo;
+    };
+
+    describe('I-33 · create() por sub-espacio (PRD v2.2 §5.1 · CA-06.1 a CA-06.3)', () => {
+      it('I-33a · CA-06.2: cabina y estudio en la MISMA franja → las dos se crean, cada una en su lugar', async () => {
+        const cabina = await crear(CABINA_AUDIO);
+        const estudio = await crear(ESTUDIO_GRABACION);
+
+        expect([cabina.sub_espacio, estudio.sub_espacio]).toEqual([CABINA_AUDIO, ESTUDIO_GRABACION]);
+        expect(await ocupacion()).toEqual({ CABINA_AUDIO: 1, ESTUDIO_GRABACION: 1, ESTUDIO_COMPLETO: 0 });
+      });
+
+      it.each([
+        ['el completo contra la cabina', CABINA_AUDIO, ESTUDIO_COMPLETO],
+        ['el completo contra el estudio', ESTUDIO_GRABACION, ESTUDIO_COMPLETO],
+        ['la cabina contra el completo', ESTUDIO_COMPLETO, CABINA_AUDIO],
+        ['el estudio contra el completo', ESTUDIO_COMPLETO, ESTUDIO_GRABACION],
+      ] as const)('I-33b · CA-06.3: %s → 409 de CA-06 (capa amable), sin escribir', async (_caso, primero, segundo) => {
+        await crear(primero);
+
+        const error = await capturar(crear(segundo, '27', '09:30', '10:30'));
+
+        expect(esConflictoCa06(error)).toBe(true);
+        expect(await prisma.solicitud.count()).toBe(1);
+      });
+
+      it('I-33c · CARRERA: 5 en la cabina y 5 en el estudio a la vez en la misma franja → exactamente 1 por sub-espacio', async () => {
+        const pedidos = [
+          ...Array.from({ length: 5 }, () => crear(CABINA_AUDIO)),
+          ...Array.from({ length: 5 }, () => crear(ESTUDIO_GRABACION)),
+        ];
+
+        const { exitos, rechazos } = separar(await Promise.allSettled(pedidos));
+
+        expect(exitos).toBe(2);
+        expect(rechazos).toHaveLength(8);
+        expect(rechazos.every(esConflictoCa06)).toBe(true);
+        expect(await ocupacion()).toEqual({ CABINA_AUDIO: 1, ESTUDIO_GRABACION: 1, ESTUDIO_COMPLETO: 0 });
+        console.info(`I-33c · carreras resueltas por el motor (23P01): ${avisos.mock.calls.length} de 8`);
+      });
+
+      it('I-33d · CARRERA: el completo contra la cabina a la vez, en 5 franjas → en cada franja gana exactamente uno', async () => {
+        const franjas = ['08:00', '09:00', '10:00', '14:00', '15:00'] as const;
+        const finDe = (desde: string) => `${String(Number(desde.slice(0, 2)) + 1).padStart(2, '0')}:00`;
+
+        const resultados = await Promise.all(
+          franjas.map(async (desde) =>
+            separar(await Promise.allSettled([crear(ESTUDIO_COMPLETO, '28', desde, finDe(desde)), crear(CABINA_AUDIO, '28', desde, finDe(desde))])),
+          ),
+        );
+
+        for (const { exitos, rechazos } of resultados) {
+          expect(exitos).toBe(1);
+          expect(rechazos.every(esConflictoCa06)).toBe(true);
+        }
+        expect(await prisma.solicitud.count()).toBe(franjas.length);
+        console.info(`I-33d · carreras resueltas por el motor (23P01): ${avisos.mock.calls.length} de ${franjas.length}`);
+      });
+    });
+
+    describe('I-34 · T1, T5 y T7 con sub-espacio (ADR-007 SE5 a SE7, P-1)', () => {
+      /** Inserta directo una solicitud del solicitante (sin CA-04), en el estado y lugar pedidos. */
+      const sembrar = (radicado: string, estado: string, subEspacio: SubEspacio, dia = '27', desde = '09:00', hasta = '10:00') =>
+        prisma.solicitud.create({
+          data: {
+            radicado,
+            id_usuario: SOLICITANTE.id,
+            categoria: CategoriaSolicitud.PODCAST,
+            proposito: 'Sembrada para la batería de sub-espacios',
+            fecha_inicio: bogota(dia, desde),
+            fecha_fin: bogota(dia, hasta),
+            estado,
+            sub_espacio: subEspacio,
+          },
+        });
+
+      const proponer = (radicado: string, subEspacio: SubEspacio, staff = STAFF, dia = '27', desde = '09:00', hasta = '10:00') =>
+        service.proponerReprogramacion(
+          radicado,
+          { fecha_inicio: bogota(dia, desde), fecha_fin: bogota(dia, hasta), sub_espacio: subEspacio, motivo: MOTIVO },
+          staff,
+        );
+
+      const logsDe = (radicado: string) =>
+        prisma.log_Auditoria.findMany({
+          where: { radicado_solicitud: radicado },
+          select: {
+            estado_nuevo: true,
+            sub_espacio_anterior: true,
+            sub_espacio_nuevo: true,
+            fecha_inicio_anterior: true,
+            fecha_fin_anterior: true,
+          },
+        });
+
+      it('I-34a · T1 con rescate (Q-B2) y ajuste de lugar (Q-A4): fila y log pasan los CHECK reales', async () => {
+        // Vencida: 1-oct, antes de AHORA (5-oct). Se rescata al 28-oct, en el estudio.
+        await sembrar('EC-INT-T1', 'Recibido', ESTUDIO_COMPLETO, '01');
+
+        await service.update(
+          'EC-INT-T1',
+          { estado: 'Validado', sub_espacio: ESTUDIO_GRABACION, fecha_inicio: bogota('28', '09:00'), fecha_fin: bogota('28', '10:00') },
+          STAFF,
+        );
+
+        expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-T1' } })).toMatchObject({
+          estado: 'Validado',
+          sub_espacio: ESTUDIO_GRABACION,
+          fecha_inicio: bogota('28', '09:00'),
+        });
+        expect(await logsDe('EC-INT-T1')).toEqual([
+          {
+            estado_nuevo: 'Validado',
+            sub_espacio_anterior: ESTUDIO_COMPLETO,
+            sub_espacio_nuevo: ESTUDIO_GRABACION,
+            fecha_inicio_anterior: bogota('01', '09:00'),
+            fecha_fin_anterior: bogota('01', '10:00'),
+          },
+        ]);
+      });
+
+      it('I-34b · T5 → T7 cambiando SOLO el lugar: la fila se muda, la propuesta se limpia y el log de T7 no lleva franja anterior', async () => {
+        await sembrar('EC-INT-T7', 'Validado', CABINA_AUDIO);
+
+        await proponer('EC-INT-T7', ESTUDIO_GRABACION);
+        expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-T7' } })).toMatchObject({
+          estado: 'Pendiente de Reprogramación',
+          sub_espacio: CABINA_AUDIO, // K6: el lugar oficial no se mueve hasta aceptar
+          sub_espacio_propuesto: ESTUDIO_GRABACION,
+        });
+
+        await service.aceptarReprogramacion('EC-INT-T7', SOLICITANTE);
+
+        expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-T7' } })).toMatchObject({
+          estado: 'Validado',
+          sub_espacio: ESTUDIO_GRABACION,
+          sub_espacio_propuesto: null,
+          fecha_propuesta_inicio: null,
+          fecha_inicio: bogota('27', '09:00'),
+        });
+        // Por destino, no por fecha: dos logs seguidos pueden compartir el mismo instante.
+        const logs = await logsDe('EC-INT-T7');
+        expect(logs).toHaveLength(2);
+        expect(logs).toEqual(
+          expect.arrayContaining([
+            { estado_nuevo: 'Pendiente de Reprogramación', sub_espacio_anterior: null, sub_espacio_nuevo: null, fecha_inicio_anterior: null, fecha_fin_anterior: null },
+            { estado_nuevo: 'Validado', sub_espacio_anterior: CABINA_AUDIO, sub_espacio_nuevo: ESTUDIO_GRABACION, fecha_inicio_anterior: null, fecha_fin_anterior: null },
+          ]),
+        );
+      });
+
+      it('I-34c · CARRERA T7 contra una reserva nueva en el lugar PROPUESTO (D3: la propuesta no se reserva) → gana exactamente una', async () => {
+        await sembrar('EC-INT-T7', 'Validado', CABINA_AUDIO);
+        await proponer('EC-INT-T7', ESTUDIO_GRABACION);
+
+        const { exitos, rechazos } = separar(
+          await Promise.allSettled([service.aceptarReprogramacion('EC-INT-T7', SOLICITANTE), crear(ESTUDIO_GRABACION)]),
+        );
+
+        expect(exitos).toBe(1);
+        expect(rechazos).toHaveLength(1);
+        expect(esConflictoCa06(rechazos[0])).toBe(true);
+        // Nunca dos reservas activas en el estudio a la misma hora, gane quien gane.
+        expect((await ocupacion()).ESTUDIO_GRABACION).toBe(1);
+        const fila = await prisma.solicitud.findUniqueOrThrow({ where: { radicado: 'EC-INT-T7' } });
+        if (fila.estado === 'Validado') {
+          // Ganó T7: se mudó al estudio y su log registra el cambio.
+          expect(fila).toMatchObject({ sub_espacio: ESTUDIO_GRABACION, sub_espacio_propuesto: null });
+          expect(await prisma.log_Auditoria.count({ where: { radicado_solicitud: 'EC-INT-T7' } })).toBe(2);
+        } else {
+          // Ganó la reserva nueva: la propuesta sigue intacta y T7 no dejó log (rollback).
+          expect(fila).toMatchObject({ estado: 'Pendiente de Reprogramación', sub_espacio: CABINA_AUDIO, sub_espacio_propuesto: ESTUDIO_GRABACION });
+          expect(await prisma.log_Auditoria.count({ where: { radicado_solicitud: 'EC-INT-T7' } })).toBe(1);
+        }
+      });
+
+      it('I-34d · CARRERA T5: dos Staff proponen lugares distintos a la vez → una sola propuesta y un solo log, coherentes', async () => {
+        await sembrar('EC-INT-T5', 'Validado', ESTUDIO_COMPLETO);
+
+        const { exitos, rechazos } = separar(
+          await Promise.allSettled([proponer('EC-INT-T5', CABINA_AUDIO, STAFF), proponer('EC-INT-T5', ESTUDIO_GRABACION, STAFF_B)]),
+        );
+
+        expect(exitos).toBe(1);
+        expect(rechazos).toHaveLength(1);
+        expect(rechazos[0]).toBeInstanceOf(ConflictException); // compare-and-set o "ya hay una propuesta"
+        const fila = await prisma.solicitud.findUniqueOrThrow({ where: { radicado: 'EC-INT-T5' } });
+        const logs = await prisma.log_Auditoria.findMany({ where: { radicado_solicitud: 'EC-INT-T5' } });
+        expect(fila.estado).toBe('Pendiente de Reprogramación');
+        expect(logs).toHaveLength(1);
+        // La propuesta guardada es la del Staff que dejó el log: ninguna escritura se pisó.
+        const ganador = logs[0]?.modificado_por === STAFF ? CABINA_AUDIO : ESTUDIO_GRABACION;
+        expect(fila.sub_espacio_propuesto).toBe(ganador);
+      });
+
+      it('I-34e · CARRERA T1: dos Staff validan a la vez con lugares distintos → gana uno y el log describe exactamente su ajuste', async () => {
+        await sembrar('EC-INT-T1', 'Recibido', ESTUDIO_COMPLETO);
+
+        const { exitos, rechazos } = separar(
+          await Promise.allSettled([
+            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: CABINA_AUDIO }, STAFF),
+            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: ESTUDIO_GRABACION }, STAFF_B),
+          ]),
+        );
+
+        expect(exitos).toBe(1);
+        expect(rechazos[0]).toBeInstanceOf(ConflictException);
+        const fila = await prisma.solicitud.findUniqueOrThrow({ where: { radicado: 'EC-INT-T1' } });
+        expect(await logsDe('EC-INT-T1')).toEqual([
+          {
+            estado_nuevo: 'Validado',
+            sub_espacio_anterior: ESTUDIO_COMPLETO,
+            sub_espacio_nuevo: fila.sub_espacio,
+            fecha_inicio_anterior: null,
+            fecha_fin_anterior: null,
+          },
+        ]);
+      });
     });
   });
 });
