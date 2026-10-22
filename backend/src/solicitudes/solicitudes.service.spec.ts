@@ -13,6 +13,8 @@ import {
   MENSAJE_CANCELAR_EN_PRODUCCION,
   MENSAJE_FRANJA_VENCIDA,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
+  MENSAJE_NO_ATENDIDA_FRANJA_FUTURA,
+  MENSAJE_NO_ATENDIDA_SIN_FECHAS,
   MENSAJE_PROPUESTA_SIN_CAMBIOS,
   MENSAJE_PROPUESTA_YA_PENDIENTE,
   MENSAJE_REPROGRAMACION_PROPUESTA,
@@ -842,6 +844,101 @@ describe('SolicitudesService', () => {
       );
       expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({ where: { radicado: RADICADO } });
       expect(resultado.solicitud).toBe(releida);
+    });
+
+    // ── Fase 7 · 7A.2 · T10 "No atendida" por el PATCH del tablero (ADR-007 NA1 a NA3) ──
+
+    /** Guardada con la franja del 1 de octubre, 9:00–10:00: ya pasó respecto de AHORA (5 de octubre). */
+    const vencida = (cambios: Partial<Solicitud> = {}): Solicitud =>
+      guardada({
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        ...cambios,
+      });
+
+    it('U-33 · T10: una vencida en Recibido se cierra como "No atendida", con CAS sobre lo validado y log sin motivo', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      await actualizar({ estado: 'No atendida' });
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          estado: 'Recibido',
+          fecha_inicio: vencida().fecha_inicio,
+          fecha_fin: vencida().fecha_fin,
+        },
+        data: { estado: 'No atendida' },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'No atendida',
+          modificado_por: 'uuid-staff', // Zero Trust: del JWT, nunca del cuerpo
+          motivo_rechazo: undefined,
+        },
+      });
+    });
+
+    it('U-34 · T10 frontera: una franja que comienza EXACTAMENTE ahora ya cuenta como iniciada (mismo criterio de D7)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({ fecha_inicio: AHORA, fecha_fin: new Date(AHORA.getTime() + 60 * 60 * 1000) }),
+      );
+
+      await actualizar({ estado: 'No atendida' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('U-35 · T10 con la franja por delante → 409 propio, sin escribir', async () => {
+      // guardada(): martes 27 de octubre, posterior a AHORA.
+      const error = await rechazo({ estado: 'No atendida' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_NO_ATENDIDA_FRANJA_FUTURA);
+      sinEscrituras();
+    });
+
+    it('U-36 · T10 con fechas nuevas → 400 propio, sin consultar CA-06 ni escribir (aunque la guardada esté vencida)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_NO_ATENDIDA_SIN_FECHAS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('U-37 · T10 con motivo_rechazo → 400 de E5 (el cierre no lleva motivo libre: NA3)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', motivo_rechazo: 'Motivo suficientemente detallado' });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+    });
+
+    it('U-38 · T10 solo sale de Recibido: desde Validado (aunque esté vencida) → 409 TRANSICION_NO_DEFINIDA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida({ estado: 'Validado' }));
+
+      const error = await rechazo({ estado: 'No atendida' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it('U-39 · "No atendida" es final (D1): no se reactiva a Validado → 409 ESTADO_FINAL', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida({ estado: 'No atendida' }));
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+      sinEscrituras();
     });
   });
 

@@ -17,6 +17,7 @@ import {
 } from './componentes/AccionesStaff'
 import { formatearFranja } from './fechas/bogota'
 import { TEXTO_FRANJA_INICIADA } from './presentacion/acciones-staff'
+import { MENSAJE_NO_ATENDIDA } from './presentacion/linea-de-vida'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
 import { DETALLE_STAFF, SOLICITUD, apiFalsa } from './test/fixtures-api'
@@ -74,7 +75,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual(botones)
   })
 
-  it.each<Estado>(['Pendiente de Reprogramación', 'Entregado', 'Rechazado'])('en "%s" no hay resolución', async (estado) => {
+  it.each<Estado>(['Pendiente de Reprogramación', 'Entregado', 'Rechazado', 'No atendida'])('en "%s" no hay resolución', async (estado) => {
     mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))) })
     await esperarDetalle()
 
@@ -312,6 +313,36 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       estado: 'Rechazado',
       motivo_rechazo: 'La franja venció sin respuesta del Estudio',
     })
+  })
+
+  it('Fase 7 · T10: con la franja ya iniciada, la resolución ofrece además "Cerrar como no atendida" (sin quitar el rechazo)', async () => {
+    vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
+
+    const resolucion = await screen.findByRole('region', { name: 'Resolución' })
+    expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Validar',
+      'Rechazar',
+      'Cerrar como no atendida',
+    ])
+  })
+
+  it('Fase 7 · T10: cerrar como no atendida envía solo el destino por el PATCH (sin motivo), avisa lo que verá el solicitante y anuncia el éxito', async () => {
+    vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+    const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+    await esperarDetalle()
+
+    const dialogo = abrir('Cerrar como no atendida', 'Cerrar como no atendida')
+    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"No atendida"/)
+    expect(dialogo).toHaveAccessibleDescription(expect.stringContaining(MENSAJE_NO_ATENDIDA))
+    // Sin formulario: nada que completar, "Confirmar" está disponible de entrada.
+    const confirmar = within(dialogo).getByRole('button', { name: 'Sí, cerrar como no atendida' })
+    expect(confirmar).toBeEnabled()
+    fireEvent.click(confirmar)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "No atendida".')
+    expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'No atendida' })
   })
 
   it('Fase 7 · B3: al rechazar, "Confirmar" bloqueado explica por qué (visible y como descripción accesible) y la razón se va con un motivo válido', async () => {

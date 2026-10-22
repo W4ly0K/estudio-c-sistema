@@ -3,8 +3,10 @@ import { ESTADOS, type Estado } from '../api/maquina-estados'
 import type { DestinoDelTablero } from '../api/solicitudes'
 import { FRANJA_VACIA, type ValoresFranja } from './franja'
 import {
+  TEXTO_FRANJA_INICIADA,
   TEXTO_RAZON_FRANJA_INCOMPLETA,
   accionesDelStaff,
+  accionesVisiblesDelStaff,
   franjaYaInicio,
   porElTablero,
   razonBloqueoDelStaff,
@@ -13,6 +15,7 @@ import {
   type AccionDelStaff,
   type DestinoDelTableroStaff,
 } from './acciones-staff'
+import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 
 const ACCIONES_STAFF: readonly AccionDelStaff[] = [
   'APROBAR',
@@ -20,25 +23,27 @@ const ACCIONES_STAFF: readonly AccionDelStaff[] = [
   'INICIAR_PRODUCCION',
   'FINALIZAR',
   'PROPONER_REPROGRAMACION',
+  'CERRAR_NO_ATENDIDA',
 ]
 
 describe('accionesDelStaff (6.5.3 · DA1)', () => {
   it.each<[Estado, readonly AccionDelStaff[]]>([
-    ['Recibido', ['APROBAR', 'RECHAZAR']],
+    ['Recibido', ['APROBAR', 'RECHAZAR', 'CERRAR_NO_ATENDIDA']],
     ['Validado', ['INICIAR_PRODUCCION', 'PROPONER_REPROGRAMACION']],
     ['En Producción', ['FINALIZAR']],
     ['Pendiente de Reprogramación', []],
     ['Entregado', []],
     ['Rechazado', []],
     ['Cancelado por el Usuario', []],
+    ['No atendida', []],
   ])('en "%s" ofrece %j', (estado, esperadas) => {
     expect(accionesDelStaff(estado).map((t) => t.accion)).toEqual(esperadas)
   })
 
-  it('ofrece las cinco del Staff y ninguna del solicitante; solo T5 sale del canal del PATCH (DR2)', () => {
+  it('ofrece las seis del Staff y ninguna del solicitante; solo T5 sale del canal del PATCH (DR2)', () => {
     const todas = ESTADOS.flatMap((estado) => accionesDelStaff(estado))
     expect(todas.every((t) => t.rol === 'STAFF')).toBe(true)
-    expect(new Set(todas.map((t) => t.id))).toEqual(new Set(['T1', 'T2', 'T4', 'T5', 'T9']))
+    expect(new Set(todas.map((t) => t.id))).toEqual(new Set(['T1', 'T2', 'T4', 'T5', 'T9', 'T10']))
     expect(todas.filter((t) => !porElTablero(t)).map((t) => t.id)).toEqual(['T5'])
   })
 
@@ -47,17 +52,59 @@ describe('accionesDelStaff (6.5.3 · DA1)', () => {
   })
 })
 
+describe('accionesVisiblesDelStaff (Fase 7 · T10)', () => {
+  const ahora = new Date('2026-10-20T14:00:00.000Z')
+  const visibles = (estado: Estado, inicioIso: string) =>
+    accionesVisiblesDelStaff(estado, inicioIso, ahora).map((t) => t.accion)
+
+  it('con la franja por delante no ofrece "Cerrar como no atendida" (el servidor la rechazaría)', () => {
+    expect(visibles('Recibido', '2026-10-20T14:00:01.000Z')).toEqual(['APROBAR', 'RECHAZAR'])
+  })
+
+  it('con la franja iniciada (o en el instante exacto, como el servidor) la ofrece, sin quitar las otras', () => {
+    expect(visibles('Recibido', '2026-10-20T14:00:00.000Z')).toEqual(['APROBAR', 'RECHAZAR', 'CERRAR_NO_ATENDIDA'])
+    expect(visibles('Recibido', '2026-10-01T09:00:00-05:00')).toEqual(['APROBAR', 'RECHAZAR', 'CERRAR_NO_ATENDIDA'])
+  })
+
+  it('con una fecha ilegible no la ofrece (no se inventa un vencimiento)', () => {
+    expect(visibles('Recibido', 'no-es-una-fecha')).toEqual(['APROBAR', 'RECHAZAR'])
+  })
+
+  it('solo filtra T10: en los demás estados es idéntica a accionesDelStaff', () => {
+    for (const estado of ESTADOS.filter((e) => e !== 'Recibido')) {
+      expect(visibles(estado, '2026-10-01T09:00:00-05:00')).toEqual(accionesDelStaff(estado).map((t) => t.accion))
+    }
+  })
+
+  it('el aviso DA4 ya nombra la salida nueva, además del rechazo', () => {
+    expect(TEXTO_FRANJA_INICIADA).toMatch(/"No atendida"/)
+    expect(TEXTO_FRANJA_INICIADA).toMatch(/rechazarla con un motivo/)
+  })
+})
+
 describe('textosDelStaff: textos honestos', () => {
   const textos = ACCIONES_STAFF.map((accion) => ({ accion, ...textosDelStaff(accion, 'EC-7', '27 oct · 09:00 – 10:00') }))
 
-  it('rechazar, finalizar y proponer son irreversibles, y cada una dice por qué', () => {
+  it('rechazar, finalizar, proponer y cerrar como no atendida son irreversibles, y cada una dice por qué', () => {
     expect(textos.filter((t) => t.irreversible).map((t) => t.accion)).toEqual([
       'RECHAZAR',
       'FINALIZAR',
       'PROPONER_REPROGRAMACION',
+      'CERRAR_NO_ATENDIDA',
     ])
     expect(textosDelStaff('RECHAZAR', 'EC-7', 'F').descripcion).toMatch(/estado final/)
     expect(textosDelStaff('FINALIZAR', 'EC-7', 'F').descripcion).toMatch(/estado final/)
+    expect(textosDelStaff('CERRAR_NO_ATENDIDA', 'EC-7', 'F').descripcion).toMatch(/estado final/)
+  })
+
+  it('cerrar como no atendida (T10) muestra la franja y el mensaje exacto que verá el solicitante', () => {
+    const { boton, descripcion } = textosDelStaff('CERRAR_NO_ATENDIDA', 'EC-7', 'FRANJA')
+    expect(boton).toBe('Cerrar como no atendida')
+    expect(descripcion).toContain('"No atendida"')
+    expect(descripcion).toContain('FRANJA')
+    expect(descripcion).toContain(MENSAJE_NO_ATENDIDA)
+    // 7A.2: la franja aún no se libera en el motor (llega con 7A.3): el texto no lo promete.
+    expect(descripcion).not.toMatch(/queda libre/)
   })
 
   it('proponer (T5) dice lo que el servidor hará y lo que NO hará (README §12.2 · ADR-005 §3)', () => {
@@ -93,7 +140,7 @@ describe('razonBloqueoDelStaff (Fase 7 · B3)', () => {
   const MOTIVO = 'Mantenimiento del set de grabación'
   const PIDE_MOTIVO = 'Para confirmar, escribe un motivo de al menos 10 caracteres.'
 
-  it.each<AccionDelStaff>(['APROBAR', 'INICIAR_PRODUCCION', 'FINALIZAR'])('%s no tiene formulario: nada la bloquea', (accion) => {
+  it.each<AccionDelStaff>(['APROBAR', 'INICIAR_PRODUCCION', 'FINALIZAR', 'CERRAR_NO_ATENDIDA'])('%s no tiene formulario: nada la bloquea', (accion) => {
     expect(razonBloqueoDelStaff(accion, '', FRANJA_VACIA)).toBeUndefined()
   })
 

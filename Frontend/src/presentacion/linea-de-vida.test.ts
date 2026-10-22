@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LogSolicitante } from '../api/esquemas'
 import { ROLES, TRANSICIONES, type Estado } from '../api/maquina-estados'
-import { ACTORES, actorDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
+import { ACTORES, MENSAJE_NO_ATENDIDA, actorDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
 
 /** Un log del contrato; `dia` arma la fecha (octubre de 2026, 15:00 UTC = 10:00 Bogotá). */
 function log(desde: Estado, hacia: Estado, dia: number, motivos: Partial<LogSolicitante> = {}): LogSolicitante {
@@ -56,6 +56,16 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
     expect(situaciones(linea)).toEqual(['completado', 'omitido', 'omitido', 'omitido'])
     expect(linea.desvio).toBe('Rechazado')
     expect(linea.eventos[0]?.motivo).toEqual({ etiqueta: 'Motivo del rechazo', texto: 'La cabina está en mantenimiento.' })
+  })
+
+  it('Fase 7 · no atendida (T10): final fuera del camino, actor el Staff y el mensaje fijo del Estudio C', () => {
+    const linea = lineaDeVida({ estado: 'No atendida', logs: [log('Recibido', 'No atendida', 16)] }, 'SOLICITANTE')
+
+    expect(situaciones(linea)).toEqual(['completado', 'omitido', 'omitido', 'omitido'])
+    expect(linea.desvio).toBe('No atendida')
+    expect(linea.eventos[0]?.actor).toBe('Staff Estudio C')
+    expect(linea.eventos[0]?.motivo).toEqual({ etiqueta: 'Mensaje del Estudio C', texto: MENSAJE_NO_ATENDIDA })
+    expect(MENSAJE_NO_ATENDIDA).toBe('La solicitud no pudo ser procesada a tiempo por el Estudio C.')
   })
 
   it('cancelada desde Validado (T6): llegó hasta Validado y el actor es el solicitante', () => {
@@ -149,6 +159,15 @@ describe('lineaDeVida · perspectiva del Staff (6.5.2 · DD2)', () => {
     expect(delStaff.pasos).toEqual(delSolicitante.pasos)
     expect(delStaff.desvio).toBe(delSolicitante.desvio)
     expect(hechos(delStaff)).toEqual(hechos(delSolicitante))
+  })
+
+  it('Fase 7 · T10: el Staff ve el mismo mensaje, rotulado como lo que verá el solicitante', () => {
+    const cierre = { estado: 'No atendida' as const, logs: [log('Recibido', 'No atendida', 16)] }
+
+    expect(lineaDeVida(cierre, 'STAFF').eventos[0]).toMatchObject({
+      actor: 'Staff',
+      motivo: { etiqueta: 'Mensaje que ve el solicitante', texto: MENSAJE_NO_ATENDIDA },
+    })
   })
 
   it('la etiqueta del motivo de T5 depende de quién mira; la del rechazo, no', () => {

@@ -67,6 +67,17 @@ export const MENSAJE_FECHAS_SOLO_EN_RECIBIDO =
 export const MENSAJE_FRANJA_VENCIDA =
   'No se puede aprobar una solicitud cuya franja ya inició o pasó. Reprográmela antes de aprobarla.';
 
+/**
+ * Fase 7 · ADR-007 NA2 · T10: D7 invertida. "No atendida" registra que la franja pasó sin
+ * respuesta; con la franja por delante, la salida es validarla o rechazarla con un motivo.
+ */
+export const MENSAJE_NO_ATENDIDA_FRANJA_FUTURA =
+  'Solo se puede cerrar como "No atendida" una solicitud cuya franja ya inició o pasó. Si no se va a atender, recházela con un motivo.';
+
+/** Fase 7 · NA2 · T10: se cierra la franja REGISTRADA; moverla al mismo tiempo no tiene sentido. */
+export const MENSAJE_NO_ATENDIDA_SIN_FECHAS =
+  'Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.';
+
 /** E5: el log nunca guarda motivos de rechazo huérfanos. */
 export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
   'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
@@ -159,6 +170,8 @@ const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
   'RECHAZAR',
   'INICIAR_PRODUCCION',
   'FINALIZAR',
+  // Fase 7 · T10: sin cuerpo propio (solo el destino), por eso viaja por el PATCH como T2 (NA2).
+  'CERRAR_NO_ATENDIDA',
 ]);
 
 @Injectable()
@@ -368,6 +381,12 @@ export class SolicitudesService {
     // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
     const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal) : undefined;
 
+    // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
+    // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
+    if (accion === 'CERRAR_NO_ATENDIDA' && cambianFechas) {
+      throw new BadRequestException(MENSAJE_NO_ATENDIDA_SIN_FECHAS);
+    }
+
     // --- 3. D2: la franja se edita solo mientras la solicitud sigue en "Recibido" (estado
     // GUARDADO). Permite el rescate atómico: fechas nuevas + aprobación en un solo PATCH.
     if (cambianFechas && existente.estado !== ESTADO_INICIAL) {
@@ -390,6 +409,12 @@ export class SolicitudesService {
     // nuevas, evaluarHorario ya exigió el futuro; sin ellas, esta es la única defensa.
     if (accion === 'APROBAR' && franja.inicio.getTime() <= ahora.getTime()) {
       throw new ConflictException(MENSAJE_FRANJA_VENCIDA);
+    }
+
+    // --- 5b. T10 (Fase 7 · NA2): D7 invertida, con el MISMO criterio de frontera: un inicio
+    // igual a "ahora" ya cuenta como iniciado. Solo se cierra como no atendida lo que ya venció.
+    if (accion === 'CERRAR_NO_ATENDIDA' && franja.inicio.getTime() > ahora.getTime()) {
+      throw new ConflictException(MENSAJE_NO_ATENDIDA_FRANJA_FUTURA);
     }
 
     // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas se

@@ -33,12 +33,12 @@ export interface CuerpoCrearSolicitud {
 }
 
 /**
- * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4 y T9). Se DERIVAN de la
+ * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9 y, desde la Fase 7, T10). Se DERIVAN de la
  * tabla de la máquina: "Pendiente de Reprogramación" (T5) no está y no compila.
  */
 type TransicionDelTablero = Extract<
   (typeof TRANSICIONES)[number],
-  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' }
+  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' | 'CERRAR_NO_ATENDIDA' }
 >
 export type DestinoDelTablero = TransicionDelTablero['destino']
 

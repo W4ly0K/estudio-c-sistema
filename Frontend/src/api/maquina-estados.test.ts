@@ -13,16 +13,17 @@ import {
 
 /**
  * Oráculo escrito a mano a partir del diagrama (ADR-005 §2.1): qué botones ve cada
- * rol en cada estado. Cubre las 14 combinaciones de estado y rol.
+ * rol en cada estado. Cubre las 16 combinaciones de estado y rol.
  */
 const ESPERADO: Record<Estado, Record<Rol, readonly IdTransicion[]>> = {
-  Recibido: { STAFF: ['T1', 'T2'], SOLICITANTE: ['T3'] },
+  Recibido: { STAFF: ['T1', 'T2', 'T10'], SOLICITANTE: ['T3'] },
   Validado: { STAFF: ['T4', 'T5'], SOLICITANTE: ['T6'] },
   'Pendiente de Reprogramación': { STAFF: [], SOLICITANTE: ['T7', 'T8'] },
   'En Producción': { STAFF: ['T9'], SOLICITANTE: [] },
   Entregado: { STAFF: [], SOLICITANTE: [] },
   Rechazado: { STAFF: [], SOLICITANTE: [] },
   'Cancelado por el Usuario': { STAFF: [], SOLICITANTE: [] },
+  'No atendida': { STAFF: [], SOLICITANTE: [] },
 }
 
 const combinaciones = ESTADOS.flatMap((estado) => ROLES.map((rol) => [estado, rol] as const))
@@ -32,8 +33,8 @@ describe('Máquina de estados de la vista (copia de ADR-005)', () => {
     expect(accionesDisponibles(estado, rol).map((t) => t.id)).toEqual(ESPERADO[estado][rol])
   })
 
-  it('los estados finales se derivan de la tabla: Entregado, Rechazado y Cancelado por el Usuario', () => {
-    expect([...ESTADOS_FINALES].sort()).toEqual(['Cancelado por el Usuario', 'Entregado', 'Rechazado'])
+  it('los estados finales se derivan de la tabla: Entregado, Rechazado, Cancelado por el Usuario y No atendida', () => {
+    expect([...ESTADOS_FINALES].sort()).toEqual(['Cancelado por el Usuario', 'Entregado', 'No atendida', 'Rechazado'])
     expect(esEstadoFinal('Entregado')).toBe(true)
     expect(esEstadoFinal('Validado')).toBe(false)
   })

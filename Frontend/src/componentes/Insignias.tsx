@@ -13,6 +13,9 @@ const ESTILO: Readonly<Record<Estado, { readonly clases: string; readonly simbol
   Rechazado: { clases: 'bg-white border border-dashed border-gray-900 text-gray-900', simbolo: '✕' },
   'Cancelado por el Usuario': { clases: 'bg-gray-200 border border-gray-200 text-gray-500', simbolo: '' },
   'Pendiente de Reprogramación': { clases: 'bg-white border border-dotted border-gray-500 text-gray-700', simbolo: '↻' },
+  // Fase 7: final como Rechazado, pero sin decisión del Estudio sobre el contenido. Borde
+  // discontinuo GRUESO y gris (Rechazado: fino y negro) y un círculo vacío, no la ✕ del rechazo.
+  'No atendida': { clases: 'bg-gray-100 border-2 border-dashed border-gray-400 text-gray-600', simbolo: '○' },
 }
 
 export function InsigniaEstado({ estado }: { estado: Estado }) {

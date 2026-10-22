@@ -7,7 +7,7 @@ import type { CambiosTablero } from '../api/solicitudes'
 import { formatearFranja } from '../fechas/bogota'
 import {
   TEXTO_FRANJA_INICIADA,
-  accionesDelStaff,
+  accionesVisiblesDelStaff,
   franjaYaInicio,
   porElTablero,
   razonBloqueoDelStaff,
@@ -63,8 +63,8 @@ interface AccionesStaffProps {
 }
 
 /**
- * Resolución del Staff en C3: T1, T2, T4 y T9 por el PATCH del tablero (6.5.3) y T5 por su
- * propia ruta, con franja y motivo (6.5.4 · DR2). Mismo patrón probado que
+ * Resolución del Staff en C3: T1, T2, T4, T9 y T10 (Fase 7) por el PATCH del tablero (6.5.3) y
+ * T5 por su propia ruta, con franja y motivo (6.5.4 · DR2). Mismo patrón probado que
  * AccionesSolicitud: candado síncrono, botones deshabilitados en vuelo y el diálogo FUERA
  * de la lista de botones (nunca se desmonta abierto).
  */
@@ -80,10 +80,12 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const candado = useRef(false)
 
-  const acciones = accionesDelStaff(detalle.estado)
+  // Un único "ahora" por render: la advertencia DA4 y la oferta de T10 usan el mismo instante.
+  const ahora = new Date()
+  const acciones = accionesVisiblesDelStaff(detalle.estado, detalle.fecha_inicio, ahora)
   const franjaActual = formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)
   // DA4: se advierte sin bloquear; el reloj del servidor es el que decide (D7).
-  const advertirFranja = acciones.some((t) => t.accion === 'APROBAR') && franjaYaInicio(detalle.fecha_inicio, new Date())
+  const advertirFranja = acciones.some((t) => t.accion === 'APROBAR') && franjaYaInicio(detalle.fecha_inicio, ahora)
   const accion = seleccionada?.accion ?? null
 
   // DR5 · "Confirmar" se bloquea mientras el formulario de la acción no esté completo.

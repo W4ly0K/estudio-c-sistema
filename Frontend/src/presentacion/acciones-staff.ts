@@ -1,11 +1,12 @@
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
 import type { TextosAccion } from './acciones-solicitante'
 import { franjaCompleta, type ValoresFranja } from './franja'
+import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION, evaluarMotivo, razonMotivoInvalido } from './motivo'
 
 /**
  * Acciones del Staff en el detalle C3 (6.5.3 · DA1 y 6.5.4 · DR2). Se DERIVAN de la tabla
- * de la máquina, como las del solicitante. Dos canales: T1, T2, T4 y T9 viajan por el
+ * de la máquina, como las del solicitante. Dos canales: T1, T2, T4, T9 y T10 viajan por el
  * PATCH del tablero (E1); T5 tiene su propia ruta, con franja y motivo. Mostrar un botón
  * no autoriza nada: el servidor vuelve a decidir con el token.
  */
@@ -18,6 +19,18 @@ export type DestinoDelTableroStaff = TransicionDelTableroStaff['destino']
 
 export function accionesDelStaff(estado: Estado): readonly TransicionStaff[] {
   return TRANSICIONES.filter((t): t is TransicionStaff => t.rol === 'STAFF' && t.origen === estado)
+}
+
+/**
+ * Fase 7 · T10: lo que la sección "Resolución" OFRECE. Igual que accionesDelStaff, salvo que
+ * "Cerrar como no atendida" solo aparece con la franja ya iniciada según el reloj del cliente:
+ * con la franja por delante el servidor siempre la rechaza (409), así que ofrecerla sería
+ * invitar a un error. Si el reloj del cliente difiere del servidor, decide el servidor.
+ */
+export function accionesVisiblesDelStaff(estado: Estado, inicioIso: string, ahora: Date): readonly TransicionStaff[] {
+  return accionesDelStaff(estado).filter(
+    (t) => t.accion !== 'CERRAR_NO_ATENDIDA' || franjaYaInicio(inicioIso, ahora),
+  )
 }
 
 /** El canal de la transición: todas por el PATCH del tablero, salvo T5 (DR2). */
@@ -64,9 +77,21 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
         confirmar: 'Sí, marcar como entregada',
         irreversible: true,
       }
+    case 'CERRAR_NO_ATENDIDA':
+      // Fase 7 · T10: en este paso la franja todavía no se libera (llega con la migración
+      // 7A.3), y como ya pasó no estorba a nadie: el texto no promete que "queda libre".
+      return {
+        boton: 'Cerrar como no atendida',
+        titulo: 'Cerrar como no atendida',
+        descripcion: `El radicado ${radicado} pasa a "No atendida", un estado final: no se puede deshacer. Su franja (${franja}) ya inició sin que la solicitud se atendiera. El solicitante verá en su historial: "${MENSAJE_NO_ATENDIDA}"`,
+        confirmar: 'Sí, cerrar como no atendida',
+        irreversible: true,
+      }
     case 'PROPONER_REPROGRAMACION':
       // README §12.2 y ADR-005 §3: la franja oficial sigue ocupada, la propuesta no se
-      // reserva, no existe T10 para retirarla y rechazarla (T8) cancela la solicitud.
+      // reserva, no existe una transición para retirarla (el "retiro de la propuesta" de
+      // ADR-005 §3 sigue pendiente; desde la Fase 7 el id T10 es "No atendida") y
+      // rechazarla (T8) cancela la solicitud.
       return {
         boton: 'Proponer reprogramación',
         titulo: 'Proponer una reprogramación',
@@ -100,6 +125,7 @@ export function razonBloqueoDelStaff(accion: AccionDelStaff, motivo: string, fra
     case 'APROBAR':
     case 'INICIAR_PRODUCCION':
     case 'FINALIZAR':
+    case 'CERRAR_NO_ATENDIDA':
       return undefined
     default: {
       const imposible: never = accion
@@ -119,7 +145,7 @@ export function textoExito(destino: DestinoDelStaff): string {
  * decide es el servidor.
  */
 export const TEXTO_FRANJA_INICIADA =
-  'La franja ya inició: el servidor no permite validarla. Si no se va a atender, puedes rechazarla con un motivo.'
+  'La franja ya inició: el servidor no permite validarla. Si no se va a atender, puedes cerrarla como "No atendida" o rechazarla con un motivo.'
 
 /** Igual que el servidor: un inicio igual a "ahora" ya cuenta como iniciado. Una fecha ilegible no advierte. */
 export function franjaYaInicio(inicioIso: string, ahora: Date): boolean {
