@@ -9,6 +9,7 @@ import {
   esViolacionDeTraslapeCa06,
   MENSAJE_CA06,
   RESTRICCION_CA06,
+  RESTRICCIONES_CA06_POR_SUBESPACIO,
 } from '../../src/solicitudes/errores/traslape-ca06';
 import { ESTADOS_QUE_LIBERAN_FRANJA } from '../../src/solicitudes/reglas/estados';
 import { RelojFijo } from '../utils/reloj-fijo';
@@ -233,5 +234,73 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
 
     expect(guardadas).toHaveLength(1);
     expect(detalles).toEqual([{ radicado_solicitud: guardadas[0].radicado }]);
+  });
+
+  /**
+   * Fase 7 · 7A.1 (ADR-007 · SE3, expand). La migración de los sub-espacios todavía no
+   * existe, pero el detector ya debe reconocer el 23P01 REAL que producirán sus dos
+   * restricciones. Dentro de una transacción interactiva se RENOMBRA la restricción
+   * global, se provoca la violación y la transacción se revierte entera: el DDL de
+   * PostgreSQL es transaccional, así que la base queda exactamente como estaba (I-30c).
+   * El nombre es la única diferencia con el mensaje que el motor producirá en 7A.2.
+   */
+  describe('I-30 · CANARIO Fase 7: el detector reconoce los nombres por sub-espacio (DDL revertido)', () => {
+    const datosDirectos = (
+      radicado: string,
+      desde: string,
+      hasta: string,
+    ): Prisma.SolicitudUncheckedCreateInput => ({
+      radicado,
+      id_usuario: USUARIO,
+      categoria: CategoriaSolicitud.VIDEO,
+      proposito: 'Canario de los nombres de la Fase 7',
+      fecha_inicio: bogota('27', desde),
+      fecha_fin: bogota('27', hasta),
+      estado: 'Recibido',
+    });
+
+    /** 23P01 real con la restricción renombrada a `nombre`; la transacción no confirma nada. */
+    const provocarCon = (nombre: string): Promise<unknown> =>
+      capturar(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `ALTER TABLE "Solicitud" RENAME CONSTRAINT "${RESTRICCION_CA06}" TO "${nombre}"`,
+          );
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-A', '09:00', '10:00') });
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-B', '09:30', '10:30') });
+        }),
+      );
+
+    it.each([...RESTRICCIONES_CA06_POR_SUBESPACIO])('I-30a · %s → reconocido como CA-06', async (nombre) => {
+      const error = await provocarCon(nombre);
+
+      expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+      // El mensaje real trae el nombre nuevo: el renombre sí ocurrió antes del 23P01.
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain('23P01');
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain(`${nombre}\\"`);
+      expect(esViolacionDeTraslapeCa06(error)).toBe(true);
+    });
+
+    it('I-30b · un nombre de la familia fuera de la lista (_v2) → NO es CA-06 (sin prefijo abierto)', async () => {
+      const error = await provocarCon(`${RESTRICCION_CA06}_v2`);
+
+      expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain('23P01');
+      expect(esViolacionDeTraslapeCa06(error)).toBe(false);
+    });
+
+    // La restricción global de hoy sigue reconociéndose (expand): lo vigila I-2 sin cambios.
+
+    it('I-30c · la transacción revirtió el DDL y los datos: la restricción global sigue instalada y la tabla vacía', async () => {
+      await provocarCon(RESTRICCIONES_CA06_POR_SUBESPACIO[0]);
+
+      const exclusiones = await prisma.$queryRaw<{ conname: string }[]>`
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = '"Solicitud"'::regclass AND contype = 'x'
+        ORDER BY conname`;
+
+      expect(exclusiones.map((r) => r.conname)).toEqual([RESTRICCION_CA06]);
+      expect(await prisma.solicitud.count()).toBe(0);
+    });
   });
 });
