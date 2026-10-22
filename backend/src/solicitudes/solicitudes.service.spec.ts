@@ -1289,9 +1289,11 @@ describe('SolicitudesService', () => {
     });
     /** K7 · Fase 6.1b: el DTO ya llega recortado y validado por el pipe. */
     const MOTIVO = 'Mantenimiento preventivo del set de grabación';
-    const franja = (inicio: string, fin: string): ProponerReprogramacionDto => ({
+    /** Fase 7 · SE6: por defecto, el MISMO lugar (la guardada es ESTUDIO_COMPLETO): solo cambia la hora. */
+    const franja = (inicio: string, fin: string, subEspacio: SubEspacio = SubEspacio.ESTUDIO_COMPLETO): ProponerReprogramacionDto => ({
       fecha_inicio: new Date(inicio),
       fecha_fin: new Date(fin),
+      sub_espacio: subEspacio,
       motivo: MOTIVO,
     });
     /** Propuesta válida: miércoles 28 de octubre de 2026, 9:00–10:00. */
@@ -1328,11 +1330,12 @@ describe('SolicitudesService', () => {
       const resultado = await proponer();
 
       expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
-        where: { radicado: RADICADO, estado: 'Validado', ...OFICIAL },
+        where: { radicado: RADICADO, estado: 'Validado', ...OFICIAL, sub_espacio: 'ESTUDIO_COMPLETO' },
         data: {
           estado: 'Pendiente de Reprogramación',
           fecha_propuesta_inicio: PROPUESTA.fecha_inicio,
           fecha_propuesta_fin: PROPUESTA.fecha_fin,
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
         },
       });
       expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
@@ -1426,8 +1429,8 @@ describe('SolicitudesService', () => {
       },
     );
 
-    it('R-8 · K4: proponer la franja actual → 400 sin evaluar nada más', async () => {
-      const error = await rechazo({ ...OFICIAL, motivo: MOTIVO });
+    it('R-8 · K4 (D-2): proponer la franja Y el sub-espacio actuales → 400 sin evaluar nada más', async () => {
+      const error = await rechazo({ ...OFICIAL, sub_espacio: SubEspacio.ESTUDIO_COMPLETO, motivo: MOTIVO });
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).message).toBe(MENSAJE_PROPUESTA_SIN_CAMBIOS);
@@ -1435,12 +1438,65 @@ describe('SolicitudesService', () => {
       sinEscrituras();
     });
 
-    it('R-13 · K5 · Fase 7: la consulta previa de la propuesta va en el sub-espacio VIGENTE (otro sub-espacio llega en 7A.5)', async () => {
+    it('R-13 · K5 · Fase 7: la consulta previa de la propuesta va en el sub-espacio PROPUESTO (aquí, el mismo: el completo)', async () => {
       await proponer();
 
       expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
       );
+    });
+
+    it('R-14 · K4 (D-2): cambiar SOLO el lugar, en la misma franja, es una reprogramación válida; CA-06 en el lugar propuesto', async () => {
+      await proponer({ ...OFICIAL, sub_espacio: SubEspacio.CABINA_AUDIO, motivo: MOTIVO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] },
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            estado: 'Pendiente de Reprogramación',
+            fecha_propuesta_inicio: OFICIAL.fecha_inicio,
+            fecha_propuesta_fin: OFICIAL.fecha_fin,
+            sub_espacio_propuesto: 'CABINA_AUDIO',
+          },
+        }),
+      );
+    });
+
+    it('R-15 · Q-A6: cambiar la franja Y el lugar a la vez también es válido', async () => {
+      await proponer(franja('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00', SubEspacio.ESTUDIO_GRABACION));
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fecha_propuesta_inicio: new Date('2026-10-28T09:00:00-05:00'),
+            sub_espacio_propuesto: 'ESTUDIO_GRABACION',
+          }),
+        }),
+      );
+    });
+
+    it('R-16 · K6: proponer otro lugar NO mueve el sub-espacio oficial (sigue ocupado hasta que el solicitante acepte)', async () => {
+      await proponer({ ...OFICIAL, sub_espacio: SubEspacio.CABINA_AUDIO, motivo: MOTIVO });
+
+      const data = (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).not.toHaveProperty('sub_espacio');
+      expect(data).not.toHaveProperty('fecha_inicio');
+    });
+
+    it('R-17 · K5: la propuesta de lugar choca con otra reserva → 409 de CA-06, sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo({ ...OFICIAL, sub_espacio: SubEspacio.ESTUDIO_GRABACION, motivo: MOTIVO });
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      sinEscrituras();
     });
 
     it('R-9 · K5: CA-06 se evalúa sobre la PROPUESTA, excluyendo la propia solicitud → 409 sin fugas', async () => {
@@ -1560,6 +1616,9 @@ describe('SolicitudesService', () => {
           estado: 'Pendiente de Reprogramación',
           fecha_propuesta_inicio: PROPUESTA.inicio,
           fecha_propuesta_fin: PROPUESTA.fin,
+          // Fase 7 · L7: el lugar vigente y el propuesto (aquí NULL: propuesta anterior a la Fase 7).
+          sub_espacio: 'ESTUDIO_COMPLETO',
+          sub_espacio_propuesto: null,
         },
         data: {
           estado: 'Validado',
@@ -1567,6 +1626,7 @@ describe('SolicitudesService', () => {
           fecha_fin: PROPUESTA.fin,
           fecha_propuesta_inicio: null,
           fecha_propuesta_fin: null,
+          sub_espacio_propuesto: null,
           es_urgencia: false,
         },
       });
@@ -1576,6 +1636,9 @@ describe('SolicitudesService', () => {
           estado_anterior: 'Pendiente de Reprogramación',
           estado_nuevo: 'Validado',
           modificado_por: USUARIO_SOLICITANTE.id,
+          // Fase 7 · P-1: T7 movió la franja; el lugar no cambió (propuesta sin sub-espacio = mismo lugar).
+          fecha_inicio_anterior: new Date('2026-10-27T09:00:00-05:00'),
+          fecha_fin_anterior: new Date('2026-10-27T10:00:00-05:00'),
         },
       });
       expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({
@@ -1603,6 +1666,71 @@ describe('SolicitudesService', () => {
           }),
         }),
       );
+    });
+
+    // ── Fase 7 · 7A.5 · T7 con sub-espacio (ADR-007 SE6 y SE7, P-1) ──
+
+    /** Lo que recibió el log de T7. */
+    const dataDelLogT7 = (): Record<string, unknown> =>
+      (prismaMock.log_Auditoria.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('A-14 · SE6: acepta otra franja Y otro lugar → CA-06 en el lugar propuesto, lo traslada, limpia la propuesta y lo audita', async () => {
+      leer(pendiente({ sub_espacio_propuesto: 'CABINA_AUDIO' }));
+
+      await aceptar();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO', sub_espacio_propuesto: 'CABINA_AUDIO' }),
+        data: expect.objectContaining({ sub_espacio: 'CABINA_AUDIO', sub_espacio_propuesto: null, fecha_inicio: PROPUESTA.inicio }),
+      });
+      expect(dataDelLogT7()).toMatchObject({
+        estado_nuevo: 'Validado',
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'CABINA_AUDIO',
+        fecha_inicio_anterior: new Date('2026-10-27T09:00:00-05:00'),
+      });
+    });
+
+    it('A-15 · Q-A6: acepta SOLO otro lugar (la misma franja) → el log tiene el sub-espacio y NO una franja anterior', async () => {
+      leer(
+        pendiente({
+          fecha_propuesta_inicio: new Date('2026-10-27T09:00:00-05:00'),
+          fecha_propuesta_fin: new Date('2026-10-27T10:00:00-05:00'),
+          sub_espacio_propuesto: 'ESTUDIO_GRABACION',
+        }),
+      );
+
+      await aceptar();
+
+      expect(dataDelLogT7()).toMatchObject({ sub_espacio_anterior: 'ESTUDIO_COMPLETO', sub_espacio_nuevo: 'ESTUDIO_GRABACION' });
+      expect(dataDelLogT7()).not.toHaveProperty('fecha_inicio_anterior');
+    });
+
+    it('A-16 · SE6: proponer el MISMO lugar explícito equivale a no cambiarlo: no se escribe sub_espacio ni se audita', async () => {
+      leer(pendiente({ sub_espacio_propuesto: 'ESTUDIO_COMPLETO' }));
+
+      await aceptar();
+
+      const data = (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).not.toHaveProperty('sub_espacio');
+      expect(data).toMatchObject({ sub_espacio_propuesto: null });
+      expect(dataDelLogT7()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it('A-17 · L4/L5: el lugar propuesto se ocupó mientras esperaba → 409 de CA-06, sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst
+        .mockResolvedValueOnce(pendiente({ sub_espacio_propuesto: 'ESTUDIO_GRABACION' }))
+        .mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await capturar(aceptar());
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      sinEscrituras();
     });
 
     it('A-3 · G2/ADR-002: ajeno o inexistente → 404 uniforme sin escribir', async () => {
@@ -1741,7 +1869,12 @@ describe('SolicitudesService', () => {
 
       expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
         where: { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id, estado: 'Pendiente de Reprogramación' },
-        data: { estado: 'Cancelado por el Usuario', fecha_propuesta_inicio: null, fecha_propuesta_fin: null },
+        data: {
+          estado: 'Cancelado por el Usuario',
+          fecha_propuesta_inicio: null,
+          fecha_propuesta_fin: null,
+          sub_espacio_propuesto: null,
+        },
       });
       expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
         data: {

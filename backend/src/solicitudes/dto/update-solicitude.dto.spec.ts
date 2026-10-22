@@ -3,7 +3,11 @@ import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
-import { MENSAJE_MOTIVO_REPROGRAMACION, ProponerReprogramacionDto } from './proponer-reprogramacion.dto';
+import {
+  MENSAJE_MOTIVO_REPROGRAMACION,
+  MENSAJE_SUBESPACIO_PROPUESTO,
+  ProponerReprogramacionDto,
+} from './proponer-reprogramacion.dto';
 
 // Mismo pipe que main.ts (fuente única): si alguien cambia la configuración real, estos tests lo notan.
 const pipe = crearValidationPipe();
@@ -160,11 +164,28 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     const propuesta = {
       fecha_inicio: inicio.toISOString(),
       fecha_fin: fin.toISOString(),
+      sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
       motivo: 'Mantenimiento preventivo del set de grabación',
     };
 
-    it('acepta la franja propuesta con zona horaria y el motivo', async () => {
+    it('acepta la franja propuesta con zona horaria, el sub-espacio y el motivo', async () => {
       expect(await erroresDe(propuesta, ProponerReprogramacionDto)).toEqual([]);
+    });
+
+    describe('sub_espacio (Fase 7 · ADR-007 SE6): obligatorio, sin valor por defecto', () => {
+      it.each(Object.values(SubEspacio))('acepta %s', async (subEspacio) => {
+        expect(await erroresDe({ ...propuesta, sub_espacio: subEspacio }, ProponerReprogramacionDto)).toEqual([]);
+      });
+
+      it.each([
+        ['ausente', undefined],
+        ['null', null],
+        ['inventado', 'SALA_3'],
+        ['con otra capitalización', 'cabina_audio'],
+      ])('rechaza un sub_espacio %s con el mensaje del contrato', async (_caso, subEspacio) => {
+        const errores = await erroresDe({ ...propuesta, sub_espacio: subEspacio }, ProponerReprogramacionDto);
+        expect(errores).toEqual([MENSAJE_SUBESPACIO_PROPUESTO]);
+      });
     });
 
     it('rechaza con 400 un estado o un id_usuario colados en el comando', async () => {

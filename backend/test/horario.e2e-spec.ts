@@ -4,7 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
-import { MENSAJE_MOTIVO_REPROGRAMACION } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
+import { MENSAJE_MOTIVO_REPROGRAMACION, MENSAJE_SUBESPACIO_PROPUESTO } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
 import { MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
@@ -253,6 +253,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
     const PROPUESTA = {
       fecha_inicio: '2026-10-28T09:00:00-05:00',
       fecha_fin: '2026-10-28T10:00:00-05:00',
+      sub_espacio: 'ESTUDIO_COMPLETO', // Fase 7 · SE6: el mismo lugar (solo cambia la hora)
       motivo: MOTIVO,
     };
     const proponer = (body: object, bearer: string = tokenStaff) =>
@@ -280,6 +281,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
             estado: 'Pendiente de Reprogramación',
             fecha_propuesta_inicio: new Date(PROPUESTA.fecha_inicio),
             fecha_propuesta_fin: new Date(PROPUESTA.fecha_fin),
+            sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
           },
         }),
       );
@@ -298,6 +300,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       const respuesta = await proponer({
         fecha_inicio: '2026-10-31T09:00:00-05:00',
         fecha_fin: '2026-10-31T10:00:00-05:00',
+        sub_espacio: 'ESTUDIO_COMPLETO',
         motivo: MOTIVO,
       }).expect(400);
 
@@ -332,13 +335,23 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
     });
 
     it('40. K7: sin motivo → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async () => {
-      const sinMotivo = { fecha_inicio: PROPUESTA.fecha_inicio, fecha_fin: PROPUESTA.fecha_fin };
+      const sinMotivo = { fecha_inicio: PROPUESTA.fecha_inicio, fecha_fin: PROPUESTA.fecha_fin, sub_espacio: PROPUESTA.sub_espacio };
 
       const respuesta = await proponer(sinMotivo).expect(400);
 
       expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_REPROGRAMACION]);
       expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
       expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['sin sub_espacio', undefined],
+      ['con un sub_espacio inventado', 'SALA_3'],
+    ])('40b. Fase 7 · SE6: %s → 400 del pipe con su mensaje, sin llegar al servicio', async (_caso, subEspacio) => {
+      const respuesta = await proponer({ ...PROPUESTA, sub_espacio: subEspacio }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_SUBESPACIO_PROPUESTO]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario, SubEspacio } from '@prisma/client';
 import type { UsuarioAutenticado } from '../../src/auth/interfaces/usuario-autenticado.interface';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import {
@@ -188,6 +188,7 @@ describe('Motivo de la reprogramación contra PostgreSQL real (integración · F
     const propuesta = {
       fecha_inicio: new Date('2026-10-28T14:00:00-05:00'),
       fecha_fin: new Date('2026-10-28T15:00:00-05:00'),
+      sub_espacio: SubEspacio.ESTUDIO_COMPLETO, // Fase 7 · SE6: el mismo lugar
       motivo: MOTIVO_VALIDO,
     };
 

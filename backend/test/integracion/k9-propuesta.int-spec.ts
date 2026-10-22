@@ -1,4 +1,4 @@
-import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario, SubEspacio } from '@prisma/client';
 import { SolicitudesService } from '../../src/solicitudes/solicitudes.service';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import type { UsuarioAutenticado } from '../../src/auth/interfaces/usuario-autenticado.interface';
@@ -212,6 +212,7 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
     const propuesta = {
       fecha_inicio: bogota('28', '14:00'),
       fecha_fin: bogota('28', '15:00'),
+      sub_espacio: SubEspacio.ESTUDIO_COMPLETO, // Fase 7 · SE6: el mismo lugar (solo cambia la hora)
       motivo: 'Mantenimiento preventivo del set de grabación', // K7 · Fase 6.1b
     };
 
