@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsArray, ValidateNested, IsInt, Min, IsOptional, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CategoriaSolicitud } from '@prisma/client'; // <-- 1. Importamos el Enum de Prisma
+import { CategoriaSolicitud, SubEspacio } from '@prisma/client'; // <-- 1. Importamos los Enums de Prisma
 import { FechaConZonaHoraria } from '../../common/validadores/fecha-con-zona-horaria.decorator';
 
 // Sub-clase para validar los recursos individuales del arreglo
@@ -37,6 +37,17 @@ export class CreateSolicitudeDto {
 
   @FechaConZonaHoraria()
   fecha_fin: Date;
+
+  // Fase 7 · ADR-007 SE5 (Q-A4): el solicitante PROPONE el sub-espacio; el Staff puede
+  // ajustarlo al validar (T1). Opcional durante el expand: sin él se reserva el Estudio C
+  // completo, exactamente como antes de la v2.2 (SUB_ESPACIO_POR_DEFECTO_TEMPORAL). En el
+  // contract (7A.8) pasa a ser obligatorio, junto con el formulario del frontend.
+  // UpdateSolicitudeDto lo hereda (PartialType); el servicio decide cuándo se admite (D-4).
+  @IsOptional()
+  @IsEnum(SubEspacio, {
+    message: 'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO',
+  })
+  sub_espacio?: SubEspacio;
 
   // Nuevo campo: Un arreglo de recursos opcional
   @IsOptional()

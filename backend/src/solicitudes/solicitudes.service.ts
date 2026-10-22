@@ -1,4 +1,4 @@
-import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud } from '@prisma/client';
+import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import {
   Injectable,
   BadRequestException,
@@ -22,6 +22,7 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
+import { SUB_ESPACIO_POR_DEFECTO_TEMPORAL, subEspaciosEnConflicto } from './reglas/sub-espacios';
 import {
   ESTADO_INICIAL,
   evaluarAccion,
@@ -77,6 +78,20 @@ export const MENSAJE_NO_ATENDIDA_FRANJA_FUTURA =
 /** Fase 7 · NA2 · T10: se cierra la franja REGISTRADA; moverla al mismo tiempo no tiene sentido. */
 export const MENSAJE_NO_ATENDIDA_SIN_FECHAS =
   'Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.';
+
+/**
+ * Fase 7 · ADR-007 SE5 · D-4: una vez validada, el sub-espacio solo cambia por mutuo
+ * acuerdo (CA-10, Q-A5), igual que la franja (D2).
+ */
+export const MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO =
+  'El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.';
+
+/**
+ * Fase 7 · ADR-007 SE5 · D-4: en "Recibido" el Staff ajusta el sub-espacio AL VALIDAR (Q-A4).
+ * Un cambio suelto no tendría transición que lo registre (CA-09, Q-A12).
+ */
+export const MENSAJE_SUBESPACIO_SOLO_AL_APROBAR =
+  'El sub-espacio solo se ajusta al validar la solicitud: envíelo junto con el estado "Validado".';
 
 /** E5: el log nunca guarda motivos de rechazo huérfanos. */
 export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
@@ -146,6 +161,8 @@ export const SELECT_COMANDO_SOLICITANTE = {
   fecha_fin: true,
   fecha_propuesta_inicio: true,
   fecha_propuesta_fin: true,
+  // Fase 7 · SE4: CA-06 de la propuesta (L4) se evalúa en el sub-espacio de la solicitud.
+  sub_espacio: true,
 } satisfies Prisma.SolicitudSelect;
 
 type LecturaComando = Prisma.SolicitudGetPayload<{ select: typeof SELECT_COMANDO_SOLICITANTE }>;
@@ -203,12 +220,19 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
     }
 
-    // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable (409 único) ---
+    // Fase 7 · SE5: el sub-espacio que propone el solicitante. Expand: sin él, el completo
+    // (espejo del DEFAULT temporal), que se escribe EXPLÍCITO para no depender de la columna.
+    const subEspacio = createSolicitudeDto.sub_espacio ?? SUB_ESPACIO_POR_DEFECTO_TEMPORAL;
+
+    // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable (409 único), por sub-espacio ---
     if (
-      await this.hayTraslape({
-        inicio: createSolicitudeDto.fecha_inicio,
-        fin: createSolicitudeDto.fecha_fin,
-      })
+      await this.hayTraslape(
+        {
+          inicio: createSolicitudeDto.fecha_inicio,
+          fin: createSolicitudeDto.fecha_fin,
+        },
+        subEspacio,
+      )
     ) {
       throw new ConflictException(MENSAJE_CA06);
     }
@@ -233,6 +257,7 @@ export class SolicitudesService {
           fecha_fin: createSolicitudeDto.fecha_fin,
           estado: ESTADO_INICIAL,
           es_urgencia: horario.urgente,
+          sub_espacio: subEspacio,
         
           recursos: { 
             create: createSolicitudeDto.recursos?.map(recurso => ({
@@ -252,11 +277,18 @@ export class SolicitudesService {
    * Intervalo semiabierto [inicio, fin), igual que la restricción del motor.
    * Minimización: solo se pide el radicado y nunca sale de este método.
    * excluirRadicado evita que una reprogramación choque consigo misma.
+   * Fase 7 · SE4: solo cuentan las reservas de los sub-espacios EN CONFLICTO con el pedido
+   * (el mismo físico o el completo), espejo de los dos EXCLUDE parciales del motor.
    */
-  private async hayTraslape(franja: FranjaSolicitada, excluirRadicado?: string): Promise<boolean> {
+  private async hayTraslape(
+    franja: FranjaSolicitada,
+    subEspacio: SubEspacio,
+    excluirRadicado?: string,
+  ): Promise<boolean> {
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
         estado: { notIn: [...ESTADOS_QUE_LIBERAN_FRANJA] },
+        sub_espacio: { in: [...subEspaciosEnConflicto(subEspacio)] },
         AND: [{ fecha_inicio: { lt: franja.fin } }, { fecha_fin: { gt: franja.inicio } }],
         ...(excluirRadicado !== undefined ? { NOT: { radicado: excluirRadicado } } : {}),
       },
@@ -368,6 +400,13 @@ export class SolicitudesService {
     const cambiaEstado = estadoFinal !== existente.estado;
     const cambianFechas =
       updateSolicitudeDto.fecha_inicio !== undefined || updateSolicitudeDto.fecha_fin !== undefined;
+    // Fase 7 · SE5: el sub-espacio EFECTIVO también es parte de lo que quedará guardado.
+    const subEspacioFinal = updateSolicitudeDto.sub_espacio ?? existente.sub_espacio;
+    const cambiaSubEspacio = subEspacioFinal !== existente.sub_espacio;
+    // P-1: la franja se mueve DE VERDAD (enviar las mismas fechas no es un ajuste que auditar).
+    const cambiaFranja =
+      franja.inicio.getTime() !== existente.fecha_inicio.getTime() ||
+      franja.fin.getTime() !== existente.fecha_fin.getTime();
 
     // --- 1. E5: el motivo de rechazo solo acompaña un rechazo real.
     if (
@@ -391,6 +430,19 @@ export class SolicitudesService {
     // GUARDADO). Permite el rescate atómico: fechas nuevas + aprobación en un solo PATCH.
     if (cambianFechas && existente.estado !== ESTADO_INICIAL) {
       throw new ConflictException(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+    }
+
+    // --- 3b. D-4 (Fase 7 · SE5): el sub-espacio, igual que la franja, solo se toca en
+    // "Recibido" (409 fuera de él, como D2) y, además, SOLO al validar (400 en otro caso:
+    // como E5, el campo no tiene sentido sin su transición). Se mira la PRESENCIA del campo:
+    // repetir el sub-espacio actual sin validar tampoco es una petición válida.
+    if (updateSolicitudeDto.sub_espacio !== undefined) {
+      if (existente.estado !== ESTADO_INICIAL) {
+        throw new ConflictException(MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO);
+      }
+      if (accion !== 'APROBAR') {
+        throw new BadRequestException(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      }
     }
 
     // --- 4. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
@@ -417,10 +469,15 @@ export class SolicitudesService {
       throw new ConflictException(MENSAJE_NO_ATENDIDA_FRANJA_FUTURA);
     }
 
-    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas se
-    // movieron. D1 eliminó la reactivación: los estados que liberan la franja son finales,
+    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas o el
+    // sub-espacio se movieron (Fase 7: pasar de la cabina al completo puede chocar sin tocar
+    // la hora). D1 eliminó la reactivación: los estados que liberan la franja son finales,
     // así que un cambio de estado ya no puede volver a ocuparla. Sin auto-colisión.
-    if (ocupaFranja(estadoFinal) && cambianFechas && (await this.hayTraslape(franja, radicado))) {
+    if (
+      ocupaFranja(estadoFinal) &&
+      (cambianFechas || cambiaSubEspacio) &&
+      (await this.hayTraslape(franja, subEspacioFinal, radicado))
+    ) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
@@ -430,6 +487,7 @@ export class SolicitudesService {
       ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
+      ...(cambiaSubEspacio ? { sub_espacio: subEspacioFinal } : {}),
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
     };
 
@@ -446,6 +504,8 @@ export class SolicitudesService {
         estado: existente.estado,
         fecha_inicio: existente.fecha_inicio,
         fecha_fin: existente.fecha_fin,
+        // Fase 7 · SE5: sobre el sub-espacio guardado también se calculó CA-06.
+        sub_espacio: existente.sub_espacio,
       },
       data,
       recursos,
@@ -456,6 +516,14 @@ export class SolicitudesService {
             estado_nuevo: estadoFinal,
             modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
             motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+            // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
+            // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
+            ...(accion === 'APROBAR' && cambiaSubEspacio
+              ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
+              : {}),
+            ...(accion === 'APROBAR' && cambiaFranja
+              ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
+              : {}),
           }
         : undefined,
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
@@ -536,7 +604,7 @@ export class SolicitudesService {
     }
 
     // L4: CA-06 de la propuesta (consulta previa); el motor la confirma al escribir.
-    if (await this.hayTraslape(propuesta, radicado)) {
+    if (await this.hayTraslape(propuesta, existente.sub_espacio, radicado)) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
@@ -676,7 +744,8 @@ export class SolicitudesService {
 
     // K5 · D3: CA-06 de la franja PROPUESTA (capa amable), sin auto-colisión: la franja
     // oficial de esta misma solicitud sigue ocupada mientras la propuesta esté pendiente.
-    if (await this.hayTraslape(propuesta, radicado)) {
+    // Fase 7: en el sub-espacio vigente; la propuesta de otro sub-espacio llega en 7A.5.
+    if (await this.hayTraslape(propuesta, existente.sub_espacio, radicado)) {
       throw new ConflictException(MENSAJE_CA06);
     }
 

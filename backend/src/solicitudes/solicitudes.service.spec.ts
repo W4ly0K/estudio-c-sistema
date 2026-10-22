@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { CategoriaSolicitud, Log_Auditoria, Solicitud } from '@prisma/client';
+import { CategoriaSolicitud, Log_Auditoria, Solicitud, SubEspacio } from '@prisma/client';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_CAMBIO_CONCURRENTE,
@@ -26,6 +26,8 @@ import {
   MENSAJE_SIN_PROPUESTA_PENDIENTE,
   MENSAJE_SOLICITUD_CANCELADA,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_SUBESPACIO_SOLO_AL_APROBAR,
+  MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
   SELECT_COMANDO_SOLICITANTE,
@@ -269,6 +271,36 @@ describe('SolicitudesService', () => {
       expect(conflicto.message).toBe(MENSAJE_CA06);
       expect(JSON.stringify(conflicto.getResponse())).not.toContain(solicitudBase.radicado);
       expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    // ── Fase 7 · 7A.4 · CA-06 por sub-espacio en la creación (ADR-007 SE4 y SE5) ──
+
+    it('4 · con sub-espacio: la consulta previa solo mira los sub-espacios en conflicto y lo guarda', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create({ ...dtoValido, sub_espacio: SubEspacio.CABINA_AUDIO }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] } }),
+        }),
+      );
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: 'CABINA_AUDIO' }) }),
+      );
+    });
+
+    it('5 · expand: sin sub-espacio se reserva el completo EXPLÍCITO y choca con los tres (como el calendario único)', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create(dtoValido, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO' }) }),
+      );
     });
 
     it('2 · la consulta previa solo pide el radicado (minimización)', async () => {
@@ -790,7 +822,7 @@ describe('SolicitudesService', () => {
 
     // ── Fase 5.2b · compare-and-set en una sola transacción interactiva (D5 · F1–F4 · R1) ──
 
-    it('U-28 · F1: el CAS exige el estado y la franja GUARDADOS (exactamente lo que se validó)', async () => {
+    it('U-28 · F1: el CAS exige el estado, la franja y el sub-espacio GUARDADOS (exactamente lo que se validó)', async () => {
       await actualizar({ estado: 'Validado' });
 
       expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
@@ -799,6 +831,7 @@ describe('SolicitudesService', () => {
           estado: 'Recibido',
           fecha_inicio: guardada().fecha_inicio,
           fecha_fin: guardada().fecha_fin,
+          sub_espacio: guardada().sub_espacio,
         },
         data: { estado: 'Validado' },
       });
@@ -875,6 +908,7 @@ describe('SolicitudesService', () => {
           estado: 'Recibido',
           fecha_inicio: vencida().fecha_inicio,
           fecha_fin: vencida().fecha_fin,
+          sub_espacio: vencida().sub_espacio,
         },
         data: { estado: 'No atendida' },
       });
@@ -947,6 +981,138 @@ describe('SolicitudesService', () => {
       expect(error).toBeInstanceOf(ConflictException);
       expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
       sinEscrituras();
+    });
+
+    // ── Fase 7 · 7A.4 · el sub-espacio en el PATCH (ADR-007 SE5 · D-4, SE7 y P-1) ──
+
+    /** Lo que recibió el log de la transición (una sola escritura por petición). */
+    const dataDelLog = (): Record<string, unknown> =>
+      (prismaMock.log_Auditoria.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('U-40 · D-4: validar ajustando el sub-espacio → CA-06 en el sub-espacio NUEVO, se escribe y queda en el log de T1', async () => {
+      // guardada(): ESTUDIO_COMPLETO (el registro histórico de 7A.3).
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.CABINA_AUDIO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] },
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO' }),
+        data: { sub_espacio: 'CABINA_AUDIO', estado: 'Validado' },
+      });
+      expect(dataDelLog()).toMatchObject({
+        estado_anterior: 'Recibido',
+        estado_nuevo: 'Validado',
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'CABINA_AUDIO',
+      });
+      // La franja no se movió: no hay franja anterior que auditar.
+      expect(dataDelLog()).not.toHaveProperty('fecha_inicio_anterior');
+    });
+
+    it('U-41 · D-4 + rescate (Q-B2): vencida, fechas nuevas y otro sub-espacio en un solo PATCH → el log guarda lo anterior de los dos', async () => {
+      const original = guardada({
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+      });
+      prismaMock.solicitud.findUnique.mockResolvedValue(original);
+
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_GRABACION, ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(dataDelUpdate()).toMatchObject({
+        estado: 'Validado',
+        sub_espacio: 'ESTUDIO_GRABACION',
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+      });
+      expect(dataDelLog()).toMatchObject({
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'ESTUDIO_GRABACION',
+        fecha_inicio_anterior: original.fecha_inicio,
+        fecha_fin_anterior: original.fecha_fin,
+      });
+    });
+
+    it('U-42 · P-1: validar con fechas nuevas pero el mismo sub-espacio → solo la franja anterior en el log', async () => {
+      await actualizar({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(dataDelLog()).toMatchObject({
+        fecha_inicio_anterior: guardada().fecha_inicio,
+        fecha_fin_anterior: guardada().fecha_fin,
+      });
+      expect(dataDelLog()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it('U-43 · D-4: repetir el sub-espacio actual al validar no es un cambio: sin escribirlo, sin log de sub-espacio y sin CA-06', async () => {
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_COMPLETO });
+
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(dataDelUpdate()).toEqual({ estado: 'Validado' });
+      expect(dataDelLog()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it.each<[string, UpdateSolicitudeDto]>([
+      ['sin cambio de estado', { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['al rechazar', { estado: 'Rechazado', motivo_rechazo: 'Motivo suficientemente detallado', sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['repitiendo el actual sin validar', { sub_espacio: SubEspacio.ESTUDIO_COMPLETO }],
+    ])('U-44 · D-4: el sub-espacio %s → 400 propio, sin consultar CA-06 ni escribir', async (_caso, dto) => {
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('U-45 · D-4: al cerrar como "No atendida" (T10) tampoco se admite el sub-espacio → 400', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', sub_espacio: SubEspacio.CABINA_AUDIO });
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      sinEscrituras();
+    });
+
+    it.each<[string, UpdateSolicitudeDto]>([
+      ['sin cambio de estado', { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['junto con una transición legal (T4)', { estado: 'En Producción', sub_espacio: SubEspacio.CABINA_AUDIO }],
+    ])('U-46 · D-4: en Validado, el sub-espacio %s → 409 (solo por CA-10), antes que el 400', async (_caso, dto) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Validado' }));
+
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO);
+      sinEscrituras();
+    });
+
+    it('U-47 · CA-06: validar pasando al completo choca con otra reserva SIN mover la hora → 409, sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ sub_espacio: 'CABINA_AUDIO' }));
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_COMPLETO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('U-48 · F3 en el código: rechazar moviendo fechas (D2) NO registra franja anterior (el motor solo la admite en "Validado")', async () => {
+      await actualizar({
+        estado: 'Rechazado',
+        motivo_rechazo: 'Motivo suficientemente detallado',
+        ...franjaDel('2026-10-28', '09:00', '10:00'),
+      });
+
+      expect(dataDelLog()).toMatchObject({ estado_nuevo: 'Rechazado' });
+      expect(dataDelLog()).not.toHaveProperty('fecha_inicio_anterior');
     });
   });
 
@@ -1269,6 +1435,14 @@ describe('SolicitudesService', () => {
       sinEscrituras();
     });
 
+    it('R-13 · K5 · Fase 7: la consulta previa de la propuesta va en el sub-espacio VIGENTE (otro sub-espacio llega en 7A.5)', async () => {
+      await proponer();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+    });
+
     it('R-9 · K5: CA-06 se evalúa sobre la PROPUESTA, excluyendo la propia solicitud → 409 sin fugas', async () => {
       prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
 
@@ -1424,6 +1598,8 @@ describe('SolicitudesService', () => {
           where: expect.objectContaining({
             AND: [{ fecha_inicio: { lt: PROPUESTA.fin } }, { fecha_fin: { gt: PROPUESTA.inicio } }],
             NOT: { radicado: RADICADO },
+            // Fase 7: en el sub-espacio de la solicitud, leído con la propiedad (SELECT_COMANDO_SOLICITANTE).
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] },
           }),
         }),
       );

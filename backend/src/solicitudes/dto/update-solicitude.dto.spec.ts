@@ -1,5 +1,5 @@
 import { BadRequestException, Type } from '@nestjs/common';
-import { CategoriaSolicitud } from '@prisma/client';
+import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
@@ -64,11 +64,32 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       const errores = await erroresDe({ ...cuerpoFrontend, id_usuario: 'uuid-ajeno' }, CreateSolicitudeDto);
       expect(errores).toContain('property id_usuario should not exist');
     });
+
+    // Fase 7 · 7A.4 (ADR-007 SE5): el sub-espacio es opcional durante el expand.
+    it.each(Object.values(SubEspacio))('acepta el sub-espacio %s', async (subEspacio) => {
+      expect(await erroresDe({ ...cuerpoFrontend, sub_espacio: subEspacio }, CreateSolicitudeDto)).toEqual([]);
+    });
+
+    it.each([
+      ['un valor inventado', 'SALA_3'],
+      ['otra capitalización', 'cabina_audio'],
+      ['un número', 1],
+    ])('rechaza con 400 un sub_espacio con %s', async (_caso, valor) => {
+      const errores = await erroresDe({ ...cuerpoFrontend, sub_espacio: valor }, CreateSolicitudeDto);
+      expect(errores).toContain('El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO');
+    });
   });
 
   describe('UpdateSolicitudeDto', () => {
     it('acepta un cambio de estado válido', async () => {
       expect(await erroresDe({ estado: 'Validado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    it('hereda el sub_espacio opcional (cuándo se admite lo decide el servicio: D-4)', async () => {
+      expect(await erroresDe({ estado: 'Validado', sub_espacio: SubEspacio.CABINA_AUDIO }, UpdateSolicitudeDto)).toEqual([]);
+      expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(
+        'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO',
+      );
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {

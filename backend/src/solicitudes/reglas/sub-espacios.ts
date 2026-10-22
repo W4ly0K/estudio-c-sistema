@@ -18,6 +18,13 @@ export const SUB_ESPACIOS = Object.freeze([
   SubEspacio.ESTUDIO_COMPLETO,
 ] as const);
 
+/**
+ * Expand (ADR-007, 7A.3 → 7A.8): lo que se reserva cuando la petición no trae sub-espacio.
+ * Espejo del DEFAULT temporal de la columna: el completo bloquea los dos, igual que el
+ * calendario único de antes de la v2.2. Se retira en el contract, cuando sea obligatorio.
+ */
+export const SUB_ESPACIO_POR_DEFECTO_TEMPORAL: SubEspacio = SubEspacio.ESTUDIO_COMPLETO;
+
 /** Los sub-espacios que existen físicamente; el completo es la unión de los dos. */
 export type SubEspacioFisico = typeof SubEspacio.CABINA_AUDIO | typeof SubEspacio.ESTUDIO_GRABACION;
 
@@ -43,7 +50,7 @@ export const OCUPA: Readonly<Record<SubEspacio, readonly SubEspacioFisico[]>> = 
 /**
  * Las opciones de reserva que chocan con `subEspacio` si sus franjas se traslapan (CA-06
  * por sub-espacio): las que ocupan al menos un sub-espacio físico en común. Es la tabla
- * del PRD v2.2 §5.1. La usará hayTraslape() en el paso 7A.4.
+ * del PRD v2.2 §5.1. La usa hayTraslape(), la capa amable de CA-06 (paso 7A.4).
  */
 export function subEspaciosEnConflicto(subEspacio: SubEspacio): readonly SubEspacio[] {
   const propios = OCUPA[subEspacio];

@@ -5,6 +5,7 @@ import { RESTRICCIONES_CA06_POR_SUBESPACIO } from '../errores/traslape-ca06';
 import {
   OCUPA,
   RESTRICCION_DEL_SUBESPACIO,
+  SUB_ESPACIO_POR_DEFECTO_TEMPORAL,
   SUB_ESPACIOS,
   subEspaciosEnConflicto,
   type SubEspacioFisico,
@@ -73,6 +74,16 @@ describe('Sub-espacios y CA-06 (PRD v2.2 §5.1 · ADR-007 SE1, SE2 y SE4)', () =
 
   it.each(TABLA_PRD)('%s contra %s: ¿conflicto? %s', (a, b, choca) => {
     expect(subEspaciosEnConflicto(a).includes(b)).toBe(choca);
+  });
+
+  it('expand: sin sub-espacio se reserva el completo, que choca con todo (como el calendario único)', () => {
+    expect(SUB_ESPACIO_POR_DEFECTO_TEMPORAL).toBe(ESTUDIO_COMPLETO);
+    expect(subEspaciosEnConflicto(SUB_ESPACIO_POR_DEFECTO_TEMPORAL)).toEqual([...SUB_ESPACIOS]);
+  });
+
+  it('expand: el valor por defecto del código es el DEFAULT temporal de la columna en la migración', () => {
+    const sql = readFileSync(MIGRACION_SUBESPACIOS, 'utf8').replace(/--.*$/gm, '');
+    expect(sql).toMatch(new RegExp(`ALTER COLUMN "sub_espacio" SET DEFAULT '${SUB_ESPACIO_POR_DEFECTO_TEMPORAL}'`));
   });
 
   it('la relación de conflicto es simétrica', () => {
