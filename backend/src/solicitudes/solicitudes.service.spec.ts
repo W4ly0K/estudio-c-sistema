@@ -67,6 +67,9 @@ const solicitudBase: Solicitud = {
   fecha_propuesta_fin: null,
   estado: 'Recibido',
   es_urgencia: false,
+  // Fase 7 · 7A.3: lo que la base guarda hoy por el DEFAULT temporal (ADR-007 SE1).
+  sub_espacio: 'ESTUDIO_COMPLETO',
+  sub_espacio_propuesto: null,
 };
 
 // Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
@@ -84,6 +87,11 @@ const logBase: Log_Auditoria = {
   motivo_rechazo: 'Equipo en mantenimiento preventivo',
   // ... las demás propiedades
   motivo_reprogramacion: null,
+  // Fase 7 · 7A.3: auditoría del ajuste de sub-espacio y de franja (ADR-007 SE7 y P-1).
+  sub_espacio_anterior: null,
+  sub_espacio_nuevo: null,
+  fecha_inicio_anterior: null,
+  fecha_fin_anterior: null,
 };
 
 describe('SolicitudesService', () => {

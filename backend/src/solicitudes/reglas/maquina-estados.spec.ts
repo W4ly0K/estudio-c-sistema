@@ -171,11 +171,11 @@ describe('maquina-estados: coherencia con CA-06 (estados.ts)', () => {
     expect(ocupaFranja('Pendiente de Reprogramación')).toBe(true);
   });
 
-  // Fase 7 · 7A.2: "No atendida" todavía OCUPA su franja, igual que en el WHERE de la restricción
-  // aplicada hoy (20261002200000). La migración 7A.3 la agrega a los dos lados a la vez.
-  it('solo Rechazado y Cancelado por el Usuario liberan la franja; los demás la ocupan', () => {
+  // Fase 7 · 7A.3: "No atendida" libera la franja en el código y en el WHERE de las dos
+  // restricciones por sub-espacio (migración 20261023120000), en el mismo commit.
+  it('solo Rechazado, Cancelado por el Usuario y No atendida liberan la franja; los demás la ocupan', () => {
     expect(new Set(ESTADOS.filter((estado) => !ocupaFranja(estado)))).toEqual(
-      new Set(['Rechazado', 'Cancelado por el Usuario']),
+      new Set(['Rechazado', 'Cancelado por el Usuario', 'No atendida']),
     );
   });
 });
