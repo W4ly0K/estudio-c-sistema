@@ -1,5 +1,5 @@
 import { MENSAJE_FIN_NO_POSTERIOR } from '../api/mensajes'
-import { aIsoBogota } from '../fechas/bogota'
+import { aCamposBogota, aIsoBogota } from '../fechas/bogota'
 
 /**
  * Franja de una reserva (fecha + horas) tal como la escribe una persona: B2 la usa para
@@ -45,4 +45,21 @@ export function franjaDesdeCampos({ fecha, horaInicio, horaFin }: ValoresFranja)
   if (horaFin <= horaInicio) return { ok: false, error: MENSAJE_FIN_NO_POSTERIOR }
 
   return { ok: true, inicio, fin }
+}
+
+/**
+ * Fase 7 · 7B.3: la franja GUARDADA en los tres campos, para que "Validar con ajustes" parta
+ * de lo que pidió el solicitante. Si no se puede leer o no cabe en un solo día (CA-04), los
+ * campos quedan vacíos: el Staff la escribe y nada se inventa.
+ */
+export function camposDeLaFranja(inicioIso: string, finIso: string): ValoresFranja {
+  const inicio = aCamposBogota(inicioIso)
+  const fin = aCamposBogota(finIso)
+  if (inicio === null || fin === null || inicio.fecha !== fin.fecha) return FRANJA_VACIA
+  return { fecha: inicio.fecha, horaInicio: inicio.hora, horaFin: fin.hora }
+}
+
+/** Los tres campos coinciden. Comparación de texto: los `<input>` ya entregan un formato fijo. */
+export function mismaFranja(a: ValoresFranja, b: ValoresFranja): boolean {
+  return a.fecha === b.fecha && a.horaInicio === b.horaInicio && a.horaFin === b.horaFin
 }

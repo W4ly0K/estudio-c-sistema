@@ -8,15 +8,20 @@ import { formatearFranja } from '../fechas/bogota'
 import {
   TEXTO_FRANJA_INICIADA,
   accionesVisiblesDelStaff,
+  ajusteAlValidar,
   franjaYaInicio,
+  opcionesDelStaff,
   porElTablero,
+  razonBloqueoDelAjuste,
   razonBloqueoDelStaff,
-  textosDelStaff,
+  textosDeLaOpcion,
   type DestinoDelStaff,
+  type OpcionDelStaff,
   type TransicionDelTableroStaff,
-  type TransicionStaff,
+  type VigenteDelAjuste,
 } from '../presentacion/acciones-staff'
-import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from '../presentacion/franja'
+import { ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
+import { FRANJA_VACIA, camposDeLaFranja, franjaDesdeCampos, type ValoresFranja } from '../presentacion/franja'
 import {
   LIMITES_MOTIVO_RECHAZO,
   LIMITES_MOTIVO_REPROGRAMACION,
@@ -38,6 +43,10 @@ export const TEXTO_ACTUALIZANDO = 'Actualizando la solicitud…'
 export const TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO = 'Sub-espacio propuesto'
 export const TEXTO_AYUDA_PROPUESTA_DE_LUGAR =
   'Para cambiar solo el lugar, elige la misma fecha y horas actuales y otro sub-espacio. Proponer la misma franja en el mismo sub-espacio no es una reprogramación.'
+/** Fase 7 · 7B.3 (Q-A4): en el ajuste el Staff ASIGNA el lugar; no lo propone. */
+export const TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE = 'Sub-espacio asignado'
+export const TEXTO_AYUDA_AJUSTE =
+  'Los campos empiezan con lo que pidió el solicitante: cambia solo lo que haga falta. Si mueves la franja, el servidor la revisa con las mismas reglas de horario y de traslape que al radicar.'
 /**
  * Ayuda ante CUALQUIER 409, sin comparar el texto del servidor (DC5). La máquina, sobre una
  * lectura fresca, frena un cambio que llega tarde (TRANSICION_NO_DEFINIDA, estado final...) y
@@ -50,11 +59,18 @@ export const TEXTO_AYUDA_CONFLICTO =
 
 /**
  * El cuerpo del PATCH. CambiosTablero hace imposible en compilación un motivo sin
- * "Rechazado" o un rechazo sin motivo (E5): aquí solo se elige la rama.
+ * "Rechazado" o un rechazo sin motivo (E5), y una franja o un lugar fuera de T1 (D-4): aquí
+ * solo se elige la rama. T1 directo no lleva ajuste (el ajuste sale de "Validar con ajustes").
  */
 function cambiosDe(transicion: TransicionDelTableroStaff, motivo: string): CambiosTablero {
-  if (transicion.accion === 'RECHAZAR') return { estado: transicion.destino, motivo_rechazo: motivoParaEnviar(motivo) }
-  return { estado: transicion.destino }
+  switch (transicion.accion) {
+    case 'RECHAZAR':
+      return { estado: transicion.destino, motivo_rechazo: motivoParaEnviar(motivo) }
+    case 'APROBAR':
+      return { estado: transicion.destino }
+    default:
+      return { estado: transicion.destino }
+  }
 }
 
 interface AccionesStaffProps {
@@ -68,18 +84,18 @@ interface AccionesStaffProps {
 }
 
 /**
- * Resolución del Staff en C3: T1, T2, T4, T9 y T10 (Fase 7) por el PATCH del tablero (6.5.3) y
- * T5 por su propia ruta, con franja y motivo (6.5.4 · DR2). Mismo patrón probado que
+ * Resolución del Staff en C3: T1 (directo o con ajustes, Fase 7 · 7B.3), T2, T4, T9 y T10 por el
+ * PATCH del tablero (6.5.3) y T5 por su propia ruta, con franja y motivo (6.5.4 · DR2). Mismo patrón probado que
  * AccionesSolicitud: candado síncrono, botones deshabilitados en vuelo y el diálogo FUERA
  * de la lista de botones (nunca se desmonta abierto).
  */
 export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar }: AccionesStaffProps) {
   const api = useApi()
   const id = useId()
-  const [seleccionada, setSeleccionada] = useState<TransicionStaff | null>(null)
+  const [seleccionada, setSeleccionada] = useState<OpcionDelStaff | null>(null)
   const [motivo, setMotivo] = useState('')
   const [franja, setFranja] = useState<ValoresFranja>(FRANJA_VACIA)
-  // Fase 7 · T5: arranca en el lugar VIGENTE (lo más común es cambiar solo la fecha).
+  // Fase 7 · T5 y 7B.3: arranca en el lugar VIGENTE (lo más común es cambiar solo la fecha).
   const [subEspacio, setSubEspacio] = useState<SubEspacio>(detalle.sub_espacio)
   const [enCurso, setEnCurso] = useState(false)
   const [error, setError] = useState<ErrorApi | null>(null)
@@ -90,25 +106,38 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   // Un único "ahora" por render: la advertencia DA4 y la oferta de T10 usan el mismo instante.
   const ahora = new Date()
   const acciones = accionesVisiblesDelStaff(detalle.estado, detalle.fecha_inicio, ahora)
+  const opciones = opcionesDelStaff(acciones)
   const franjaActual = formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)
   // DA4: se advierte sin bloquear; el reloj del servidor es el que decide (D7).
   const advertirFranja = acciones.some((t) => t.accion === 'APROBAR') && franjaYaInicio(detalle.fecha_inicio, ahora)
-  const accion = seleccionada?.accion ?? null
+  const accion = seleccionada?.transicion.accion ?? null
+  const ajustando = seleccionada?.ajustar === true
+  // 7B.3: lo pedido por el solicitante, en los campos y contra lo que se mide el ajuste.
+  const vigente: VigenteDelAjuste = {
+    franja: camposDeLaFranja(detalle.fecha_inicio, detalle.fecha_fin),
+    subEspacio: detalle.sub_espacio,
+  }
 
   // DR5 · "Confirmar" se bloquea mientras el formulario de la acción no esté completo.
   // Fase 7 · B3: una sola fuente: se habilita exactamente cuando no hay una razón para
   // bloquearlo, y esa misma razón es la que el diálogo muestra (H-B2).
-  const razonBloqueo = accion === null ? undefined : razonBloqueoDelStaff(accion, motivo, franja)
+  const razonBloqueo =
+    accion === null
+      ? undefined
+      : ajustando
+        ? razonBloqueoDelAjuste(franja, subEspacio, vigente)
+        : razonBloqueoDelStaff(accion, motivo, franja)
   const puedeConfirmar = razonBloqueo === undefined
 
-  const abrir = (transicion: TransicionStaff) => {
+  const abrir = (opcion: OpcionDelStaff) => {
     setError(null)
     setErrorLocal(null)
-    // Cada apertura empieza en blanco: un borrador viejo no se envía por accidente.
+    // Cada apertura empieza de cero: un borrador viejo no se envía por accidente. T5 abre la
+    // franja vacía (DR5); el ajuste, con lo pedido, porque suele corregir una sola cosa.
     setMotivo('')
-    setFranja(FRANJA_VACIA)
+    setFranja(opcion.ajustar ? vigente.franja : FRANJA_VACIA)
     setSubEspacio(detalle.sub_espacio)
-    setSeleccionada(transicion)
+    setSeleccionada(opcion)
   }
 
   const cerrar = () => {
@@ -119,7 +148,17 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   }
 
   /** Arma la petición del canal que corresponde, o `null` si la validación local la frena. */
-  const peticionDe = (transicion: TransicionStaff): Promise<Resultado<unknown>> | null => {
+  const peticionDe = (opcion: OpcionDelStaff): Promise<Resultado<unknown>> | null => {
+    if (opcion.ajustar) {
+      // 7B.3: T1 y su ajuste en UN solo PATCH: el servidor valida y audita todo junto (U5).
+      const resultado = ajusteAlValidar(franja, subEspacio, vigente)
+      if (!resultado.ok) {
+        setErrorLocal(resultado.error)
+        return null
+      }
+      return api.actualizarTablero(detalle.radicado, { estado: opcion.transicion.destino, ...resultado.ajuste })
+    }
+    const { transicion } = opcion
     if (porElTablero(transicion)) return api.actualizarTablero(detalle.radicado, cambiosDe(transicion, motivo))
     // T5 (DR5): las mismas dos reglas locales de B2; el resto lo decide el servidor.
     const propuesta = franjaDesdeCampos(franja)
@@ -151,7 +190,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     if (resultado.ok) {
       // Primero se cierra (evento close) y luego la pantalla anuncia y recarga.
       setSeleccionada(null)
-      alCompletar(seleccionada.destino)
+      alCompletar(seleccionada.transicion.destino)
     } else {
       setError(resultado.error)
     }
@@ -164,7 +203,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     alRecargar()
   }
 
-  const textos = seleccionada === null ? null : textosDelStaff(seleccionada.accion, detalle.radicado, franjaActual)
+  const textos = seleccionada === null ? null : textosDeLaOpcion(seleccionada, detalle.radicado, franjaActual)
 
   return (
     <>
@@ -180,13 +219,13 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
             </p>
           )}
           <div className="flex flex-wrap justify-end gap-3">
-            {acciones.map((transicion) => {
-              const { boton, irreversible } = textosDelStaff(transicion.accion, detalle.radicado, franjaActual)
+            {opciones.map((opcion) => {
+              const { boton, irreversible } = textosDeLaOpcion(opcion, detalle.radicado, franjaActual)
               return (
                 <button
-                  key={transicion.id}
+                  key={opcion.ajustar ? `${opcion.transicion.id}-ajustes` : opcion.transicion.id}
                   type="button"
-                  onClick={() => abrir(transicion)}
+                  onClick={() => abrir(opcion)}
                   disabled={deshabilitadas}
                   className={`px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 ${
                     irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-white'
@@ -223,6 +262,24 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
             limites={LIMITES_MOTIVO_RECHAZO}
             soloLectura={enCurso}
           />
+        )}
+        {ajustando && (
+          <>
+            <p className="mt-4 text-gray-700">
+              Pedido por el solicitante (hora de Colombia): <strong className="text-primary">{franjaActual}</strong>, en{' '}
+              <strong className="text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</strong>
+            </p>
+            <div className="mt-4 space-y-4">
+              <CamposFranja valores={franja} onCambio={setFranja} ahora={ahora} />
+              <CampoSubEspacio
+                leyenda={TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE}
+                valor={subEspacio}
+                onCambio={setSubEspacio}
+                soloLectura={enCurso}
+              />
+              <p className="text-xs text-gray-500">{TEXTO_AYUDA_AJUSTE}</p>
+            </div>
+          </>
         )}
         {accion === 'PROPONER_REPROGRAMACION' && (
           <>

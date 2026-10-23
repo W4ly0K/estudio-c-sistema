@@ -1,6 +1,8 @@
+import type { SubEspacio } from '../api/esquemas'
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
+import type { AjusteAlValidar } from '../api/solicitudes'
 import type { TextosAccion } from './acciones-solicitante'
-import { franjaCompleta, type ValoresFranja } from './franja'
+import { franjaCompleta, franjaDesdeCampos, mismaFranja, type ValoresFranja } from './franja'
 import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION, evaluarMotivo, razonMotivoInvalido } from './motivo'
 
@@ -30,6 +32,28 @@ export function accionesDelStaff(estado: Estado): readonly TransicionStaff[] {
 export function accionesVisiblesDelStaff(estado: Estado, inicioIso: string, ahora: Date): readonly TransicionStaff[] {
   return accionesDelStaff(estado).filter(
     (t) => t.accion !== 'CERRAR_NO_ATENDIDA' || franjaYaInicio(inicioIso, ahora),
+  )
+}
+
+/**
+ * Fase 7 · 7B.3 "Validar con ajustes" (PRD v2.2 §5.6; Q-B2 y Q-A4 · D-4): NO es una
+ * transición nueva, es otra forma de ofrecer T1. Por eso no está en la tabla de la máquina
+ * (que el contrato compara con el backend), sino aquí: un botón más, junto a "Validar", con
+ * el mismo destino y el mismo PATCH. El tipo impide un ajuste sobre otra transición.
+ */
+export type OpcionDelStaff =
+  | { readonly transicion: TransicionStaff; readonly ajustar: false }
+  | { readonly transicion: Extract<TransicionStaff, { accion: 'APROBAR' }>; readonly ajustar: true }
+
+/** Cada acción visible es una opción; T1 aporta además su variante con ajustes, justo después. */
+export function opcionesDelStaff(acciones: readonly TransicionStaff[]): readonly OpcionDelStaff[] {
+  return acciones.flatMap((transicion): OpcionDelStaff[] =>
+    transicion.accion === 'APROBAR'
+      ? [
+          { transicion, ajustar: false },
+          { transicion, ajustar: true },
+        ]
+      : [{ transicion, ajustar: false }],
   )
 }
 
@@ -106,6 +130,22 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
   }
 }
 
+/** Fase 7 · 7B.3: los textos de la variante con ajustes de T1. Mismo destino que "Validar". */
+export function textosValidarConAjustes(radicado: string, franja: string): TextosAccion {
+  return {
+    boton: 'Validar con ajustes',
+    titulo: 'Validar con ajustes',
+    descripcion: `El radicado ${radicado} pasa a "Validado" con la franja, el sub-espacio o ambos que elijas aquí, en lugar de lo pedido (${franja}). El ajuste queda en la auditoría y el solicitante verá la reserva ajustada en su panel.`,
+    confirmar: 'Sí, validar con ajustes',
+    irreversible: false,
+  }
+}
+
+/** Los textos de una opción del Staff: los de su transición o los de la variante con ajustes. */
+export function textosDeLaOpcion(opcion: OpcionDelStaff, radicado: string, franja: string): TextosAccion {
+  return opcion.ajustar ? textosValidarConAjustes(radicado, franja) : textosDelStaff(opcion.transicion.accion, radicado, franja)
+}
+
 /** Fase 7 · B3: T5 sin franja completa. Va antes que el motivo: es el orden del formulario. */
 export const TEXTO_RAZON_FRANJA_INCOMPLETA = 'Para confirmar, elige la fecha y las dos horas de la nueva franja.'
 
@@ -134,6 +174,49 @@ export function razonBloqueoDelStaff(accion: AccionDelStaff, motivo: string, fra
   }
 }
 
+/** Fase 7 · 7B.3: lo que pidió el solicitante, contra lo que se compara el ajuste. */
+export interface VigenteDelAjuste {
+  readonly franja: ValoresFranja
+  readonly subEspacio: SubEspacio
+}
+
+export const TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA = 'Para confirmar, completa la fecha y las dos horas de la franja.'
+export const TEXTO_RAZON_AJUSTE_SIN_CAMBIOS =
+  'Para confirmar, cambia la franja, el sub-espacio o ambos. Si no hay nada que ajustar, usa "Validar".'
+
+/**
+ * Fase 7 · 7B.3: por qué "Confirmar" sigue bloqueado en "Validar con ajustes", con el mismo
+ * contrato que razonBloqueoDelStaff (una sola regla para habilitar y para explicar). Un
+ * "ajuste" sin cambios sería un T1 normal con otro nombre: se pide usar "Validar".
+ */
+export function razonBloqueoDelAjuste(
+  franja: ValoresFranja,
+  subEspacio: SubEspacio,
+  vigente: VigenteDelAjuste,
+): string | undefined {
+  if (!franjaCompleta(franja)) return TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA
+  if (mismaFranja(franja, vigente.franja) && subEspacio === vigente.subEspacio) return TEXTO_RAZON_AJUSTE_SIN_CAMBIOS
+  return undefined
+}
+
+export type ResultadoAjuste =
+  | { readonly ok: true; readonly ajuste: AjusteAlValidar }
+  | { readonly ok: false; readonly error: string }
+
+/**
+ * Fase 7 · 7B.3: el ajuste MÍNIMO, solo lo que cambió. Reenviar la franja guardada no es
+ * inocuo: el servidor aplica CA-04 a toda franja que recibe (días hábiles, bloques,
+ * anticipación) y una franja válida al radicar podría no serlo hoy; tampoco habría nada
+ * que auditar (P-1). La franja nueva pasa por las mismas dos reglas locales de B2 (DH4).
+ */
+export function ajusteAlValidar(franja: ValoresFranja, subEspacio: SubEspacio, vigente: VigenteDelAjuste): ResultadoAjuste {
+  const lugar: { readonly sub_espacio?: SubEspacio } = subEspacio === vigente.subEspacio ? {} : { sub_espacio: subEspacio }
+  if (mismaFranja(franja, vigente.franja)) return { ok: true, ajuste: lugar }
+  const nueva = franjaDesdeCampos(franja)
+  if (!nueva.ok) return { ok: false, error: nueva.error }
+  return { ok: true, ajuste: { fecha_inicio: nueva.inicio, fecha_fin: nueva.fin, ...lugar } }
+}
+
 /** Aviso tras el éxito (DA2): lo escribe el cliente con el destino, que es lo que se aplicó. */
 export function textoExito(destino: DestinoDelStaff): string {
   return `La solicitud pasó a "${destino}".`
@@ -145,7 +228,7 @@ export function textoExito(destino: DestinoDelStaff): string {
  * decide es el servidor.
  */
 export const TEXTO_FRANJA_INICIADA =
-  'La franja ya inició: el servidor no permite validarla. Si no se va a atender, puedes cerrarla como "No atendida" o rechazarla con un motivo.'
+  'La franja ya inició: el servidor no permite validarla tal como está. Puedes validarla con ajustes en una franja futura o, si no se va a atender, cerrarla como "No atendida" o rechazarla con un motivo.'
 
 /** Igual que el servidor: un inicio igual a "ahora" ya cuenta como iniciado. Una fecha ilegible no advierte. */
 export function franjaYaInicio(inicioIso: string, ahora: Date): boolean {

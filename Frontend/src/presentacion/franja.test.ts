@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { MENSAJE_FIN_NO_POSTERIOR } from '../api/mensajes'
-import { FRANJA_VACIA, TEXTO_FRANJA_INVALIDA, franjaCompleta, franjaDesdeCampos, type ValoresFranja } from './franja'
+import {
+  FRANJA_VACIA,
+  TEXTO_FRANJA_INVALIDA,
+  camposDeLaFranja,
+  franjaCompleta,
+  franjaDesdeCampos,
+  mismaFranja,
+  type ValoresFranja,
+} from './franja'
 
 const franja = (fecha: string, horaInicio: string, horaFin: string): ValoresFranja => ({ fecha, horaInicio, horaFin })
 
@@ -39,5 +47,38 @@ describe('franjaCompleta', () => {
     expect(franjaCompleta(franja('', '08:00', '09:00'))).toBe(false)
     expect(franjaCompleta(franja('2026-10-20', '', '09:00'))).toBe(false)
     expect(franjaCompleta(franja('2026-10-20', '08:00', ''))).toBe(false)
+  })
+})
+
+describe('camposDeLaFranja y mismaFranja (Fase 7 · 7B.3)', () => {
+  it('la franja guardada (UTC) vuelve a los tres campos en la hora de Bogotá', () => {
+    expect(camposDeLaFranja('2026-10-15T14:00:00.000Z', '2026-10-15T16:00:00.000Z')).toEqual(
+      franja('2026-10-15', '09:00', '11:00'),
+    )
+  })
+
+  it('ida y vuelta con franjaDesdeCampos: los mismos instantes', () => {
+    const campos = camposDeLaFranja('2026-10-28T19:00:00.000Z', '2026-10-28T20:30:00.000Z')
+    const vuelta = franjaDesdeCampos(campos)
+    expect(vuelta.ok && [Date.parse(vuelta.inicio), Date.parse(vuelta.fin)]).toEqual([
+      Date.parse('2026-10-28T19:00:00.000Z'),
+      Date.parse('2026-10-28T20:30:00.000Z'),
+    ])
+  })
+
+  it.each([
+    ['un inicio ilegible', 'no-es-una-fecha', '2026-10-15T16:00:00.000Z'],
+    ['un fin ilegible', '2026-10-15T14:00:00.000Z', ''],
+    ['una franja de dos días (CA-04 no la admite)', '2026-10-15T14:00:00.000Z', '2026-10-16T16:00:00.000Z'],
+  ])('%s → campos vacíos, nada inventado', (_caso, inicio, fin) => {
+    expect(camposDeLaFranja(inicio, fin)).toEqual(FRANJA_VACIA)
+  })
+
+  it('mismaFranja compara los tres campos', () => {
+    const base = franja('2026-10-20', '08:00', '09:00')
+    expect(mismaFranja(base, { ...base })).toBe(true)
+    expect(mismaFranja(base, { ...base, fecha: '2026-10-21' })).toBe(false)
+    expect(mismaFranja(base, { ...base, horaInicio: '08:30' })).toBe(false)
+    expect(mismaFranja(base, { ...base, horaFin: '10:00' })).toBe(false)
   })
 })

@@ -1,19 +1,28 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { ESTADOS, type Estado } from '../api/maquina-estados'
 import type { DestinoDelTablero } from '../api/solicitudes'
+import { MENSAJE_FIN_NO_POSTERIOR } from '../api/mensajes'
 import { FRANJA_VACIA, type ValoresFranja } from './franja'
 import {
   TEXTO_FRANJA_INICIADA,
+  TEXTO_RAZON_AJUSTE_SIN_CAMBIOS,
+  TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA,
   TEXTO_RAZON_FRANJA_INCOMPLETA,
   accionesDelStaff,
   accionesVisiblesDelStaff,
+  ajusteAlValidar,
   franjaYaInicio,
+  opcionesDelStaff,
   porElTablero,
+  razonBloqueoDelAjuste,
   razonBloqueoDelStaff,
   textoExito,
+  textosDeLaOpcion,
   textosDelStaff,
+  textosValidarConAjustes,
   type AccionDelStaff,
   type DestinoDelTableroStaff,
+  type VigenteDelAjuste,
 } from './acciones-staff'
 import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 
@@ -76,7 +85,8 @@ describe('accionesVisiblesDelStaff (Fase 7 · T10)', () => {
     }
   })
 
-  it('el aviso DA4 ya nombra la salida nueva, además del rechazo', () => {
+  it('el aviso DA4 nombra las salidas: el rescate con ajustes (Q-B2), "No atendida" y el rechazo', () => {
+    expect(TEXTO_FRANJA_INICIADA).toMatch(/validarla con ajustes en una franja futura/)
     expect(TEXTO_FRANJA_INICIADA).toMatch(/"No atendida"/)
     expect(TEXTO_FRANJA_INICIADA).toMatch(/rechazarla con un motivo/)
   })
@@ -160,6 +170,100 @@ describe('razonBloqueoDelStaff (Fase 7 · B3)', () => {
     )
     expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', 'corto', FRANJA)).toBe(PIDE_MOTIVO)
     expect(razonBloqueoDelStaff('PROPONER_REPROGRAMACION', MOTIVO, FRANJA)).toBeUndefined()
+  })
+})
+
+describe('Validar con ajustes (Fase 7 · 7B.3 · PRD v2.2 §5.6)', () => {
+  const opciones = (estado: Estado) =>
+    opcionesDelStaff(accionesDelStaff(estado)).map((o) => `${o.transicion.id}${o.ajustar ? '+ajustes' : ''}`)
+
+  it('es una variante de T1, justo después de "Validar"; no es una transición nueva', () => {
+    expect(opciones('Recibido')).toEqual(['T1', 'T1+ajustes', 'T2', 'T10'])
+    const conAjustes = opcionesDelStaff(accionesDelStaff('Recibido')).filter((o) => o.ajustar)
+    expect(conAjustes.map((o) => [o.transicion.accion, o.transicion.destino])).toEqual([['APROBAR', 'Validado']])
+  })
+
+  it('fuera de "Recibido" no aparece: las opciones son las transiciones, sin más', () => {
+    for (const estado of ESTADOS.filter((e) => e !== 'Recibido')) {
+      expect(opciones(estado)).toEqual(accionesDelStaff(estado).map((t) => t.id))
+    }
+  })
+
+  it('sus textos: botón propio, no irreversible, nombran el radicado y lo pedido, sin prometer avisos', () => {
+    const textos = textosValidarConAjustes('EC-7', 'FRANJA')
+    expect(textos).toMatchObject({ boton: 'Validar con ajustes', confirmar: 'Sí, validar con ajustes', irreversible: false })
+    expect(textos.descripcion).toContain('EC-7')
+    expect(textos.descripcion).toContain('"Validado"')
+    expect(textos.descripcion).toContain('FRANJA')
+    expect(textos.descripcion).not.toMatch(/notific|correo|avisar|avisará/i)
+  })
+
+  it('textosDeLaOpcion elige entre los de la transición y los del ajuste', () => {
+    const [directa, ajuste] = opcionesDelStaff(accionesDelStaff('Recibido'))
+    expect(directa && textosDeLaOpcion(directa, 'EC-7', 'F').boton).toBe('Validar')
+    expect(ajuste && textosDeLaOpcion(ajuste, 'EC-7', 'F').boton).toBe('Validar con ajustes')
+  })
+
+  const VIGENTE: VigenteDelAjuste = {
+    franja: { fecha: '2026-10-27', horaInicio: '09:00', horaFin: '10:00' },
+    subEspacio: 'ESTUDIO_COMPLETO',
+  }
+  const OTRA_FRANJA: ValoresFranja = { fecha: '2026-10-28', horaInicio: '14:00', horaFin: '15:30' }
+
+  describe('razonBloqueoDelAjuste', () => {
+    it('primero la franja completa (orden del formulario)', () => {
+      expect(razonBloqueoDelAjuste(FRANJA_VACIA, 'CABINA_AUDIO', VIGENTE)).toBe(TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA)
+      expect(razonBloqueoDelAjuste({ ...OTRA_FRANJA, horaFin: '' }, 'CABINA_AUDIO', VIGENTE)).toBe(
+        TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA,
+      )
+    })
+
+    it('sin ningún cambio lo bloquea y remite a "Validar"', () => {
+      expect(razonBloqueoDelAjuste(VIGENTE.franja, VIGENTE.subEspacio, VIGENTE)).toBe(TEXTO_RAZON_AJUSTE_SIN_CAMBIOS)
+      expect(TEXTO_RAZON_AJUSTE_SIN_CAMBIOS).toMatch(/usa "Validar"/)
+    })
+
+    it('con la franja, el lugar o ambos cambiados, nada lo bloquea', () => {
+      expect(razonBloqueoDelAjuste(OTRA_FRANJA, VIGENTE.subEspacio, VIGENTE)).toBeUndefined()
+      expect(razonBloqueoDelAjuste(VIGENTE.franja, 'CABINA_AUDIO', VIGENTE)).toBeUndefined()
+      expect(razonBloqueoDelAjuste(OTRA_FRANJA, 'ESTUDIO_GRABACION', VIGENTE)).toBeUndefined()
+    })
+
+    it('si lo pedido era ilegible (campos vacíos), cualquier franja completa es un cambio', () => {
+      const ilegible: VigenteDelAjuste = { ...VIGENTE, franja: FRANJA_VACIA }
+      expect(razonBloqueoDelAjuste(OTRA_FRANJA, VIGENTE.subEspacio, ilegible)).toBeUndefined()
+    })
+  })
+
+  describe('ajusteAlValidar: solo viaja lo que cambió', () => {
+    it('solo el lugar: sin fechas (reenviarlas volvería a pasar CA-04 sobre la franja guardada)', () => {
+      expect(ajusteAlValidar(VIGENTE.franja, 'CABINA_AUDIO', VIGENTE)).toEqual({ ok: true, ajuste: { sub_espacio: 'CABINA_AUDIO' } })
+    })
+
+    it('solo la franja: completa, en hora de Bogotá, sin sub-espacio', () => {
+      expect(ajusteAlValidar(OTRA_FRANJA, VIGENTE.subEspacio, VIGENTE)).toEqual({
+        ok: true,
+        ajuste: { fecha_inicio: '2026-10-28T14:00:00-05:00', fecha_fin: '2026-10-28T15:30:00-05:00' },
+      })
+    })
+
+    it('las dos cosas, en el mismo cuerpo', () => {
+      expect(ajusteAlValidar(OTRA_FRANJA, 'ESTUDIO_GRABACION', VIGENTE)).toEqual({
+        ok: true,
+        ajuste: {
+          fecha_inicio: '2026-10-28T14:00:00-05:00',
+          fecha_fin: '2026-10-28T15:30:00-05:00',
+          sub_espacio: 'ESTUDIO_GRABACION',
+        },
+      })
+    })
+
+    it('una franja nueva con el fin antes del inicio: el error local de B2 (DH4), sin cuerpo', () => {
+      expect(ajusteAlValidar({ ...OTRA_FRANJA, horaFin: '13:00' }, 'CABINA_AUDIO', VIGENTE)).toEqual({
+        ok: false,
+        error: MENSAJE_FIN_NO_POSTERIOR,
+      })
+    })
   })
 })
 
