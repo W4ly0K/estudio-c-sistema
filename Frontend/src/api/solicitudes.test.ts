@@ -67,6 +67,7 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       proposito: 'Grabación del episodio piloto',
       fecha_inicio: '2026-10-15T09:00:00-05:00',
       fecha_fin: '2026-10-15T11:00:00-05:00',
+      sub_espacio: 'CABINA_AUDIO',
     } as const
 
     const resultado = await crearApiSolicitudes(cliente).crear(cuerpo)
@@ -94,7 +95,12 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
 
   it('proponerReprogramacion → POST …/reprogramacion con fechas y motivo; responde la proyección del Staff', async () => {
     const { cliente, llamada } = crearEntornoDePrueba(json(200, { mensaje: 'Propuesta registrada', solicitud: DETALLE_STAFF }))
-    const cuerpo = { fecha_inicio: '2026-10-28T09:00:00-05:00', fecha_fin: '2026-10-28T10:00:00-05:00', motivo: MOTIVO }
+    const cuerpo = {
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      sub_espacio: 'ESTUDIO_GRABACION',
+      motivo: MOTIVO,
+    } as const
 
     const resultado = await crearApiSolicitudes(cliente).proponerReprogramacion('EC-1', cuerpo)
 
@@ -128,7 +134,13 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       // @ts-expect-error E5: rechazar exige el motivo.
       void api.actualizarTablero('EC-1', { estado: 'Rechazado' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).
-      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y' })
+      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
+      // @ts-expect-error Fase 7 · SE6: proponer exige el sub-espacio (franja y lugar).
+      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', motivo: 'Motivo suficiente' })
+      // @ts-expect-error Fase 7 · Q-A4: crear exige que el solicitante elija el sub-espacio.
+      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y' })
+      // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
+      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'SALA_3' })
     }
     expect(soloTipos).toBeTypeOf('function')
   })

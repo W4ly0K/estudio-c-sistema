@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react'
 import type { ErrorApi, Resultado } from '../api/cliente'
 import { useApi } from '../api/contexto-api'
 import { textoDeError } from '../api/errores'
-import type { DetalleStaff } from '../api/esquemas'
+import type { DetalleStaff, SubEspacio } from '../api/esquemas'
 import type { CambiosTablero } from '../api/solicitudes'
 import { formatearFranja } from '../fechas/bogota'
 import {
@@ -25,6 +25,7 @@ import {
   motivoParaEnviar,
 } from '../presentacion/motivo'
 import { CampoMotivo } from './CampoMotivo'
+import { CampoSubEspacio } from './CampoSubEspacio'
 import { CamposFranja } from './CamposFranja'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
 
@@ -33,6 +34,10 @@ import { DialogoConfirmacion } from './DialogoConfirmacion'
 export const TEXTO_ETIQUETA_MOTIVO_RECHAZO = 'Motivo del rechazo (lo verá el solicitante)'
 export const TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION = 'Motivo de la reprogramación (lo verá el solicitante)'
 export const TEXTO_ACTUALIZANDO = 'Actualizando la solicitud…'
+/** Fase 7 · T5 (Q-A6): el lugar es parte de la propuesta, igual que la franja. */
+export const TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO = 'Sub-espacio propuesto'
+export const TEXTO_AYUDA_PROPUESTA_DE_LUGAR =
+  'Para cambiar solo el lugar, elige la misma fecha y horas actuales y otro sub-espacio. Proponer la misma franja en el mismo sub-espacio no es una reprogramación.'
 /**
  * Ayuda ante CUALQUIER 409, sin comparar el texto del servidor (DC5). La máquina, sobre una
  * lectura fresca, frena un cambio que llega tarde (TRANSICION_NO_DEFINIDA, estado final...) y
@@ -74,6 +79,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const [seleccionada, setSeleccionada] = useState<TransicionStaff | null>(null)
   const [motivo, setMotivo] = useState('')
   const [franja, setFranja] = useState<ValoresFranja>(FRANJA_VACIA)
+  // Fase 7 · T5: arranca en el lugar VIGENTE (lo más común es cambiar solo la fecha).
+  const [subEspacio, setSubEspacio] = useState<SubEspacio>(detalle.sub_espacio)
   const [enCurso, setEnCurso] = useState(false)
   const [error, setError] = useState<ErrorApi | null>(null)
   /** Error de la validación local (DH4), antes de enviar: no hubo petición. */
@@ -100,6 +107,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     // Cada apertura empieza en blanco: un borrador viejo no se envía por accidente.
     setMotivo('')
     setFranja(FRANJA_VACIA)
+    setSubEspacio(detalle.sub_espacio)
     setSeleccionada(transicion)
   }
 
@@ -122,6 +130,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     return api.proponerReprogramacion(detalle.radicado, {
       fecha_inicio: propuesta.inicio,
       fecha_fin: propuesta.fin,
+      sub_espacio: subEspacio,
       motivo: motivoParaEnviar(motivo),
     })
   }
@@ -222,6 +231,13 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
             </p>
             <div className="mt-4 space-y-4">
               <CamposFranja valores={franja} onCambio={setFranja} ahora={new Date()} />
+              <CampoSubEspacio
+                leyenda={TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO}
+                valor={subEspacio}
+                onCambio={setSubEspacio}
+                soloLectura={enCurso}
+              />
+              <p className="text-xs text-gray-500">{TEXTO_AYUDA_PROPUESTA_DE_LUGAR}</p>
             </div>
             <CampoMotivo
               etiqueta={TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION}

@@ -13,6 +13,7 @@ import {
   type Solicitud,
   type SolicitudPropia,
   type SolicitudTablero,
+  type SubEspacio,
 } from './esquemas'
 import type { Estado, TRANSICIONES } from './maquina-estados'
 
@@ -29,6 +30,12 @@ export interface CuerpoCrearSolicitud {
   readonly proposito: string
   readonly fecha_inicio: string
   readonly fecha_fin: string
+  /**
+   * Fase 7 · PRD v2.2 §4.1: OBLIGATORIO aquí, aunque el backend lo admita opcional durante
+   * el expand (lo hará obligatorio en el contract, 7A.8): la UI nunca deja que el servidor
+   * elija el lugar por el solicitante.
+   */
+  readonly sub_espacio: SubEspacio
   readonly recursos?: readonly { readonly id_recurso: number; readonly cantidad: number }[]
 }
 
@@ -56,6 +63,11 @@ export type CambiosTablero = Partial<CuerpoCrearSolicitud> &
 export interface CuerpoProponerReprogramacion {
   readonly fecha_inicio: string
   readonly fecha_fin: string
+  /**
+   * Fase 7 · PRD v2.2 §5.5 (Q-A6): el lugar de la propuesta, obligatorio. Para cambiar solo
+   * la fecha se envía el sub-espacio vigente; para cambiar solo el lugar, la franja vigente.
+   */
+  readonly sub_espacio: SubEspacio
   /** 10 a 500 caracteres sin los espacios de los extremos (Fase 6.1b). */
   readonly motivo: string
 }

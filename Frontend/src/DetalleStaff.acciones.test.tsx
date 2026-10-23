@@ -12,11 +12,13 @@ import type { ApiSolicitudes } from './api/solicitudes'
 import {
   TEXTO_ACTUALIZANDO,
   TEXTO_AYUDA_CONFLICTO,
+  TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO,
   TEXTO_ETIQUETA_MOTIVO_RECHAZO,
   TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION,
 } from './componentes/AccionesStaff'
 import { formatearFranja } from './fechas/bogota'
 import { TEXTO_FRANJA_INICIADA } from './presentacion/acciones-staff'
+import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { MENSAJE_NO_ATENDIDA } from './presentacion/linea-de-vida'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
@@ -439,6 +441,25 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(confirmarEn(dialogo)).not.toHaveAttribute('aria-describedby')
     })
 
+    it('Fase 7 · Q-A6: el lugar propuesto empieza en el vigente y se puede cambiar; se envía el elegido', async () => {
+      const proponerReprogramacion = vi
+        .fn<ApiSolicitudes['proponerReprogramacion']>()
+        .mockResolvedValue({ ok: true, datos: { mensaje: 'Propuesta de reprogramación registrada.', solicitud: en('Pendiente de Reprogramación') } })
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      const grupo = within(dialogo).getByRole('group', { name: TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO })
+      expect(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toBeChecked()
+
+      fireEvent.click(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      llenar(dialogo)
+      fireEvent.click(confirmarEn(dialogo))
+
+      await waitFor(() => expect(proponerReprogramacion).toHaveBeenCalledOnce())
+      expect(proponerReprogramacion.mock.calls[0]?.[1]).toMatchObject({ sub_espacio: 'ESTUDIO_GRABACION' })
+    })
+
     it('fin no posterior al inicio: aviso local con el texto de CA-04 y no se envía nada (DH4)', async () => {
       const proponerReprogramacion = vi.fn<ApiSolicitudes['proponerReprogramacion']>()
       mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
@@ -472,6 +493,8 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(proponerReprogramacion).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         fecha_inicio: '2026-10-28T09:00:00-05:00',
         fecha_fin: '2026-10-28T10:30:00-05:00',
+        // Fase 7 · SE6: sin tocar el grupo, se propone el MISMO lugar (el del fixture).
+        sub_espacio: 'CABINA_AUDIO',
         motivo: 'Mantenimiento del set de grabación',
       })
       expect(api.actualizarTablero).not.toHaveBeenCalled()
