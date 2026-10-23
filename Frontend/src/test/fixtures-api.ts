@@ -17,6 +17,8 @@ export const SOLICITUD = {
   fecha_propuesta_fin: null,
   estado: 'Validado',
   es_urgencia: false,
+  sub_espacio: 'CABINA_AUDIO',
+  sub_espacio_propuesto: null,
 } as const
 
 export const RECURSOS_RESUMEN = [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }]

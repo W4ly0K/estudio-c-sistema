@@ -6,6 +6,8 @@ import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleSolicitante } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
+import { formatearFranja } from './fechas/bogota'
+import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RUTA_DETALLE, RUTA_MIS_SOLICITUDES } from './rutas'
 import { DETALLE_SOLICITANTE, LOG, apiFalsa } from './test/fixtures-api'
 
@@ -96,6 +98,50 @@ describe('DetalleSolicitud (B3)', () => {
     expect(within(propuesta).getByText('Mantenimiento de la cabina de sonido.')).toBeInTheDocument()
     expect(within(propuesta).getByText('miércoles, 21 de octubre de 2026 · 14:00 – 16:00')).toBeInTheDocument()
     expect(within(propuesta).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('Fase 7 · B3: la ficha muestra el sub-espacio con su nombre oficial (Q-A1)', async () => {
+    mostrar(responde(DETALLE_SOLICITANTE))
+
+    await screen.findByRole('heading', { name: 'EC-2026-0142' })
+    expect(screen.getByText('Sub-espacio')).toBeInTheDocument()
+    expect(screen.getByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toBeInTheDocument()
+  })
+
+  it('Fase 7 · B4 (Q-A6): una propuesta SOLO de lugar muestra el sub-espacio propuesto y no tacha la franja que se conserva', async () => {
+    mostrar(
+      responde({
+        ...DETALLE_SOLICITANTE,
+        estado: 'Pendiente de Reprogramación',
+        fecha_propuesta_inicio: DETALLE_SOLICITANTE.fecha_inicio,
+        fecha_propuesta_fin: DETALLE_SOLICITANTE.fecha_fin,
+        sub_espacio_propuesto: 'ESTUDIO_GRABACION',
+      }),
+    )
+
+    const propuesta = await screen.findByRole('region', { name: 'Propuesta de reprogramación' })
+    const franjas = within(propuesta).getAllByText(formatearFranja(DETALLE_SOLICITANTE.fecha_inicio, DETALLE_SOLICITANTE.fecha_fin))
+    expect(franjas).toHaveLength(2)
+    expect(franjas[0]).not.toHaveClass('line-through')
+    expect(within(propuesta).getByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toHaveClass('line-through')
+    expect(within(propuesta).getByText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION)).toBeInTheDocument()
+  })
+
+  it('Fase 7 · B4: una propuesta anterior a la Fase 7 (sin lugar) se lee como el MISMO sub-espacio, sin tacharlo', async () => {
+    mostrar(
+      responde({
+        ...DETALLE_SOLICITANTE,
+        estado: 'Pendiente de Reprogramación',
+        fecha_propuesta_inicio: '2026-10-21T19:00:00.000Z',
+        fecha_propuesta_fin: '2026-10-21T21:00:00.000Z',
+        sub_espacio_propuesto: null,
+      }),
+    )
+
+    const propuesta = await screen.findByRole('region', { name: 'Propuesta de reprogramación' })
+    expect(within(propuesta).getByText('(el mismo sub-espacio)')).toBeInTheDocument()
+    const lugares = within(propuesta).getAllByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO, { exact: false })
+    expect(lugares[0]).not.toHaveClass('line-through')
   })
 
   it('404 (ajena o inexistente, idénticas): "No encontramos esa solicitud", sin decir cuál de las dos', async () => {

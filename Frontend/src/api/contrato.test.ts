@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
-import { CATEGORIAS } from './esquemas'
+import { CATEGORIAS, SUB_ESPACIOS } from './esquemas'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
@@ -74,6 +74,10 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('las categorías coinciden con el enum CategoriaSolicitud de Prisma', () => {
     expect([...CATEGORIAS]).toEqual(enumDePrisma('CategoriaSolicitud'))
+  })
+
+  it('los sub-espacios coinciden con el enum SubEspacio de Prisma (Fase 7)', () => {
+    expect([...SUB_ESPACIOS]).toEqual(enumDePrisma('SubEspacio'))
   })
 
   it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {

@@ -20,10 +20,18 @@ import { ESTADOS, ROLES } from './maquina-estados';
 /** Mismo orden que el enum CategoriaSolicitud de Prisma (contrato.test.ts lo vigila). */
 export const CATEGORIAS = ['PODCAST', 'VIDEO', 'ESPACIOS', 'STREAMING', 'ASESORIAS'] as const;
 
+/**
+ * Fase 7 · PRD v2.2 §5.1: mismo orden que el enum SubEspacio de Prisma (contrato.test.ts lo
+ * vigila). Los dos primeros son físicos; el completo ocupa los dos.
+ */
+export const SUB_ESPACIOS = ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] as const;
+
 export const esquemaEstado = z.enum(ESTADOS);
 export const esquemaRol = z.enum(ROLES);
 export const esquemaCategoria = z.enum(CATEGORIAS);
 export type Categoria = z.infer<typeof esquemaCategoria>;
+export const esquemaSubEspacio = z.enum(SUB_ESPACIOS);
+export type SubEspacio = z.infer<typeof esquemaSubEspacio>;
 
 const fechaIso = z.iso.datetime({ offset: true });
 const textoNoVacio = z.string().min(1);
@@ -58,6 +66,10 @@ export const esquemaSolicitud = z.object({
   fecha_propuesta_fin: fechaIso.nullable(),
   estado: esquemaEstado,
   es_urgencia: z.boolean(),
+  /** Fase 7: estricto como los estados (fail-closed): un lugar desconocido no se pinta a ciegas. */
+  sub_espacio: esquemaSubEspacio,
+  /** Solo con una propuesta de reprogramación (CA-10); puede faltar en una anterior a la Fase 7. */
+  sub_espacio_propuesto: esquemaSubEspacio.nullable(),
 });
 export type Solicitud = z.infer<typeof esquemaSolicitud>;
 

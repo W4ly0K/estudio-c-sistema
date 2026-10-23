@@ -4,7 +4,7 @@ import type { SolicitudTablero } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
 import { ETIQUETAS_CATEGORIA } from '../presentacion/etiquetas'
 import { rutaDetalle } from '../rutas'
-import { InsigniaEstado, InsigniaUrgencia } from './Insignias'
+import { InsigniaEstado, InsigniaSubEspacio, InsigniaUrgencia } from './Insignias'
 
 interface TarjetaTableroProps {
   solicitud: SolicitudTablero
@@ -29,8 +29,15 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
     fecha_fin: fin,
     fecha_propuesta_inicio: propuestaInicio,
     fecha_propuesta_fin: propuestaFin,
+    sub_espacio: subEspacio,
+    sub_espacio_propuesto: subEspacioPropuesto,
     usuario,
   } = solicitud
+  // Fase 7 · Q-A6: solo se anuncia un lugar propuesto si de verdad cambia (null si no).
+  const lugarPropuesto =
+    estado === 'Pendiente de Reprogramación' && subEspacioPropuesto !== null && subEspacioPropuesto !== subEspacio
+      ? subEspacioPropuesto
+      : null
 
   return (
     <article
@@ -53,11 +60,26 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
           {/* DH2: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
           <dd className="font-medium text-primary">{formatearFranja(inicio, fin)}</dd>
         </div>
+        <div>
+          {/* Fase 7 · PRD v2.2 §5.1: el lugar, junto a la franja (las dos definen CA-06). */}
+          <dt className="sr-only">Sub-espacio</dt>
+          <dd>
+            <InsigniaSubEspacio subEspacio={subEspacio} />
+          </dd>
+        </div>
         {/* Si el contrato llegara sin la franja propuesta, se omite: nunca "Invalid Date". */}
         {estado === 'Pendiente de Reprogramación' && propuestaInicio !== null && propuestaFin !== null && (
           <div>
             <dt className="text-xs text-gray-500">Franja propuesta</dt>
             <dd className="text-primary">{formatearFranja(propuestaInicio, propuestaFin)}</dd>
+          </div>
+        )}
+        {lugarPropuesto !== null && (
+          <div>
+            <dt className="text-xs text-gray-500">Sub-espacio propuesto</dt>
+            <dd>
+              <InsigniaSubEspacio subEspacio={lugarPropuesto} />
+            </dd>
           </div>
         )}
         <div>

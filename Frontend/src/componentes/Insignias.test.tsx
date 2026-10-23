@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { SUB_ESPACIOS } from '../api/esquemas'
 import { ESTADOS } from '../api/maquina-estados'
-import { InsigniaEstado, InsigniaUrgencia } from './Insignias'
+import { InsigniaEstado, InsigniaSubEspacio, InsigniaUrgencia } from './Insignias'
 
 describe('Insignias (DV6)', () => {
   it.each(ESTADOS)('"%s" muestra su nombre completo', (estado) => {
@@ -49,5 +50,28 @@ describe('Insignias (DV6)', () => {
     render(<InsigniaUrgencia />)
 
     expect(screen.getByText('Urgencia')).toBeInTheDocument()
+  })
+
+  describe('InsigniaSubEspacio (Fase 7 · PRD v2.2 §5.1)', () => {
+    it.each(SUB_ESPACIOS)('"%s" se anuncia como sub-espacio, con su nombre en texto', (subEspacio) => {
+      const { container } = render(<InsigniaSubEspacio subEspacio={subEspacio} />)
+
+      const insignia = container.querySelector(`[data-sub-espacio="${subEspacio}"]`)
+      // El símbolo va primero, oculto para el lector de pantalla; el texto dice qué es.
+      expect(insignia).toHaveTextContent(/Sub-espacio: \S/)
+      expect(insignia?.querySelector('[aria-hidden="true"]')).not.toBeNull()
+    })
+
+    it('los tres lugares se leen distintos y no se confunden con un estado (forma de píldora)', () => {
+      const textos = SUB_ESPACIOS.map((subEspacio) => {
+        const { container, unmount } = render(<InsigniaSubEspacio subEspacio={subEspacio} />)
+        const texto = container.textContent
+        expect(container.firstElementChild).toHaveClass('rounded-full')
+        unmount()
+        return texto
+      })
+
+      expect(new Set(textos).size).toBe(SUB_ESPACIOS.length)
+    })
   })
 })

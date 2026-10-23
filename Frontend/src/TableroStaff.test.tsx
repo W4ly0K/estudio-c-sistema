@@ -75,6 +75,37 @@ describe('TableroStaff (6.5.1)', () => {
     expect(within(columna).getByText(formatearFranja('2026-10-28T19:00:00.000Z', '2026-10-28T20:00:00.000Z'))).toBeInTheDocument()
   })
 
+  it('Fase 7: cada tarjeta lleva la insignia de su sub-espacio; el propuesto solo si cambia', async () => {
+    mostrar(
+      responde(
+        solicitud({ radicado: 'EC-1', estado: 'Recibido', sub_espacio: 'ESTUDIO_GRABACION' }),
+        solicitud({
+          radicado: 'EC-7',
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: '2026-10-28T19:00:00.000Z',
+          fecha_propuesta_fin: '2026-10-28T20:00:00.000Z',
+          sub_espacio: 'CABINA_AUDIO',
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+        }),
+        solicitud({
+          radicado: 'EC-8',
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: '2026-10-29T19:00:00.000Z',
+          fecha_propuesta_fin: '2026-10-29T20:00:00.000Z',
+          sub_espacio: 'CABINA_AUDIO',
+          sub_espacio_propuesto: 'CABINA_AUDIO',
+        }),
+      ),
+    )
+
+    const tarjeta = async (radicado: string) => screen.findByRole('article', { name: radicado })
+    expect((await tarjeta('EC-1')).querySelector('[data-sub-espacio="ESTUDIO_GRABACION"]')).toHaveTextContent('Sub-espacio:')
+    const cambiaDeLugar = await tarjeta('EC-7')
+    expect(within(cambiaDeLugar).getByText('Sub-espacio propuesto')).toBeInTheDocument()
+    expect(cambiaDeLugar.querySelector('[data-sub-espacio="ESTUDIO_COMPLETO"]')).not.toBeNull()
+    expect(within(await tarjeta('EC-8')).queryByText('Sub-espacio propuesto')).not.toBeInTheDocument()
+  })
+
   it('las cerradas van plegadas en <details>, con su total y la insignia de estado', async () => {
     mostrar(
       responde(
