@@ -161,7 +161,7 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_subespacio_check"
   - El frontend ofrece «Cerrar como no atendida» solo con la franja ya iniciada según su reloj (`accionesVisiblesDelStaff`). Si el reloj difiere, decide el servidor.
 - **NA3 · Sin motivo libre.** `motivo_rechazo` sigue admitiéndose solo con `Rechazado` (E5 y el `CHECK` R1). El solicitante ve un texto fijo, propiedad del frontend: **«La solicitud no pudo ser procesada a tiempo por el Estudio C.»** T2 sigue disponible cuando la decisión es realmente un rechazo con motivo.
 - **NA4 · Sin cierre automático (Q-B3).** No hace falta un actor «sistema»: `modificado_por` sigue siendo un FK a `Usuario`, tomado del JWT.
-- **Colisión de nombre:** ADR-005 §3 había reservado el nombre «T10» para el retiro de una propuesta por el Staff, que nunca se implementó. Desde la Fase 7, **T10 es «No atendida»** y el retiro sigue pendiente, sin id. ADR-005 y ADR-006 llevan una nota.
+- **Colisión de nombre:** ADR-005 §3 había reservado el nombre «T10» para el retiro de una propuesta por el Staff, que nunca se implementó. Desde la Fase 7, **T10 es «No atendida»** y el retiro sigue pendiente, sin id. ADR-005 y ADR-006 llevan una nota (y ADR-004, por la forma de la Decisión Y).
 
 ### 2.10 La migración y el orden *expand/contract* (Decisiones MG1 y EX)
 
@@ -290,4 +290,4 @@ Al cierre: 84 pruebas de integración en verde contra la base desechable; `npm t
 | `ad854fd` | 7B.3 · El Staff valida con ajustes de franja y sub-espacio en un solo `PATCH` (rescate Q-B2) |
 | `dd8ff70` | 7B.3 · El panel del solicitante y la confirmación del radicado muestran el sub-espacio |
 | — | 7A.7 · `npm run db:migrate` en producción (2026-10-23), con precheck y postcheck |
-| — | 7A.9 · Este ADR, las notas de ADR-005 y ADR-006 y los README |
+| — | 7A.9 · Este ADR, las notas de ADR-004, ADR-005 y ADR-006 y los README |
