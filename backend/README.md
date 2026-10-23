@@ -39,7 +39,9 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 
 Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
 
-Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
+Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261023120000_ca06_subespacios` (sub-espacios, CA-06 por sub-espacio físico, estado «No atendida» y auditoría del ajuste, Fase 7, [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md)).
+
+**Fase 7 · *expand/contract*.** `20261023120000_ca06_subespacios` es la fase *expand*: `sub_espacio` nace con un `DEFAULT 'ESTUDIO_COMPLETO'` **temporal** para que el código anterior siga funcionando, y la restricción M4 de la propuesta todavía no existe. El *contract* (paso 7A.8, en un PR posterior al merge) los retira o los agrega. Mientras tanto, contra producción solo se levanta el backend desde una rama que ya incluya la Fase 7: el detector de `develop` anterior a la fase no reconoce los nombres nuevos de las restricciones y respondería 500 en lugar de 409 ante una carrera (el motor igual la bloquea).
 
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
@@ -220,6 +222,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-004 — Concurrencia y anti-traslape (CA-06) garantizados por el motor](../docs/adr/ADR-004-concurrencia-ca06.md)
 - [ADR-005 — Máquina de estados y reprogramación por mutuo acuerdo (CA-10)](../docs/adr/ADR-005-maquina-de-estados-ca10.md)
 - [ADR-006 — Bases del frontend y contrato tipado con la API](../docs/adr/ADR-006-frontend-contrato-tipado.md) (el consumidor de este contrato; ver también el [README del frontend](../Frontend/README.md))
+- [ADR-007 — Sub-espacios del Estudio C y cierre de solicitudes no atendidas](../docs/adr/ADR-007-subespacios-y-no-atendida.md) (Fase 7: CA-06 por sub-espacio, T10 y el ajuste al validar)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -237,6 +240,8 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
   "fecha_propuesta_fin": null,
   "estado": "En Producción",
   "es_urgencia": true,
+  "sub_espacio": "CABINA_AUDIO",
+  "sub_espacio_propuesto": null,
   "recursos": [{ "cantidad_solicitada": 2, "recurso": { "nombre": "Micrófono de solapa" } }],
   "logs": [
     { "estado_anterior": "Recibido", "estado_nuevo": "Validado",
@@ -248,10 +253,13 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
 - `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
+- `sub_espacio` (Fase 7) es `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`; lo anterior a la Fase 7 vale `ESTUDIO_COMPLETO`. `sub_espacio_propuesto` es el lugar de una propuesta de reprogramación; `null` con una propuesta pendiente significa **el mismo lugar** (propuestas escritas antes de la Fase 7). Las columnas del ajuste que guarda el log (`sub_espacio_anterior`, `sub_espacio_nuevo`, `fecha_*_anterior`) **todavía no** se exponen (ADR-007, DA-2).
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
 ## 9. Contrato de `POST /solicitudes` para el frontend (pantalla B2)
+
+**Sub-espacio (Fase 7).** `sub_espacio`: `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`. Un valor fuera de la lista responde **400** desde el pipe con `El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO`. Durante el *expand* es **opcional** y sin él se reserva el Estudio C completo, como antes de la Fase 7; el frontend lo envía siempre y será obligatorio en el *contract* (7A.8).
 
 **Fechas:** `fecha_inicio` y `fecha_fin` deben ser ISO 8601 con zona horaria explícita. Cualquiera de estas formas es válida:
 
@@ -276,7 +284,7 @@ Una fecha sin zona (`2026-10-13T08:00:00`) o imposible (`2026-02-30…`) respond
 - Las reglas de horario se evalúan **antes** que el anti-traslape (CA-06): el mensaje `Error CA-06: …` solo aparece con una franja válida.
 - **201:** la solicitud creada incluye `es_urgencia`. Es `true` cuando la reserva cae antes del 6.º día hábil posterior a la radicación (5 días hábiles completos para el Staff, PRD §6). La urgencia **no bloquea** el envío: la UI debe avisar al solicitante que tiene que notificar al Staff por correo o WhatsApp.
 
-**Anti-traslape (CA-06).** Si la franja se cruza con otra solicitud activa (cualquier estado distinto de `Rechazado` y `Cancelado por el Usuario`), la respuesta es **409 Conflict** con este mensaje exacto:
+**Anti-traslape (CA-06, por sub-espacio desde la Fase 7).** Si la franja se cruza con otra solicitud activa (cualquier estado distinto de `Rechazado`, `Cancelado por el Usuario` y `No atendida`) **que comparte sub-espacio**, la respuesta es **409 Conflict**. La cabina y el estudio de video conviven en la misma franja; el Estudio C completo choca con cualquiera de los dos; dos reservas del mismo sub-espacio chocan entre sí. El mensaje exacto es:
 
 ```
 Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.
@@ -288,9 +296,9 @@ Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franj
 
 ## 10. Contrato de `PATCH /solicitudes/:radicado` (solo STAFF)
 
-Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T2, T4 y T9 de la máquina de estados (§11). Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
+Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T2, T4, T9 y T10 de la máquina de estados (§11). Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
 
-- `estado` debe ser uno de los 7 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
+- `estado` debe ser uno de los 8 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
 - Enviar el estado actual no es un cambio de estado: **200** sin log.
 - **Rechazar (T2)** exige `motivo_rechazo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo del rechazo es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
 - Con otro `estado`, el pipe no valida el motivo: lo rechaza la fila 2 de la tabla, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
@@ -307,24 +315,28 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 | 3 | La máquina no define esa transición (por ejemplo, `Validado` → `Rechazado`) | 409 | `Transición de estado no permitida desde el estado actual.` |
 | 3 | El estado guardado está fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
 | 3 | Se pide `Pendiente de Reprogramación` (T5 tiene su propia ruta, §12.2) | 409 | `Para proponer una nueva fecha use la reprogramación: POST /solicitudes/:radicado/reprogramacion.` |
+| 3b | Se cierra como `No atendida` (T10) enviando fechas | 400 | `Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.` |
 | 4 | Cambian las fechas y la solicitud no está en `Recibido` | 409 | `Las fechas solo se editan mientras la solicitud está en "Recibido". Para una solicitud validada, proponga una reprogramación.` |
+| 4b | Llega `sub_espacio` y la solicitud no está en `Recibido` | 409 | `El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.` |
+| 4c | Llega `sub_espacio` sin pasar a `Validado` (también si repite el actual) | 400 | `El sub-espacio solo se ajusta al validar la solicitud: envíelo junto con el estado "Validado".` |
 | 5 | Reglas de horario (solo si cambian las fechas) | 400 | Los mensajes de la §9, en el mismo orden |
 | 6 | Se aprueba (T1) una franja que ya inició | 409 | `No se puede aprobar una solicitud cuya franja ya inició o pasó. Reprográmela antes de aprobarla.` |
-| 7 | Anti-traslape (solo si cambian las fechas y la solicitud ocupa la franja) | 409 | `Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.` |
+| 6b | Se cierra como `No atendida` (T10) una franja que todavía no inicia | 409 | `Solo se puede cerrar como "No atendida" una solicitud cuya franja ya inició o pasó. Si no se va a atender, recházela con un motivo.` |
+| 7 | Anti-traslape (solo si la solicitud ocupa la franja y cambian las fechas **o el sub-espacio**) | 409 | `Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.` |
 | 8 | Otra operación cambió la solicitud entre la lectura y la escritura | 409 | `La solicitud fue modificada por otra operación mientras se procesaba este cambio. Recargue y vuelva a intentarlo.` |
 
-- **Rescate atómico:** mientras la solicitud está en `Recibido`, un mismo `PATCH` puede traer fechas nuevas y `"estado": "Validado"`. Se valida contra la franja nueva y se registra un solo log.
+- **Rescate atómico y «Validar con ajustes» (Fase 7, Q-B2):** mientras la solicitud está en `Recibido`, un mismo `PATCH` puede traer `"estado": "Validado"` con fechas nuevas, un `sub_espacio` nuevo o ambos. Se valida contra la franja y el lugar nuevos y se registra **un solo log**, que guarda lo que de verdad cambió: `sub_espacio_anterior`/`sub_espacio_nuevo` y `fecha_inicio_anterior`/`fecha_fin_anterior` (ADR-007 §2.7). Enviar las mismas fechas no se audita como ajuste, pero sí vuelve a pasar por las reglas de horario: el frontend envía solo lo que cambió.
 - **`es_urgencia`:** al cambiar las fechas se **recalcula** con la anticipación real en el momento del cambio.
-- **Sin reactivación:** `Rechazado` y `Cancelado por el Usuario` son finales. Un cambio de estado por sí solo nunca vuelve a ocupar una franja, así que no pasa por CA-06.
+- **Sin reactivación:** `Rechazado`, `Cancelado por el Usuario` y `No atendida` son finales. Un cambio de estado por sí solo nunca vuelve a ocupar una franja, así que no pasa por CA-06.
 - Estado y fechas se aplican **juntos**, en una sola transacción con *compare-and-set*. Si cambia el estado, el log de auditoría registra al STAFF del token (CA-09).
 - El 409 de la fila 8 **no es un error del usuario**: la UI debe recargar la solicitud y permitir repetir la acción sobre el estado actual.
 - **200:** `{ mensaje, solicitud }`. `mensaje` es `Estado actualizado y auditado correctamente en la bitácora` si cambió el estado, o `Solicitud actualizada correctamente (sin cambio de estado)` si no.
 
-## 11. Máquina de estados (PRD §5.5 · ADR-005)
+## 11. Máquina de estados (PRD §5.5 · ADR-005 · ADR-007)
 
 | # | Origen | Destino | Rol | Ruta |
 |---|---|---|---|---|
-| T1 | Recibido | Validado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Validado" }` |
+| T1 | Recibido | Validado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Validado" }`, con o sin ajuste de fechas y `sub_espacio` (§10) |
 | T2 | Recibido | Rechazado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Rechazado", "motivo_rechazo": "…" }` |
 | T3 | Recibido | Cancelado por el Usuario | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/cancelar` |
 | T4 | Validado | En Producción | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "En Producción" }` |
@@ -333,14 +345,16 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 | T7 | Pendiente de Reprogramación | Validado | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/reprogramacion/aceptar` |
 | T8 | Pendiente de Reprogramación | Cancelado por el Usuario | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/reprogramacion/rechazar` |
 | T9 | En Producción | Entregado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Entregado" }` |
+| T10 | Recibido | No atendida | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "No atendida" }`, solo con la franja ya iniciada (Fase 7) |
 
-- Estado inicial: `Recibido`. **Estados finales:** `Entregado`, `Rechazado` y `Cancelado por el Usuario`; no admiten ningún cambio de estado.
+- Estado inicial: `Recibido`. **Estados finales:** `Entregado`, `Rechazado`, `Cancelado por el Usuario` y `No atendida`; no admiten ningún cambio de estado. `No atendida` no lleva motivo: el solicitante ve un texto fijo del frontend.
 - Cualquier par que no está en la tabla está prohibido. Ninguna transición es compartida entre roles: si la pide el otro rol, la respuesta es 403.
 - Toda transición queda en `Log_Auditoria`, en la misma transacción que el cambio, con el autor tomado del token.
-- **Franjas:** todos los estados ocupan su franja oficial salvo `Rechazado` y `Cancelado por el Usuario`. En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
+- **Franjas:** todos los estados ocupan su franja oficial **en su sub-espacio** salvo `Rechazado`, `Cancelado por el Usuario` y `No atendida`. En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
 - La base de datos garantiza que hay propuesta (`fecha_propuesta_inicio` y `fecha_propuesta_fin`) **si y solo si** la solicitud está en `Pendiente de Reprogramación`, y que la propuesta termina después de empezar (invariante K9).
 - La base de datos también garantiza que todo log de T5, y solo ese, lleva `motivo_reprogramacion`, con 10 a 500 caracteres sin contar los espacios de los extremos (Fase 6.1b).
 - Y que todo log de T2, y solo ese, lleva `motivo_rechazo`, con la misma regla de longitud (Fase 6.5b).
+- Y que el ajuste de lugar o de franja solo aparece, completo y como un cambio real, en un log que termina en `Validado` (T1 o T7; seis `CHECK`, Fase 7).
 
 ## 12. Contratos de cancelación y reprogramación (CA-10)
 
@@ -367,15 +381,18 @@ Sin cuerpo. **200:** `mensaje` = `Solicitud cancelada correctamente.` y `solicit
 
 ### 12.2 `POST /solicitudes/:radicado/reprogramacion` (STAFF · T5)
 
-Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9, y el **motivo** (obligatorio desde la Fase 6.1b). Cualquier otro campo responde 400 (lista blanca).
+Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9, el **sub-espacio propuesto** (obligatorio desde la Fase 7) y el **motivo** (obligatorio desde la Fase 6.1b). Cualquier otro campo responde 400 (lista blanca).
 
 ```json
 {
   "fecha_inicio": "2026-10-28T09:00:00-05:00",
   "fecha_fin": "2026-10-28T10:00:00-05:00",
+  "sub_espacio": "ESTUDIO_GRABACION",
   "motivo": "Mantenimiento preventivo del set de grabación"
 }
 ```
+
+- `sub_espacio`: para cambiar solo la hora se envía el sub-espacio actual; para cambiar solo el lugar, la franja actual. Si falta o no es válido, el pipe responde **400** con `El sub-espacio de la propuesta es obligatorio y debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO (para cambiar solo la fecha, envíe el sub-espacio actual).`
 
 - `motivo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo de la reprogramación es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
 - El pipe valida el cuerpo **antes** que cualquier regla de la tabla: un motivo inválido, una fecha sin zona o un campo no declarado responden 400 aunque el radicado no exista. El orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
@@ -390,17 +407,19 @@ Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9, y el 
 | En Producción | 409 | `Transición de estado no permitida desde el estado actual.` |
 | Estado final | 409 | `La solicitud está en un estado final y no admite cambios de estado.` |
 | Estado guardado fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
-| Propuesta igual a la franja oficial | 400 | `La franja propuesta es igual a la actual: no hay nada que reprogramar.` |
+| Propuesta igual a la reserva vigente (misma franja **y** mismo sub-espacio) | 400 | `La propuesta es igual a la reserva vigente (misma franja y mismo sub-espacio): no hay nada que reprogramar.` |
 | Reglas de horario | 400 | Los mensajes de la §9, en el mismo orden |
-| La propuesta se cruza con otra reserva activa | 409 | `Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.` |
+| La propuesta se cruza con otra reserva activa **en el sub-espacio propuesto** (sin chocar consigo misma) | 409 | `Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.` |
 
-- La franja oficial y `es_urgencia` no cambian. La solicitud queda en `Pendiente de Reprogramación` hasta que el solicitante responda: la propuesta no se puede reemplazar ni retirar.
+- La franja oficial, el sub-espacio y `es_urgencia` no cambian. La solicitud queda en `Pendiente de Reprogramación` hasta que el solicitante responda: la propuesta no se puede reemplazar ni retirar.
 - **La propuesta no se reserva:** otra solicitud puede ocupar esa franja mientras espera, y la misma franja libre puede proponerse a varias solicitudes. Al aceptar, se revalida (§12.3).
 - **Motivo (K7):** se registra en el log de T5 (`Log_Auditoria.motivo_reprogramacion`) con el autor tomado del token. El log es inmutable, así que el motivo sigue disponible después de aceptar (§12.3) o rechazar (§12.4) la propuesta.
 
 ### 12.3 `POST /solicitudes/:radicado/reprogramacion/aceptar` (SOLICITANTE dueño · T7)
 
-Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.` y `solicitud` (proyección del solicitante) en `Validado`, con `fecha_inicio`/`fecha_fin` iguales a la propuesta, `fecha_propuesta_*` en `null` y `es_urgencia` en `false` (la fecha la eligió el Estudio C). El motivo de la propuesta sigue en `logs`, en el registro de T5.
+Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.` y `solicitud` (proyección del solicitante) en `Validado`, con `fecha_inicio`/`fecha_fin` iguales a la propuesta, `sub_espacio` igual al propuesto, `fecha_propuesta_*` y `sub_espacio_propuesto` en `null` y `es_urgencia` en `false` (la fecha la eligió el Estudio C). El motivo de la propuesta sigue en `logs`, en el registro de T5.
+
+- **Fase 7:** CA-06 se revalida en el sub-espacio propuesto. Una propuesta pendiente sin lugar (`null`, anterior a la Fase 7) se acepta en **el mismo lugar**. El log de T7 guarda el ajuste que de verdad ocurrió (lugar, franja o ambos).
 
 | Caso, en orden de evaluación | HTTP | `message` |
 |---|---|---|

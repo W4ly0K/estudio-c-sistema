@@ -12,7 +12,7 @@ Interfaz web del sistema de gestión, reservas y seguimiento de solicitudes de e
 | Lint | oxlint (`--deny-warnings`) |
 | Lenguaje | TypeScript en modo `strict`. **El tipo `any` está prohibido** (también las aserciones `as` en el código de la aplicación) |
 
-El *por qué* de este diseño está en [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md). El contrato de la API, en el [README del backend](../backend/README.md) (§8 a §12).
+El *por qué* de este diseño está en [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md); los sub-espacios, «No atendida» y «Validar con ajustes» (Fase 7), en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md). El contrato de la API, en el [README del backend](../backend/README.md) (§8 a §12).
 
 ---
 
@@ -56,11 +56,11 @@ npm run dev                  # http://localhost:5173
 ```
 src/
 ├── api/                  Contrato tipado con el backend (ADR-006)
-│   ├── esquemas.ts       Esquemas Zod y tipos derivados (z.infer): login, solicitudes, detalle por rol, errores
-│   ├── maquina-estados.ts Copia de T1–T9 SOLO para la vista; accionesDisponibles(estado, rol)
+│   ├── esquemas.ts       Esquemas Zod y tipos derivados (z.infer): login, solicitudes, detalle por rol, errores, SUB_ESPACIOS
+│   ├── maquina-estados.ts Copia de T1–T10 SOLO para la vista; accionesDisponibles(estado, rol)
 │   ├── mensajes.ts       Mensajes del backend que la UI reconoce o repite (409 concurrente, primera regla de CA-04)
 │   ├── cliente.ts        crearClienteApi: Resultado<T>, ErrorApi, validación de cada respuesta
-│   ├── solicitudes.ts    Una función tipada por ruta de /solicitudes
+│   ├── solicitudes.ts    Una función tipada por ruta de /solicitudes; CambiosTablero no compila un ajuste fuera de T1
 │   ├── auth.ts           POST /auth/google/login (ruta pública)
 │   ├── errores.ts        textoDeError(): el texto que ve la persona para cada ErrorApi
 │   ├── crear-api.ts      Raíz de composición: conecta el cliente con el entorno y el navegador
@@ -72,21 +72,22 @@ src/
 │   ├── SoloRol            Guarda de presentación: con otro rol vuelve a "/" en silencio y sin montar la pantalla
 │   ├── DialogoConfirmacion  <dialog> nativo; abre y cierra con useLayoutEffect; puedeConfirmar opcional
 │   ├── TarjetaSolicitud, ExitoRadicado, AccionesSolicitud   Solicitante (B1, B1b, B3 y B4)
-│   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1, T2, T4, T5 y T9
+│   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1 (directo o con ajustes), T2, T4, T5, T9 y T10
 │   ├── CampoMotivo        Motivo con contador de caracteres reales (T2 y T5), sin maxLength
-│   └── CamposFranja       Fecha y horas en hora de Bogotá (B2 y T5), controlado
+│   ├── CampoSubEspacio    Grupo de 3 opciones con su ayuda (B2, T5 y el ajuste de T1), controlado
+│   └── CamposFranja       Fecha y horas en hora de Bogotá (B2, T5 y el ajuste de T1), controlado
 ├── config/entorno.ts     Variables de entorno validadas (fail-fast)
-├── fechas/bogota.ts      Fechas SIEMPRE en la hora de Bogotá: aIsoBogota, hoyEnBogota y formatear*
+├── fechas/bogota.ts      Fechas SIEMPRE en la hora de Bogotá: aIsoBogota y su inverso aCamposBogota, hoyEnBogota y formatear*
 ├── presentacion/         Funciones PURAS de la vista (se prueban sin React)
-│   ├── etiquetas, resumen               Nombres de categoría y resumen del panel B1
+│   ├── etiquetas, resumen               Nombres de categoría y de sub-espacio (oficial, corto y ayuda) y resumen del panel B1
 │   ├── linea-de-vida    lineaDeVida(detalle, perspectiva): actores y motivos según quién mira
-│   ├── acciones-solicitante, acciones-staff   Acciones derivadas de la máquina, con sus textos honestos y su canal
+│   ├── acciones-solicitante, acciones-staff   Acciones derivadas de la máquina, con sus textos honestos y su canal; opciones del Staff y ajuste mínimo al validar
 │   ├── tablero          agruparTablero(): columnas derivadas de la máquina, orden por urgencia e instante
 │   ├── inicio           Resúmenes y atajos del inicio por rol, y las reglas del Estudio C (Fase 7)
 │   ├── navegacion       navegacionDelRol(): los enlaces del encabezado de cada rol (Fase 7)
 │   ├── detalle-staff    filasDeRecursos(): inventario TOTAL; alerta solo si se supera
 │   ├── motivo           Límites y longitud real del motivo, igual que el backend; textos de ayuda
-│   └── franja           franjaDesdeCampos(): las dos reglas locales de una franja (DH1 y DH4)
+│   └── franja           franjaDesdeCampos(): las dos reglas locales de una franja (DH1 y DH4); camposDeLaFranja() y mismaFranja()
 ├── sesion/
 │   ├── token.ts          Único módulo que conoce localStorage (con try/catch)
 │   ├── maquina-sesion.ts Máquina pura de la sesión: estados, eventos y reducirSesion()
@@ -193,14 +194,19 @@ Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo 
 | `/` | Inicio: pendientes de su respuesta, próximas reservas, "Nueva solicitud" y las reglas del Estudio C | Inicio: atajos con contador (urgentes, recibidas con la franja vencida, esperando al solicitante, en producción) |
 | `/mis-solicitudes` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) | Vuelve a `/` en silencio (`SoloRol`) |
 | `/tablero` | Vuelve a `/` en silencio (`SoloRol`) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación y En Producción; cerradas plegadas; aviso de urgentes |
-| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, resolución (validar, rechazar, iniciar producción, entregar, proponer reprogramación) e historial |
+| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, sub-espacio, resolución (validar, validar con ajustes, rechazar, cerrar como no atendida, iniciar producción, entregar, proponer reprogramación) e historial |
 | cualquier otra | Vuelve a `/` | Vuelve a `/` |
 
 - **Despliegue en producción:** el servidor debe responder `index.html` en **cualquier** ruta (*SPA fallback*). `npm run dev` ya lo hace; un hosting estático, no por defecto. Sin eso, recargar o abrir un enlace directo a `/solicitudes/EC-…` responde 404.
 - Ajena o inexistente se ven igual: *"No encontramos esa solicitud"* (404 uniforme del backend).
 
-## 10. Pendiente en la Fase 6
+## 10. Pendiente
 
 - ✅ **6.5b · Backend (cerrada):** `motivo_rechazo` con `@TextoConLongitudReal(10, 500)` y dos CHECK en la base (ADR-005 §2.10). El formulario de rechazo usará `MOTIVO_RECHAZO_MINIMO` y `MOTIVO_RECHAZO_MAXIMO` con su prueba de deriva.
 - ✅ **6.5 · Vista del Staff (cerrada):** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (ADR-006 §2.12). Lo que quedó fuera está en ADR-006 §5.
-- **6.6 · Cierre:** bitácora, ADR y PR de la fase.
+- ✅ **6.6 · Cierre de la Fase 6** (bitácora, ADR y PR).
+- ✅ **Fase 7 · Frente A (sub-espacios):** el sub-espacio en el contrato, B1, B1b, B2, el tablero y los detalles; T5 con lugar; «Cerrar como no atendida» (T10) y «Validar con ajustes» (ADR-007).
+- **Fase 7 · pendiente (ADR-007 §6):**
+  - el historial (línea de vida) todavía no muestra los ajustes de lugar y de franja que el log ya guarda (DA-2);
+  - el diálogo de T10 puede decir que la franja queda libre (el motor ya la libera);
+  - con el *contract* (7A.8) el backend exigirá el sub-espacio que este cliente ya envía siempre.
