@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import type { Solicitud } from '../api/esquemas'
+import { ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { SOLICITUD } from '../test/fixtures-api'
 import { ExitoRadicado, TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './ExitoRadicado'
 
@@ -25,6 +26,13 @@ describe('ExitoRadicado (B1b)', () => {
     expect(screen.getByText('jueves, 15 de octubre de 2026 · 09:00 – 11:00')).toBeInTheDocument()
     expect(screen.getByText('Ana Pérez')).toBeInTheDocument()
     expect(document.querySelector('[data-estado="Recibido"]')).not.toBeNull()
+  })
+
+  it('Fase 7: muestra el sub-espacio con su nombre oficial, el que guardó el servidor', () => {
+    mostrar({ sub_espacio: 'ESTUDIO_COMPLETO' })
+
+    const fila = screen.getByText('Sub-espacio').closest('div')
+    expect(fila).toHaveTextContent(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO)
   })
 
   it('lleva el foco al título: el botón que lo tenía ya no existe', () => {

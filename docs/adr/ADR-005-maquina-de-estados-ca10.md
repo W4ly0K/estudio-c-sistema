@@ -7,6 +7,7 @@
 | **Actualización** | 2026-10-11 · Fase 6.1b: K7 resuelto, motivo de la reprogramación obligatorio y garantizado por el motor (§2.9) |
 | **Actualización** | 2026-10-14 · Fase 6.5b: motivo del rechazo (T2) con longitud real y E5 garantizado por el motor (§2.10) |
 | **Actualización** | 2026-10-15 · Cierre de la Fase 6: historial de implementación completo (§7) |
+| **Actualización** | 2026-10-23 · Fase 7: nota en §3. El id **T10** es desde ahora «No atendida» ([ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.9); el retiro de la propuesta sigue pendiente, sin id. T1, T5 y T7 llevan sub-espacio (ADR-007 §2.5 y §2.6) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-5-maquina-de-estados` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (404 uniforme y proyecciones por rol en los comandos del solicitante) · [ADR-003](ADR-003-reglas-de-horario.md) (la franja propuesta pasa por las mismas reglas de horario) · [ADR-004](ADR-004-concurrencia-ca06.md) (el motor como garante; este ADR **reemplaza** la reactivación de su Decisión AG) |
@@ -198,7 +199,9 @@ ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_segun_e
    - un comando `POST /solicitudes/:radicado/reprogramacion/retirar` con el patrón de K1 a K8: *compare-and-set* sobre el estado y la propuesta, y log con el autor del token;
    - **K9 no cambia:** el destino es `Validado` con la propuesta en `null`, permitido por M1 a M3, así que no requiere migración;
    - con T10, el Staff puede retirar y volver a proponer, lo que resuelve el bloqueo del punto 3 sin cancelar una reserva válida.
-5. **Sin respuesta del solicitante.** Hoy una propuesta puede esperar indefinidamente. Queda abierto definir un plazo y qué ocurre al vencerlo (por ejemplo, un retiro automático por T10).
+5. **Sin respuesta del solicitante.** Hoy una propuesta puede esperar indefinidamente. Queda abierto definir un plazo y qué ocurre al vencerlo (por ejemplo, un retiro automático).
+
+> **Nota posterior (Fase 7, 2026-10-23).** El nombre «T10» de los puntos 4 y 5 nunca llegó a la tabla de la máquina. Desde la Fase 7, **T10 es `Recibido` → `No atendida`** (cierre por el Staff de una solicitud vencida, [ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.9). El retiro de la propuesta por el Staff sigue siendo la opción (b), **pendiente y sin id**: si se implementa, tomará el siguiente libre. La propuesta, además, incluye ahora el sub-espacio (ADR-007 §2.6).
 
 ---
 
@@ -256,7 +259,7 @@ ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_segun_e
 
 - **N3 · Agotamiento de conexiones (P2028).** Una transacción interactiva espera como máximo `maxWait` (2 s) por una conexión. Con `connection_limit=5`, más de 5 escrituras simultáneas pueden fallar con P2028 y responder 500 en lugar de 409. Necesita un experimento propio antes de operar con carga real: medir el *pooler* de Supabase, fijar `maxWait`/`timeout` de forma explícita y traducir P2028 a 503 con reintento.
 - **N4 · El modo libre de I-11f no recorrió órdenes alternativos.** Los 50 choques los resolvió el *compare-and-set* (0 por la máquina y 0 con doble éxito): al lanzarse a la vez, las dos peticiones siempre leen antes de que alguna escriba, y el modo libre se comportó como la barrera. Los caminos en los que la segunda petición lee **después** de la primera confirmación están cubiertos por las pruebas unitarias, pero no bajo concurrencia real. **Mejora:** un retraso aleatorio y sembrado (de 0 a 300 ms) en una de las dos peticiones, registrando la semilla para reproducir cualquier fallo.
-- **CA-10:** plazo de respuesta del solicitante y T10 (§3). El motivo de la reprogramación (K7) quedó resuelto en la Fase 6.1b (§2.9).
+- **CA-10:** plazo de respuesta del solicitante y retiro de la propuesta por el Staff (§3; sin id desde la Fase 7, porque T10 es «No atendida»). El motivo de la reprogramación (K7) quedó resuelto en la Fase 6.1b (§2.9).
 - **ADR-002:** `remove()` todavía responde 400 con el radicado cuando no existe; falta el 404 uniforme.
 - **E3:** categoría, propósito y recursos siguen editables por el Staff fuera de `Recibido`.
 - **Esquema:** `estado` como enum de Prisma (la migración debe convertir los valores y recrear el `EXCLUDE`).

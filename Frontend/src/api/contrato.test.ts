@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
-import { CATEGORIAS } from './esquemas'
+import { CATEGORIAS, SUB_ESPACIOS } from './esquemas'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
@@ -37,21 +37,25 @@ function enumDePrisma(nombre: string): string[] {
   return cuerpo.split('\n').map((linea) => linea.trim()).filter((linea) => linea !== '')
 }
 
+// `T\d+`: desde la Fase 7 existe T10 (dos dígitos). Con `T\d` su fila no se leería y el piso
+// de 10 filas fallaría sin decir por qué.
 const FILA_TRANSICION =
-  /\{ id: '(T\d)', accion: '([A-Z_]+)', origen: '([^']+)', destino: '([^']+)', rol: (STAFF|SOLICITANTE) \}/g
+  /\{ id: '(T\d+)', accion: '([A-Z_]+)', origen: '([^']+)', destino: '([^']+)', rol: (STAFF|SOLICITANTE) \}/g
 
 describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', () => {
-  it('los 7 estados, en el mismo orden', () => {
+  it('los 8 estados, en el mismo orden', () => {
     const delBackend = listaDelBackend('ESTADOS')
-    expect(delBackend).toHaveLength(7)
+    expect(delBackend).toHaveLength(8)
     expect([...ESTADOS]).toEqual(delBackend)
   })
 
-  it('las 8 acciones, en el mismo orden', () => {
-    expect([...ACCIONES]).toEqual(listaDelBackend('ACCIONES'))
+  it('las 9 acciones, en el mismo orden', () => {
+    const delBackend = listaDelBackend('ACCIONES')
+    expect(delBackend).toHaveLength(9)
+    expect([...ACCIONES]).toEqual(delBackend)
   })
 
-  it('las 9 transiciones T1 a T9, fila por fila', () => {
+  it('las 10 transiciones T1 a T10, fila por fila', () => {
     const delBackend = [...lf(fuenteMaquina).matchAll(FILA_TRANSICION)].map(([, id, accion, origen, destino, rol]) => ({
       id,
       accion,
@@ -60,7 +64,7 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
       rol,
     }))
     // Sin este piso, un cambio de formato dejaría la lista vacía y la prueba no compararía nada.
-    expect(delBackend).toHaveLength(9)
+    expect(delBackend).toHaveLength(10)
     expect(TRANSICIONES.map((t) => ({ ...t }))).toEqual(delBackend)
   })
 
@@ -70,6 +74,10 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('las categorías coinciden con el enum CategoriaSolicitud de Prisma', () => {
     expect([...CATEGORIAS]).toEqual(enumDePrisma('CategoriaSolicitud'))
+  })
+
+  it('los sub-espacios coinciden con el enum SubEspacio de Prisma (Fase 7)', () => {
+    expect([...SUB_ESPACIOS]).toEqual(enumDePrisma('SubEspacio'))
   })
 
   it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {

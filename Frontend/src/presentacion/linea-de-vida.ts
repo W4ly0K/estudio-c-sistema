@@ -35,6 +35,18 @@ export const ACTORES = {
 export type Actor = (typeof ACTORES)[Perspectiva][Rol]
 
 export const ETIQUETA_MOTIVO_RECHAZO = 'Motivo del rechazo'
+
+/**
+ * Fase 7 · PRD v2.2 §8.2 (Q-B1): T10 no lleva motivo libre del Staff. El solicitante ve este
+ * texto fijo, aprobado por el Responsable del Estudio C. Vive en la vista porque el servidor
+ * no lo guarda: lo que el log registra es la transición, y el texto se DERIVA de ella.
+ */
+export const MENSAJE_NO_ATENDIDA = 'La solicitud no pudo ser procesada a tiempo por el Estudio C.'
+/** Para el solicitante es un mensaje del Estudio; para el Staff, lo que el solicitante verá. */
+export const ETIQUETAS_MENSAJE_NO_ATENDIDA: Readonly<Record<Perspectiva, string>> = {
+  SOLICITANTE: 'Mensaje del Estudio C',
+  STAFF: 'Mensaje que ve el solicitante',
+}
 /** El motivo de T5: el solicitante lo recibe "del Staff"; para el Staff es su propia justificación. */
 export const ETIQUETAS_MOTIVO_PROPUESTA: Readonly<Record<Perspectiva, string>> = {
   SOLICITANTE: 'Motivo informado por el Staff',
@@ -79,6 +91,9 @@ export function actorDe(desde: Estado, hacia: Estado, perspectiva: Perspectiva):
 }
 
 function motivoDe(log: LogSolicitante, perspectiva: Perspectiva): MotivoEvento | null {
+  if (log.estado_nuevo === 'No atendida') {
+    return { etiqueta: ETIQUETAS_MENSAJE_NO_ATENDIDA[perspectiva], texto: MENSAJE_NO_ATENDIDA }
+  }
   if (log.motivo_rechazo !== null) return { etiqueta: ETIQUETA_MOTIVO_RECHAZO, texto: log.motivo_rechazo }
   if (log.motivo_reprogramacion !== null) {
     return { etiqueta: ETIQUETAS_MOTIVO_PROPUESTA[perspectiva], texto: log.motivo_reprogramacion }

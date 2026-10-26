@@ -30,6 +30,8 @@ const DETALLE_SOLICITANTE = {
   fecha_propuesta_fin: null,
   estado: 'En Producción',
   es_urgencia: true,
+  sub_espacio: 'ESTUDIO_COMPLETO',
+  sub_espacio_propuesto: null,
   recursos: [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }],
   logs: [LOG],
 }
@@ -85,6 +87,10 @@ describe('Esquemas del contrato (DC1)', () => {
       ['una categoría desconocida', { categoria: 'MUSICA' }],
       ['num_participantes decimal', { num_participantes: 2.5 }],
       ['sin logs', { logs: undefined }],
+      // Fase 7 · PRD v2.2 §5.1: el sub-espacio es estricto como el estado (fail-closed).
+      ['sin sub_espacio', { sub_espacio: undefined }],
+      ['un sub-espacio desconocido', { sub_espacio: 'SALA_3' }],
+      ['un sub-espacio propuesto desconocido', { sub_espacio_propuesto: 'cabina_audio' }],
     ])('rechaza %s', (_caso, cambios) => {
       expect(acepta(esquemaDetalleSolicitante, { ...DETALLE_SOLICITANTE, ...cambios })).toBe(false)
     })

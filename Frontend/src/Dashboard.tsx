@@ -1,7 +1,15 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { textoDeError } from './api/errores';
-import { CATEGORIAS, type Categoria, type Solicitud, type SolicitudPropia, type UsuarioSesion } from './api/esquemas';
+import {
+  CATEGORIAS,
+  type Categoria,
+  type Solicitud,
+  type SolicitudPropia,
+  type SubEspacio,
+  type UsuarioSesion,
+} from './api/esquemas';
 import { useApi } from './api/contexto-api';
+import { CampoSubEspacio, TEXTO_ELIGE_SUB_ESPACIO, TEXTO_LEYENDA_SUB_ESPACIO } from './componentes/CampoSubEspacio';
 import { CamposFranja } from './componentes/CamposFranja';
 import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
@@ -20,9 +28,16 @@ interface FormularioSolicitud {
   franja: ValoresFranja;
   categoria: Categoria;
   proposito: string;
+  /** Fase 7 · Q-A4: lo PROPONE el solicitante; sin valor inicial para no elegir por él. */
+  subEspacio: SubEspacio | null;
 }
 
-const FORMULARIO_VACIO: FormularioSolicitud = { franja: FRANJA_VACIA, categoria: 'ESPACIOS', proposito: '' };
+const FORMULARIO_VACIO: FormularioSolicitud = {
+  franja: FRANJA_VACIA,
+  categoria: 'ESPACIOS',
+  proposito: '',
+  subEspacio: null,
+};
 
 /**
  * Qué muestra el diálogo. Una unión discriminada en lugar de dos estados sueltos
@@ -96,12 +111,19 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
       setErrorValidacion(franja.error);
       return;
     }
+    // Fase 7: el navegador ya lo exige (`required`); esta guarda es la defensa en profundidad
+    // y lo que le permite a TypeScript enviar un SubEspacio y no un null.
+    if (form.subEspacio === null) {
+      setErrorValidacion(TEXTO_ELIGE_SUB_ESPACIO);
+      return;
+    }
 
     const resultado = await api.crear({
       categoria: form.categoria,
       proposito: form.proposito,
       fecha_inicio: franja.inicio,
       fecha_fin: franja.fin,
+      sub_espacio: form.subEspacio,
     });
 
     if (!resultado.ok) {
@@ -212,6 +234,13 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   ))}
                 </select>
               </div>
+
+              {/* Fase 7 · PRD v2.2 §4.1: dónde se hará la actividad (lo puede ajustar el Staff al validar). */}
+              <CampoSubEspacio
+                leyenda={TEXTO_LEYENDA_SUB_ESPACIO}
+                valor={form.subEspacio}
+                onCambio={(subEspacio) => setForm({ ...form, subEspacio })}
+              />
 
               <div>
                 <label htmlFor={ids.proposito} className="block text-gray-600 mb-1">Propósito de la reserva</label>

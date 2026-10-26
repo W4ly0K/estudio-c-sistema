@@ -28,7 +28,7 @@ describe('agruparTablero (6.5.1 · DE3)', () => {
       'Pendiente de Reprogramación',
       'En Producción',
     ])
-    expect(tablero.cerradas.map((c) => c.estado)).toEqual(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])
+    expect(tablero.cerradas.map((c) => c.estado)).toEqual(['Entregado', 'Rechazado', 'Cancelado por el Usuario', 'No atendida'])
     expect([...tablero.activas, ...tablero.cerradas].every((c) => c.solicitudes.length === 0)).toBe(true)
     expect(tablero.urgentesEnRecibido).toBe(0)
   })

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './estados';
 
+// Fase 7 · 7A.3: la restricción vigente es la de los sub-espacios (la de la Fase 4 se borró).
 const MIGRACION_CA06 = join(
   __dirname,
-  '../../../prisma/migrations/20261002200000_ca06_sin_traslape/migration.sql',
+  '../../../prisma/migrations/20261023120000_ca06_subespacios/migration.sql',
 );
 
 describe('Estados y ocupación de la franja (CA-06)', () => {
-  it.each(['Rechazado', 'Cancelado por el Usuario'])('%s libera la franja', (estado) => {
+  it.each(['Rechazado', 'Cancelado por el Usuario', 'No atendida'])('%s libera la franja', (estado) => {
     expect(ocupaFranja(estado)).toBe(false);
   });
 
@@ -24,12 +25,17 @@ describe('Estados y ocupación de la franja (CA-06)', () => {
     expect(ocupaFranja('rechazado')).toBe(true); // otra capitalización no libera nada
   });
 
-  it('la lista coincide EXACTAMENTE con el NOT IN de la migración aplicada', () => {
-    const sql = readFileSync(MIGRACION_CA06, 'utf8');
-    const coincidencia = sql.match(/estado NOT IN \(([^)]*)\)/);
-    expect(coincidencia).not.toBeNull();
-    const enLaMigracion = [...(coincidencia?.[1] ?? '').matchAll(/'([^']*)'/g)].map((m) => m[1]);
+  it('la lista coincide EXACTAMENTE con el NOT IN de CADA restricción de la migración', () => {
+    // Sin comentarios: la cabecera documenta una reversión que no se ejecuta.
+    const sql = readFileSync(MIGRACION_CA06, 'utf8').replace(/--.*$/gm, '');
+    const listas = [...sql.matchAll(/estado NOT IN \(([^)]*)\)/g)].map((coincidencia) =>
+      [...coincidencia[1].matchAll(/'([^']*)'/g)].map((m) => m[1]).sort(),
+    );
 
-    expect([...ESTADOS_QUE_LIBERAN_FRANJA].sort()).toEqual(enLaMigracion.sort());
+    // Una por sub-espacio físico: si el formato cambia y no se lee ninguna, falla aquí.
+    expect(listas).toHaveLength(2);
+    for (const enLaMigracion of listas) {
+      expect([...ESTADOS_QUE_LIBERAN_FRANJA].sort()).toEqual(enLaMigracion);
+    }
   });
 });

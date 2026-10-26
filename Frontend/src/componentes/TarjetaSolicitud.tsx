@@ -2,9 +2,9 @@ import { useId } from 'react'
 import { Link } from 'react-router'
 import type { SolicitudPropia } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
-import { ETIQUETAS_CATEGORIA } from '../presentacion/etiquetas'
+import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { rutaDetalle } from '../rutas'
-import { InsigniaEstado, InsigniaUrgencia } from './Insignias'
+import { InsigniaEstado, InsigniaSubEspacio, InsigniaUrgencia } from './Insignias'
 
 export const TEXTO_PROPUESTA_STAFF = 'El Staff del Estudio C propone una nueva franja para esta solicitud.'
 export const TEXTO_PROPUESTA_EN_ESPERA =
@@ -28,7 +28,14 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
     fecha_propuesta_fin: propuestaFin,
     proposito,
     recursos,
+    sub_espacio: subEspacio,
+    sub_espacio_propuesto: subEspacioPropuesto,
   } = solicitud
+  // Fase 7 · Q-A6: la misma regla que el tablero: el lugar propuesto solo se anuncia si cambia.
+  const lugarPropuesto =
+    estado === 'Pendiente de Reprogramación' && subEspacioPropuesto !== null && subEspacioPropuesto !== subEspacio
+      ? subEspacioPropuesto
+      : null
 
   return (
     <article
@@ -41,9 +48,13 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
             <span className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</span>
             <h3 id={idRadicado} className="text-lg font-black text-primary">{radicado}</h3>
           </div>
-          <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
-            {ETIQUETAS_CATEGORIA[categoria]}
-          </span>
+          {/* Fase 7 · PRD v2.2 §5.1: el lugar va junto a la categoría (lo que se reservó). */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
+              {ETIQUETAS_CATEGORIA[categoria]}
+            </span>
+            <InsigniaSubEspacio subEspacio={subEspacio} />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {esUrgencia && <InsigniaUrgencia />}
@@ -81,6 +92,11 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
           {propuestaInicio !== null && propuestaFin !== null && (
             <p className="mt-1 text-primary">
               Franja propuesta (hora de Colombia): <strong>{formatearFranja(propuestaInicio, propuestaFin)}</strong>
+            </p>
+          )}
+          {lugarPropuesto !== null && (
+            <p className="mt-1 text-primary">
+              Sub-espacio propuesto: <strong>{ETIQUETAS_SUB_ESPACIO[lugarPropuesto]}</strong>
             </p>
           )}
           <p className="mt-1 text-gray-600">{TEXTO_PROPUESTA_EN_ESPERA}</p>

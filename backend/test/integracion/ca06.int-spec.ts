@@ -1,5 +1,5 @@
 import { ConflictException, Logger } from '@nestjs/common';
-import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario, SubEspacio } from '@prisma/client';
 import { SolicitudesService } from '../../src/solicitudes/solicitudes.service';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import type { CreateSolicitudeDto } from '../../src/solicitudes/dto/create-solicitude.dto';
@@ -8,9 +8,15 @@ import type { FranjaSolicitada } from '../../src/solicitudes/reglas/horario.vali
 import {
   esViolacionDeTraslapeCa06,
   MENSAJE_CA06,
-  RESTRICCION_CA06,
+  RESTRICCIONES_CA06_POR_SUBESPACIO,
 } from '../../src/solicitudes/errores/traslape-ca06';
 import { ESTADOS_QUE_LIBERAN_FRANJA } from '../../src/solicitudes/reglas/estados';
+import {
+  OCUPA,
+  RESTRICCION_DEL_SUBESPACIO,
+  SUB_ESPACIOS,
+  type SubEspacioFisico,
+} from '../../src/solicitudes/reglas/sub-espacios';
 import { RelojFijo } from '../utils/reloj-fijo';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 
@@ -200,19 +206,30 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
     expect(await prisma.solicitud.count({ where: { fecha_inicio: bogota('28', '09:00') } })).toBe(1);
   });
 
-  it('I-6 · la restricción instalada coincide con RESTRICCION_CA06 y con ESTADOS_QUE_LIBERAN_FRANJA', async () => {
-    const restricciones = await prisma.$queryRaw<{ conname: string; contype: string; definicion: string }[]>`
-      SELECT conname, contype::text AS contype, pg_get_constraintdef(oid) AS definicion
+  it('I-6 · las dos restricciones instaladas (Fase 7 · SE2) coinciden con sub-espacios.ts y con ESTADOS_QUE_LIBERAN_FRANJA', async () => {
+    const restricciones = await prisma.$queryRaw<
+      { conname: string; contype: string; convalidated: boolean; definicion: string }[]
+    >`
+      SELECT conname, contype::text AS contype, convalidated, pg_get_constraintdef(oid) AS definicion
       FROM pg_constraint
       WHERE conrelid = '"Solicitud"'::regclass AND contype IN ('c', 'x')
       ORDER BY conname`;
     const exclusiones = restricciones.filter((r) => r.contype === 'x');
-    // PostgreSQL reescribe el NOT IN como "<> ALL (ARRAY[...])": se leen los literales del WHERE.
-    const clausulaWhere = exclusiones[0]?.definicion.split('WHERE')[1] ?? '';
-    const enLaBase = [...clausulaWhere.matchAll(/'([^']*)'/g)].map((m) => m[1]);
 
-    expect(exclusiones.map((r) => r.conname)).toEqual([RESTRICCION_CA06]);
-    expect(enLaBase.sort()).toEqual([...ESTADOS_QUE_LIBERAN_FRANJA].sort());
+    // La global de la Fase 4 ya no existe: solo una por sub-espacio físico.
+    expect(exclusiones.map((r) => r.conname)).toEqual([...RESTRICCIONES_CA06_POR_SUBESPACIO].sort());
+    for (const [fisico, nombre] of Object.entries(RESTRICCION_DEL_SUBESPACIO) as [SubEspacioFisico, string][]) {
+      const instalada = exclusiones.find((r) => r.conname === nombre);
+      expect(instalada?.convalidated).toBe(true);
+      // PostgreSQL reescribe el NOT IN como "<> ALL (ARRAY[...])" y el IN como "= ANY (ARRAY[...])":
+      // los literales se distinguen por su tipo (::text los estados, ::"SubEspacio" los sub-espacios).
+      const clausulaWhere = instalada?.definicion.split('WHERE')[1] ?? '';
+      const estados = [...clausulaWhere.matchAll(/'([^']*)'::text/g)].map((m) => m[1]);
+      const subEspacios = [...clausulaWhere.matchAll(/'([^']*)'::"SubEspacio"/g)].map((m) => m[1]);
+
+      expect(estados.sort()).toEqual([...ESTADOS_QUE_LIBERAN_FRANJA].sort());
+      expect(subEspacios.sort()).toEqual(SUB_ESPACIOS.filter((opcion) => OCUPA[opcion].includes(fisico)).sort());
+    }
     expect(restricciones.some((r) => r.contype === 'c' && r.conname === 'Solicitud_fechas_validas_check')).toBe(true);
   });
 
@@ -233,5 +250,76 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
 
     expect(guardadas).toHaveLength(1);
     expect(detalles).toEqual([{ radicado_solicitud: guardadas[0].radicado }]);
+  });
+
+  /**
+   * Fase 7 · I-30 · CANARIO del detector contra las restricciones REALES por sub-espacio
+   * (ADR-007 SE2 y SE3). En 7A.1 se probaba renombrando la global; desde 7A.3 las dos
+   * existen y el 23P01 sale del motor tal cual. El caso del nombre ajeno (_v2) sí renombra,
+   * dentro de una transacción que se revierte entera (el DDL de PostgreSQL es transaccional).
+   */
+  describe('I-30 · CANARIO Fase 7: el 23P01 de cada sub-espacio físico es CA-06; un nombre ajeno, no', () => {
+    const datosDirectos = (
+      radicado: string,
+      desde: string,
+      hasta: string,
+      subEspacio: SubEspacio,
+    ): Prisma.SolicitudUncheckedCreateInput => ({
+      radicado,
+      id_usuario: USUARIO,
+      categoria: CategoriaSolicitud.VIDEO,
+      proposito: 'Canario de los nombres de la Fase 7',
+      fecha_inicio: bogota('27', desde),
+      fecha_fin: bogota('27', hasta),
+      estado: 'Recibido',
+      sub_espacio: subEspacio,
+    });
+
+    const FISICOS = Object.keys(RESTRICCION_DEL_SUBESPACIO) as SubEspacioFisico[];
+
+    it.each(FISICOS)('I-30a · dos reservas traslapadas en %s → 23P01 de SU restricción, reconocido como CA-06', async (fisico) => {
+      await prisma.solicitud.create({ data: datosDirectos('EC-INT-A', '09:00', '10:00', fisico) });
+
+      const error = await capturar(prisma.solicitud.create({ data: datosDirectos('EC-INT-B', '09:30', '10:30', fisico) }));
+
+      expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain('23P01');
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain(`${RESTRICCION_DEL_SUBESPACIO[fisico]}\\"`);
+      expect(esViolacionDeTraslapeCa06(error)).toBe(true);
+    });
+
+    const CABINA = RESTRICCION_DEL_SUBESPACIO.CABINA_AUDIO;
+
+    it('I-30b · la misma violación con la restricción renombrada a _v2 → NO es CA-06 (sin prefijo abierto)', async () => {
+      const error = await capturar(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`ALTER TABLE "Solicitud" RENAME CONSTRAINT "${CABINA}" TO "${CABINA}_v2"`);
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-A', '09:00', '10:00', SubEspacio.CABINA_AUDIO) });
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-B', '09:30', '10:30', SubEspacio.CABINA_AUDIO) });
+        }),
+      );
+
+      expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain(`${CABINA}_v2\\"`);
+      expect(esViolacionDeTraslapeCa06(error)).toBe(false);
+    });
+
+    it('I-30c · tras I-30b la transacción revirtió el renombre y los datos: siguen las dos restricciones y la tabla vacía', async () => {
+      await capturar(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`ALTER TABLE "Solicitud" RENAME CONSTRAINT "${CABINA}" TO "${CABINA}_v2"`);
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-A', '09:00', '10:00', SubEspacio.CABINA_AUDIO) });
+          await tx.solicitud.create({ data: datosDirectos('EC-INT-B', '09:30', '10:30', SubEspacio.CABINA_AUDIO) });
+        }),
+      );
+
+      const exclusiones = await prisma.$queryRaw<{ conname: string }[]>`
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = '"Solicitud"'::regclass AND contype = 'x'
+        ORDER BY conname`;
+
+      expect(exclusiones.map((r) => r.conname)).toEqual([...RESTRICCIONES_CA06_POR_SUBESPACIO].sort());
+      expect(await prisma.solicitud.count()).toBe(0);
+    });
   });
 });

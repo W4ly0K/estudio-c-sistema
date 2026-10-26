@@ -22,6 +22,16 @@ enum CategoriaSolicitud {
   ASESORIAS
 }
 
+/// Fase 7 (PRD v2.2 secc. 5.1, ADR-007 SE1): dónde ocurre la reserva. Los dos primeros
+/// son los sub-espacios físicos; ESTUDIO_COMPLETO ocupa los dos (y es el registro
+/// histórico de lo creado antes de la v2.2). CA-06 lo garantizan dos EXCLUDE parciales,
+/// uno por sub-espacio físico (migración 20261023120000_ca06_subespacios).
+enum SubEspacio {
+  CABINA_AUDIO
+  ESTUDIO_GRABACION
+  ESTUDIO_COMPLETO
+}
+
 model Usuario {
   id_usuario  String     @id @default(uuid())
   nombre      String
@@ -50,6 +60,13 @@ model Solicitud {
   fecha_propuesta_fin    DateTime?          // Nullable
   estado                 String
   es_urgencia            Boolean            @default(false)
+  /// Fase 7 (ADR-007 SE1 y SE8): NOT NULL; lo existente quedó en ESTUDIO_COMPLETO. El
+  /// @default es TEMPORAL (expand): se retira en el paso 7A.8, cuando la API exija el
+  /// sub-espacio. CA-06 por sub-espacio: Solicitud_sin_traslape_ca06_cabina y _estudio.
+  sub_espacio            SubEspacio         @default(ESTUDIO_COMPLETO)
+  /// Fase 7 (ADR-007 SE6): el sub-espacio de la propuesta de reprogramación (CA-10, Q-A6).
+  /// Su CHECK de coherencia con la propuesta (M4) llega con el contract (7A.8).
+  sub_espacio_propuesto  SubEspacio?
 
   // Relaciones
   usuario  Usuario             @relation(fields: [id_usuario], references: [id_usuario])
@@ -97,6 +114,18 @@ model Log_Auditoria {
   /// (Log_Auditoria_motivo_reprogramacion_longitud_check). Prisma no modela CHECK: ver
   /// la migración 20261009200000_motivo_reprogramacion.
   motivo_reprogramacion String? @db.Text
+  /// Fase 7 (ADR-007 SE7, Q-A12): de qué sub-espacio a cuál cambió la reserva. Van juntos
+  /// (Log_Auditoria_sub_espacio_completo_check), son distintos (_cambio_real_check) y solo
+  /// en T1 o T7, que terminan en "Validado" (_segun_estado_check).
+  sub_espacio_anterior  SubEspacio?
+  sub_espacio_nuevo     SubEspacio?
+  /// Fase 7 (ADR-007 P-1, Q-B2): la franja que tenía la solicitud antes de que el Staff la
+  /// ajustara al aprobar (T1) o el solicitante aceptara otra (T7). Van juntas
+  /// (Log_Auditoria_franja_anterior_completa_check), fin > inicio (_valida_check) y solo
+  /// en "Validado" (_segun_estado_check). Prisma no modela CHECK: ver la migración
+  /// 20261023120000_ca06_subespacios.
+  fecha_inicio_anterior DateTime?
+  fecha_fin_anterior    DateTime?
 
   // Relaciones
   solicitud  Solicitud @relation(fields: [radicado_solicitud], references: [radicado])

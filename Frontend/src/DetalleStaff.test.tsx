@@ -13,6 +13,7 @@ import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleStaff as DatosDetalleStaff } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { formatearFranja } from './fechas/bogota'
+import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RUTA_DETALLE, RUTA_TABLERO } from './rutas'
 import { DETALLE_STAFF, LOG, apiFalsa } from './test/fixtures-api'
 
@@ -116,6 +117,25 @@ describe('DetalleStaff (C3 · 6.5.2)', () => {
     expect(
       within(propuesta).getByText(formatearFranja('2026-10-28T19:00:00.000Z', '2026-10-28T20:00:00.000Z')),
     ).toBeInTheDocument()
+  })
+
+  it('Fase 7: la ficha muestra el sub-espacio; la propuesta, el lugar propuesto junto a la franja', async () => {
+    mostrar(
+      responde(
+        detalle({
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: '2026-10-28T19:00:00.000Z',
+          fecha_propuesta_fin: '2026-10-28T20:00:00.000Z',
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+        }),
+      ),
+    )
+
+    const propuesta = await screen.findByRole('region', { name: 'Propuesta de reprogramación' })
+    expect(within(propuesta).getByText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO)).toBeInTheDocument()
+    // El lugar vigente aparece en la ficha y, tachado porque cambia, en la columna original.
+    expect(within(propuesta).getByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toHaveClass('line-through')
+    expect(screen.getAllByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toHaveLength(2)
   })
 
   it('historial desde la perspectiva del Staff: "Staff" y "Solicitante", nunca "Tú" (DD2)', async () => {

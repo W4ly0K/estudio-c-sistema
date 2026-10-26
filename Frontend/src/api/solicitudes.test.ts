@@ -67,6 +67,7 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       proposito: 'Grabación del episodio piloto',
       fecha_inicio: '2026-10-15T09:00:00-05:00',
       fecha_fin: '2026-10-15T11:00:00-05:00',
+      sub_espacio: 'CABINA_AUDIO',
     } as const
 
     const resultado = await crearApiSolicitudes(cliente).crear(cuerpo)
@@ -92,9 +93,32 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
     expect(llamada().init.method).toBe('PATCH')
   })
 
+  it('7B.3 · actualizarTablero → PATCH de "Validar con ajustes": destino, franja y sub-espacio en el mismo cuerpo', async () => {
+    const { cliente, llamada } = crearEntornoDePrueba(
+      json(200, { mensaje: 'Estado actualizado y auditado correctamente en la bitácora', solicitud: { ...SOLICITUD, sub_espacio: 'ESTUDIO_GRABACION' } }),
+    )
+    const cambios = {
+      estado: 'Validado',
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      sub_espacio: 'ESTUDIO_GRABACION',
+    } as const
+
+    const resultado = await crearApiSolicitudes(cliente).actualizarTablero('EC-1', cambios)
+
+    expect(resultado.ok && resultado.datos.solicitud.sub_espacio).toBe('ESTUDIO_GRABACION')
+    expect(llamada().init.method).toBe('PATCH')
+    expect(JSON.parse(String(llamada().init.body))).toEqual(cambios)
+  })
+
   it('proponerReprogramacion → POST …/reprogramacion con fechas y motivo; responde la proyección del Staff', async () => {
     const { cliente, llamada } = crearEntornoDePrueba(json(200, { mensaje: 'Propuesta registrada', solicitud: DETALLE_STAFF }))
-    const cuerpo = { fecha_inicio: '2026-10-28T09:00:00-05:00', fecha_fin: '2026-10-28T10:00:00-05:00', motivo: MOTIVO }
+    const cuerpo = {
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      sub_espacio: 'ESTUDIO_GRABACION',
+      motivo: MOTIVO,
+    } as const
 
     const resultado = await crearApiSolicitudes(cliente).proponerReprogramacion('EC-1', cuerpo)
 
@@ -127,8 +151,24 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.actualizarTablero('EC-1', { estado: 'Validado', motivo_rechazo: 'No aplica aquí' })
       // @ts-expect-error E5: rechazar exige el motivo.
       void api.actualizarTablero('EC-1', { estado: 'Rechazado' })
+      // @ts-expect-error 7B.3: el tablero siempre envía un destino; no edita campos sueltos.
+      void api.actualizarTablero('EC-1', { sub_espacio: 'CABINA_AUDIO' })
+      // @ts-expect-error D-4: el sub-espacio solo acompaña a T1 ("Validado").
+      void api.actualizarTablero('EC-1', { estado: 'En Producción', sub_espacio: 'CABINA_AUDIO' })
+      // @ts-expect-error D-4 (deuda de ADR-007 cerrada en el cliente): rechazar no mueve la franja.
+      void api.actualizarTablero('EC-1', { estado: 'Rechazado', motivo_rechazo: 'Motivo suficiente', fecha_inicio: 'x', fecha_fin: 'y' })
+      // @ts-expect-error Q-B2: la franja del ajuste viaja completa (inicio y fin).
+      void api.actualizarTablero('EC-1', { estado: 'Validado', fecha_inicio: 'x' })
+      // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
+      void api.actualizarTablero('EC-1', { estado: 'Validado', sub_espacio: 'SALA_3' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).
-      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y' })
+      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
+      // @ts-expect-error Fase 7 · SE6: proponer exige el sub-espacio (franja y lugar).
+      void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', motivo: 'Motivo suficiente' })
+      // @ts-expect-error Fase 7 · Q-A4: crear exige que el solicitante elija el sub-espacio.
+      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y' })
+      // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
+      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'SALA_3' })
     }
     expect(soloTipos).toBeTypeOf('function')
   })

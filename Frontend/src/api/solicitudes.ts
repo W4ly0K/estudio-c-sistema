@@ -13,6 +13,7 @@ import {
   type Solicitud,
   type SolicitudPropia,
   type SolicitudTablero,
+  type SubEspacio,
 } from './esquemas'
 import type { Estado, TRANSICIONES } from './maquina-estados'
 
@@ -29,33 +30,70 @@ export interface CuerpoCrearSolicitud {
   readonly proposito: string
   readonly fecha_inicio: string
   readonly fecha_fin: string
+  /**
+   * Fase 7 · PRD v2.2 §4.1: OBLIGATORIO aquí, aunque el backend lo admita opcional durante
+   * el expand (lo hará obligatorio en el contract, 7A.8): la UI nunca deja que el servidor
+   * elija el lugar por el solicitante.
+   */
+  readonly sub_espacio: SubEspacio
   readonly recursos?: readonly { readonly id_recurso: number; readonly cantidad: number }[]
 }
 
 /**
- * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4 y T9). Se DERIVAN de la
+ * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9 y, desde la Fase 7, T10). Se DERIVAN de la
  * tabla de la máquina: "Pendiente de Reprogramación" (T5) no está y no compila.
  */
 type TransicionDelTablero = Extract<
   (typeof TRANSICIONES)[number],
-  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' }
+  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' | 'CERRAR_NO_ATENDIDA' }
 >
 export type DestinoDelTablero = TransicionDelTablero['destino']
 
 /**
- * PATCH /solicitudes/:radicado (solo STAFF). E5: `motivo_rechazo` solo existe junto
- * con un cambio a "Rechazado", y ahí es obligatorio.
+ * Fase 7 · 7B.3 "Validar con ajustes" (PRD v2.2 §5.6; Q-B2 y D-4): lo que puede acompañar a
+ * T1 en el MISMO PATCH. La franja viaja completa o no viaja (con una sola fecha, el servidor
+ * mezclaría la otra con la guardada); el sub-espacio, solo si cambia.
  */
-export type CambiosTablero = Partial<CuerpoCrearSolicitud> &
-  (
-    | { readonly estado?: Exclude<DestinoDelTablero, 'Rechazado'>; readonly motivo_rechazo?: never }
-    | { readonly estado: 'Rechazado'; readonly motivo_rechazo: string }
-  )
+export type AjusteAlValidar =
+  | { readonly fecha_inicio: string; readonly fecha_fin: string; readonly sub_espacio?: SubEspacio }
+  | { readonly fecha_inicio?: never; readonly fecha_fin?: never; readonly sub_espacio?: SubEspacio }
+
+/** T1: el destino y, si los hay, sus ajustes. */
+type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never } & AjusteAlValidar
+
+/**
+ * PATCH /solicitudes/:radicado (solo STAFF). Siempre con un destino: el tablero no edita
+ * campos sueltos (categoría, propósito o recursos no tienen pantalla, y los recursos están
+ * fuera de la Fase 7). E5: `motivo_rechazo` solo junto con "Rechazado", y ahí es obligatorio.
+ * D-4: la franja y el sub-espacio solo junto con "Validado" (el servidor responde 400 en
+ * otro caso); así tampoco compila la deuda aceptada de RECHAZAR con fechas (ADR-007).
+ */
+export type CambiosTablero =
+  | ValidarConAjuste
+  | {
+      readonly estado: Exclude<DestinoDelTablero, 'Rechazado' | 'Validado'>
+      readonly motivo_rechazo?: never
+      readonly fecha_inicio?: never
+      readonly fecha_fin?: never
+      readonly sub_espacio?: never
+    }
+  | {
+      readonly estado: 'Rechazado'
+      readonly motivo_rechazo: string
+      readonly fecha_inicio?: never
+      readonly fecha_fin?: never
+      readonly sub_espacio?: never
+    }
 
 /** POST /solicitudes/:radicado/reprogramacion (T5 · README §12.2). */
 export interface CuerpoProponerReprogramacion {
   readonly fecha_inicio: string
   readonly fecha_fin: string
+  /**
+   * Fase 7 · PRD v2.2 §5.5 (Q-A6): el lugar de la propuesta, obligatorio. Para cambiar solo
+   * la fecha se envía el sub-espacio vigente; para cambiar solo el lugar, la franja vigente.
+   */
+  readonly sub_espacio: SubEspacio
   /** 10 a 500 caracteres sin los espacios de los extremos (Fase 6.1b). */
   readonly motivo: string
 }
@@ -106,7 +144,7 @@ export function crearApiSolicitudes(cliente: ClienteApi) {
     crear: (cuerpo: CuerpoCrearSolicitud): Promise<Resultado<Solicitud>> =>
       cliente.solicitar({ metodo: 'POST', ruta: '/solicitudes', cuerpo, esquema: esquemaSolicitud }),
 
-    /** PATCH /solicitudes/:radicado (tablero del STAFF · T1, T2, T4 y T9). */
+    /** PATCH /solicitudes/:radicado (tablero del STAFF · T1, con o sin ajustes, T2, T4, T9 y T10). */
     actualizarTablero: (radicado: string, cambios: CambiosTablero): Promise<Resultado<RespuestaComando<Solicitud>>> =>
       cliente.solicitar({
         metodo: 'PATCH',

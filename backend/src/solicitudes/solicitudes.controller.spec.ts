@@ -1,5 +1,5 @@
 import { Reflector } from '@nestjs/core';
-import { CategoriaSolicitud, RolUsuario, Solicitud } from '@prisma/client';
+import { CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import { SolicitudesController } from './solicitudes.controller';
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
@@ -136,6 +136,7 @@ describe('SolicitudesController', () => {
       const dto: ProponerReprogramacionDto = {
         fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
         fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+        sub_espacio: SubEspacio.CABINA_AUDIO,
         motivo: 'Mantenimiento preventivo del set de grabación',
       };
 

@@ -3,6 +3,7 @@ import {
   DESFASE_BOGOTA,
   FECHA_NO_DISPONIBLE,
   ZONA_ESTUDIO,
+  aCamposBogota,
   aIsoBogota,
   formatearFecha,
   formatearFranja,
@@ -62,6 +63,26 @@ describe('Fechas en la hora de Bogotá (Fase 6.3)', () => {
       ['campos vacíos', '', ''],
     ])('rechaza %s', (_caso, fecha, hora) => {
       expect(aIsoBogota(fecha, hora)).toBeNull()
+    })
+  })
+
+  describe('aCamposBogota (Fase 7 · 7B.3): el inverso de aIsoBogota', () => {
+    it('un instante en UTC se lee en Bogotá: las 02:30 Z del 21 son las 21:30 del 20', () => {
+      expect(aCamposBogota('2026-10-21T02:30:00.000Z')).toEqual({ fecha: '2026-10-20', hora: '21:30' })
+    })
+
+    it('la medianoche de Bogotá es "00:00" (no "24:00") y ya es el día siguiente', () => {
+      expect(aCamposBogota('2026-10-21T05:00:00.000Z')).toEqual({ fecha: '2026-10-21', hora: '00:00' })
+    })
+
+    it('ida y vuelta: lo que escribe aIsoBogota se lee igual, en cualquier zona del navegador', () => {
+      const iso = aIsoBogota('2026-02-28', '08:30')
+      expect(iso).not.toBeNull()
+      expect(aCamposBogota(iso ?? '')).toEqual({ fecha: '2026-02-28', hora: '08:30' })
+    })
+
+    it('una fecha ilegible no inventa campos', () => {
+      expect(aCamposBogota('no-es-una-fecha')).toBeNull()
     })
   })
 

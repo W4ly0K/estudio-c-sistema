@@ -12,7 +12,7 @@ import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { textoExito, type DestinoDelStaff } from './presentacion/acciones-staff'
 import { filasDeRecursos } from './presentacion/detalle-staff'
-import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas'
+import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_TABLERO } from './rutas'
 
@@ -189,7 +189,18 @@ function Contenido({
     detalle.estado === 'Pendiente de Reprogramación' &&
     detalle.fecha_propuesta_inicio !== null &&
     detalle.fecha_propuesta_fin !== null
-      ? { inicio: detalle.fecha_propuesta_inicio, fin: detalle.fecha_propuesta_fin, motivo: motivoDeLaPropuesta(detalle.logs) }
+      ? {
+          inicio: detalle.fecha_propuesta_inicio,
+          fin: detalle.fecha_propuesta_fin,
+          motivo: motivoDeLaPropuesta(detalle.logs),
+          // Fase 7 · SE6: una propuesta sin lugar (anterior a la Fase 7) es en el MISMO lugar,
+          // la misma regla con la que el servidor la acepta (T7).
+          subEspacio: detalle.sub_espacio_propuesto ?? detalle.sub_espacio,
+          // Q-A6: una propuesta puede cambiar solo el lugar; entonces la franja no se tacha.
+          cambiaFranja:
+            Date.parse(detalle.fecha_propuesta_inicio) !== Date.parse(detalle.fecha_inicio) ||
+            Date.parse(detalle.fecha_propuesta_fin) !== Date.parse(detalle.fecha_fin),
+        }
       : null
 
   return (
@@ -224,6 +235,11 @@ function Contenido({
             <dt className="text-gray-500">Fecha y horario (hora de Colombia)</dt>
             <dd className="font-medium text-primary">{formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}</dd>
           </div>
+          <div>
+            {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial completo del lugar (Q-A1). */}
+            <dt className="text-gray-500">Sub-espacio</dt>
+            <dd className="font-medium text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</dd>
+          </div>
           {detalle.num_participantes !== null && (
             <div>
               <dt className="text-gray-500">Participantes</dt>
@@ -251,11 +267,23 @@ function Contenido({
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="border border-outline rounded-sm p-3">
               <p className="text-xs font-bold text-gray-500 uppercase">Franja original</p>
-              <p className="text-gray-500 line-through">{formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}</p>
+              <p className={`text-gray-500 ${propuesta.cambiaFranja ? 'line-through' : ''}`}>
+                {formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}
+              </p>
+              {/* Tachado solo si el lugar cambia: lo que se conserva no se presenta como descartado. */}
+              <p className={`text-gray-500 ${propuesta.subEspacio !== detalle.sub_espacio ? 'line-through' : ''}`}>
+                {ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}
+              </p>
             </div>
             <div className="border-2 border-primary rounded-sm p-3">
               <p className="text-xs font-bold text-primary uppercase">Franja propuesta</p>
               <p className="font-semibold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
+              <p className="font-semibold text-primary">
+                {ETIQUETAS_SUB_ESPACIO[propuesta.subEspacio]}
+                {propuesta.subEspacio === detalle.sub_espacio && (
+                  <span className="font-normal text-gray-500"> (el mismo sub-espacio)</span>
+                )}
+              </p>
             </div>
           </div>
         </section>

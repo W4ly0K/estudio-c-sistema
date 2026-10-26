@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Link } from 'react-router'
 import type { Solicitud } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
-import { ETIQUETAS_CATEGORIA } from '../presentacion/etiquetas'
+import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { rutaDetalle } from '../rutas'
 import { InsigniaEstado } from './Insignias'
 
@@ -66,6 +66,11 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
         <div className="flex justify-between gap-3">
           <dt className="text-gray-500">Fecha y franja (hora de Colombia)</dt>
           <dd className="font-semibold text-primary text-right">{formatearFranja(solicitud.fecha_inicio, solicitud.fecha_fin)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial, el que quedó guardado (respuesta del servidor). */}
+          <dt className="text-gray-500">Sub-espacio</dt>
+          <dd className="font-semibold text-primary text-right">{ETIQUETAS_SUB_ESPACIO[solicitud.sub_espacio]}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-gray-500">Responsable</dt>

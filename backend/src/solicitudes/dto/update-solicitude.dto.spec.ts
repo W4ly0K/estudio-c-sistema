@@ -1,9 +1,13 @@
 import { BadRequestException, Type } from '@nestjs/common';
-import { CategoriaSolicitud } from '@prisma/client';
+import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
-import { MENSAJE_MOTIVO_REPROGRAMACION, ProponerReprogramacionDto } from './proponer-reprogramacion.dto';
+import {
+  MENSAJE_MOTIVO_REPROGRAMACION,
+  MENSAJE_SUBESPACIO_PROPUESTO,
+  ProponerReprogramacionDto,
+} from './proponer-reprogramacion.dto';
 
 // Mismo pipe que main.ts (fuente única): si alguien cambia la configuración real, estos tests lo notan.
 const pipe = crearValidationPipe();
@@ -64,11 +68,32 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       const errores = await erroresDe({ ...cuerpoFrontend, id_usuario: 'uuid-ajeno' }, CreateSolicitudeDto);
       expect(errores).toContain('property id_usuario should not exist');
     });
+
+    // Fase 7 · 7A.4 (ADR-007 SE5): el sub-espacio es opcional durante el expand.
+    it.each(Object.values(SubEspacio))('acepta el sub-espacio %s', async (subEspacio) => {
+      expect(await erroresDe({ ...cuerpoFrontend, sub_espacio: subEspacio }, CreateSolicitudeDto)).toEqual([]);
+    });
+
+    it.each([
+      ['un valor inventado', 'SALA_3'],
+      ['otra capitalización', 'cabina_audio'],
+      ['un número', 1],
+    ])('rechaza con 400 un sub_espacio con %s', async (_caso, valor) => {
+      const errores = await erroresDe({ ...cuerpoFrontend, sub_espacio: valor }, CreateSolicitudeDto);
+      expect(errores).toContain('El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO');
+    });
   });
 
   describe('UpdateSolicitudeDto', () => {
     it('acepta un cambio de estado válido', async () => {
       expect(await erroresDe({ estado: 'Validado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    it('hereda el sub_espacio opcional (cuándo se admite lo decide el servicio: D-4)', async () => {
+      expect(await erroresDe({ estado: 'Validado', sub_espacio: SubEspacio.CABINA_AUDIO }, UpdateSolicitudeDto)).toEqual([]);
+      expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(
+        'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO',
+      );
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {
@@ -139,11 +164,28 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     const propuesta = {
       fecha_inicio: inicio.toISOString(),
       fecha_fin: fin.toISOString(),
+      sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
       motivo: 'Mantenimiento preventivo del set de grabación',
     };
 
-    it('acepta la franja propuesta con zona horaria y el motivo', async () => {
+    it('acepta la franja propuesta con zona horaria, el sub-espacio y el motivo', async () => {
       expect(await erroresDe(propuesta, ProponerReprogramacionDto)).toEqual([]);
+    });
+
+    describe('sub_espacio (Fase 7 · ADR-007 SE6): obligatorio, sin valor por defecto', () => {
+      it.each(Object.values(SubEspacio))('acepta %s', async (subEspacio) => {
+        expect(await erroresDe({ ...propuesta, sub_espacio: subEspacio }, ProponerReprogramacionDto)).toEqual([]);
+      });
+
+      it.each([
+        ['ausente', undefined],
+        ['null', null],
+        ['inventado', 'SALA_3'],
+        ['con otra capitalización', 'cabina_audio'],
+      ])('rechaza un sub_espacio %s con el mensaje del contrato', async (_caso, subEspacio) => {
+        const errores = await erroresDe({ ...propuesta, sub_espacio: subEspacio }, ProponerReprogramacionDto);
+        expect(errores).toEqual([MENSAJE_SUBESPACIO_PROPUESTO]);
+      });
     });
 
     it('rechaza con 400 un estado o un id_usuario colados en el comando', async () => {

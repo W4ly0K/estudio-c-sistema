@@ -11,12 +11,17 @@ import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './api/mens
 import type { ApiSolicitudes } from './api/solicitudes'
 import {
   TEXTO_ACTUALIZANDO,
+  TEXTO_AYUDA_AJUSTE,
   TEXTO_AYUDA_CONFLICTO,
+  TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE,
+  TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO,
   TEXTO_ETIQUETA_MOTIVO_RECHAZO,
   TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION,
 } from './componentes/AccionesStaff'
 import { formatearFranja } from './fechas/bogota'
-import { TEXTO_FRANJA_INICIADA } from './presentacion/acciones-staff'
+import { TEXTO_FRANJA_INICIADA, TEXTO_RAZON_AJUSTE_SIN_CAMBIOS } from './presentacion/acciones-staff'
+import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
+import { MENSAJE_NO_ATENDIDA } from './presentacion/linea-de-vida'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
 import { DETALLE_STAFF, SOLICITUD, apiFalsa } from './test/fixtures-api'
@@ -64,7 +69,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
   })
 
   it.each<[Estado, string[]]>([
-    ['Recibido', ['Validar', 'Rechazar']],
+    ['Recibido', ['Validar', 'Validar con ajustes', 'Rechazar']],
     ['Validado', ['Iniciar producción', 'Proponer reprogramación']],
     ['En Producción', ['Marcar como entregada']],
   ])('en "%s" la resolución ofrece %j', async (estado, botones) => {
@@ -74,7 +79,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual(botones)
   })
 
-  it.each<Estado>(['Pendiente de Reprogramación', 'Entregado', 'Rechazado'])('en "%s" no hay resolución', async (estado) => {
+  it.each<Estado>(['Pendiente de Reprogramación', 'Entregado', 'Rechazado', 'No atendida'])('en "%s" no hay resolución', async (estado) => {
     mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))) })
     await esperarDetalle()
 
@@ -116,6 +121,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
     expect(await screen.findByText(TEXTO_ACTUALIZANDO)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Validar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Validar con ajustes' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Rechazar' })).toBeDisabled()
     expect(screen.getByRole('heading', { name: 'EC-2026-0142' })).toBeInTheDocument()
     expect(screen.queryByText('Cargando la solicitud...')).not.toBeInTheDocument()
@@ -314,6 +320,37 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     })
   })
 
+  it('Fase 7 · T10: con la franja ya iniciada, la resolución ofrece además "Cerrar como no atendida" (sin quitar el rechazo)', async () => {
+    vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
+
+    const resolucion = await screen.findByRole('region', { name: 'Resolución' })
+    expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Validar',
+      'Validar con ajustes',
+      'Rechazar',
+      'Cerrar como no atendida',
+    ])
+  })
+
+  it('Fase 7 · T10: cerrar como no atendida envía solo el destino por el PATCH (sin motivo), avisa lo que verá el solicitante y anuncia el éxito', async () => {
+    vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+    const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+    await esperarDetalle()
+
+    const dialogo = abrir('Cerrar como no atendida', 'Cerrar como no atendida')
+    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"No atendida"/)
+    expect(dialogo).toHaveAccessibleDescription(expect.stringContaining(MENSAJE_NO_ATENDIDA))
+    // Sin formulario: nada que completar, "Confirmar" está disponible de entrada.
+    const confirmar = within(dialogo).getByRole('button', { name: 'Sí, cerrar como no atendida' })
+    expect(confirmar).toBeEnabled()
+    fireEvent.click(confirmar)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "No atendida".')
+    expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'No atendida' })
+  })
+
   it('Fase 7 · B3: al rechazar, "Confirmar" bloqueado explica por qué (visible y como descripción accesible) y la razón se va con un motivo válido', async () => {
     mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
     await esperarDetalle()
@@ -334,6 +371,160 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(confirmar).not.toHaveAttribute('aria-describedby')
     expect(within(dialogo).queryByText(pideMotivo)).not.toBeInTheDocument()
   })
+  describe('Fase 7 · 7B.3 · Validar con ajustes (PRD v2.2 §5.6 · Q-B2 y D-4)', () => {
+    // RECIBIDO pide el 15-oct de 09:00 a 11:00 (Bogotá) en la cabina; el reloj va el 5-oct.
+    const abrirAjuste = () => abrir('Validar con ajustes', 'Validar con ajustes')
+    const confirmarAjuste = (dialogo: HTMLElement) => within(dialogo).getByRole('button', { name: 'Sí, validar con ajustes' })
+    const grupoDe = (dialogo: HTMLElement) => within(dialogo).getByRole('group', { name: TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE })
+
+    it('parte de lo pedido: franja y lugar del solicitante en los campos, y lo dice', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Validado"/)
+      expect(within(dialogo).getByText(formatearFranja(RECIBIDO.fecha_inicio, RECIBIDO.fecha_fin))).toBeInTheDocument()
+      expect(within(dialogo).getByLabelText('Fecha')).toHaveValue('2026-10-15')
+      expect(within(dialogo).getByLabelText('Hora de inicio')).toHaveValue('09:00')
+      expect(within(dialogo).getByLabelText('Hora de finalización')).toHaveValue('11:00')
+      expect(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toBeChecked()
+      expect(within(dialogo).getByText(TEXTO_AYUDA_AJUSTE)).toBeInTheDocument()
+    })
+
+    it('sin cambios, "Confirmar" sigue bloqueado y explica que eso es "Validar"; con un cambio se habilita', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)) })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      expect(confirmarAjuste(dialogo)).toBeDisabled()
+      expect(confirmarAjuste(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_AJUSTE_SIN_CAMBIOS)
+
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      expect(confirmarAjuste(dialogo)).toBeEnabled()
+
+      // Volver al lugar pedido deshace el cambio: otra vez bloqueado.
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO))
+      expect(confirmarAjuste(dialogo)).toBeDisabled()
+    })
+
+    it('solo el lugar (Q-A4): un PATCH con el destino y el sub-espacio, SIN fechas; anuncia y recarga', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      const detalleStaff = vi
+        .fn<ApiSolicitudes['detalleStaff']>()
+        .mockResolvedValueOnce(ok(RECIBIDO))
+        .mockResolvedValueOnce(ok({ ...en('Validado'), sub_espacio: 'ESTUDIO_GRABACION' }))
+      mostrar({ detalleStaff, actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      fireEvent.click(confirmarAjuste(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
+        estado: 'Validado',
+        sub_espacio: 'ESTUDIO_GRABACION',
+      })
+      await waitFor(() => expect(detalleStaff).toHaveBeenCalledTimes(2))
+      expect(dialogo).not.toHaveAttribute('open')
+    })
+
+    it('solo la franja: el destino y la franja nueva en hora de Bogotá, SIN sub-espacio', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      fireEvent.change(within(dialogo).getByLabelText('Fecha'), { target: { value: '2026-10-20' } })
+      fireEvent.click(confirmarAjuste(dialogo))
+
+      await waitFor(() => expect(actualizarTablero).toHaveBeenCalledOnce())
+      expect(actualizarTablero).toHaveBeenCalledWith('EC-2026-0142', {
+        estado: 'Validado',
+        fecha_inicio: '2026-10-20T09:00:00-05:00',
+        fecha_fin: '2026-10-20T11:00:00-05:00',
+      })
+    })
+
+    it('Q-B2 · rescate: con la franja ya iniciada se ofrece, y mueve franja y lugar en el mismo PATCH', async () => {
+      vi.setSystemTime(new Date('2026-10-16T15:00:00.000Z'))
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+
+      expect(await screen.findByText(TEXTO_FRANJA_INICIADA)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Validar con ajustes' })).toBeEnabled()
+
+      const dialogo = abrirAjuste()
+      expect(within(dialogo).getByLabelText('Fecha')).toHaveAttribute('min', '2026-10-16')
+      fireEvent.change(within(dialogo).getByLabelText('Fecha'), { target: { value: '2026-10-22' } })
+      fireEvent.change(within(dialogo).getByLabelText('Hora de inicio'), { target: { value: '14:00' } })
+      fireEvent.change(within(dialogo).getByLabelText('Hora de finalización'), { target: { value: '15:00' } })
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO))
+      fireEvent.click(confirmarAjuste(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
+        estado: 'Validado',
+        fecha_inicio: '2026-10-22T14:00:00-05:00',
+        fecha_fin: '2026-10-22T15:00:00-05:00',
+        sub_espacio: 'ESTUDIO_COMPLETO',
+      })
+    })
+
+    it('fin no posterior al inicio: aviso local de CA-04 y no se envía nada (DH4)', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>()
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      fireEvent.change(within(dialogo).getByLabelText('Hora de finalización'), { target: { value: '08:00' } })
+      fireEvent.click(confirmarAjuste(dialogo))
+
+      expect(within(dialogo).getByRole('alert')).toHaveTextContent(MENSAJE_FIN_NO_POSTERIOR)
+      expect(actualizarTablero).not.toHaveBeenCalled()
+      expect(dialogo).toHaveAttribute('open')
+    })
+
+    it('un 409 de CA-06 (el lugar nuevo choca con otra reserva) muestra el mensaje, la ayuda y la recarga', async () => {
+      const mensaje = 'Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.'
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue({
+        ok: false,
+        error: { tipo: 'http', status: 409, mensajes: [mensaje], requiereRecarga: false },
+      })
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO))
+      fireEvent.click(confirmarAjuste(dialogo))
+
+      const alerta = await within(dialogo).findByRole('alert')
+      expect(alerta).toHaveTextContent(mensaje)
+      expect(alerta).toHaveTextContent(TEXTO_AYUDA_CONFLICTO)
+      expect(within(dialogo).getByRole('button', { name: 'Recargar la solicitud' })).toBeInTheDocument()
+    })
+
+    it('un borrador abandonado no se filtra: reabrir vuelve a lo pedido y "Validar" sigue enviando solo el destino', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrirAjuste()
+      fireEvent.change(within(dialogo).getByLabelText('Fecha'), { target: { value: '2026-10-20' } })
+      fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+
+      const otraVez = abrirAjuste()
+      expect(within(otraVez).getByLabelText('Fecha')).toHaveValue('2026-10-15')
+      expect(within(grupoDe(otraVez)).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toBeChecked()
+      fireEvent.click(within(otraVez).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+
+      fireEvent.click(within(abrir('Validar', 'Validar la solicitud')).getByRole('button', { name: 'Sí, validar' }))
+      await waitFor(() => expect(actualizarTablero).toHaveBeenCalledOnce())
+      expect(actualizarTablero).toHaveBeenCalledWith('EC-2026-0142', { estado: 'Validado' })
+    })
+  })
+
   describe('T5 · proponer reprogramación (6.5.4b)', () => {
     const VALIDADO = en('Validado')
     const PENDIENTE = en('Pendiente de Reprogramación')
@@ -408,6 +599,25 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(confirmarEn(dialogo)).not.toHaveAttribute('aria-describedby')
     })
 
+    it('Fase 7 · Q-A6: el lugar propuesto empieza en el vigente y se puede cambiar; se envía el elegido', async () => {
+      const proponerReprogramacion = vi
+        .fn<ApiSolicitudes['proponerReprogramacion']>()
+        .mockResolvedValue({ ok: true, datos: { mensaje: 'Propuesta de reprogramación registrada.', solicitud: en('Pendiente de Reprogramación') } })
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
+      await esperarDetalle()
+
+      const dialogo = abrirPropuesta()
+      const grupo = within(dialogo).getByRole('group', { name: TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO })
+      expect(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO)).toBeChecked()
+
+      fireEvent.click(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      llenar(dialogo)
+      fireEvent.click(confirmarEn(dialogo))
+
+      await waitFor(() => expect(proponerReprogramacion).toHaveBeenCalledOnce())
+      expect(proponerReprogramacion.mock.calls[0]?.[1]).toMatchObject({ sub_espacio: 'ESTUDIO_GRABACION' })
+    })
+
     it('fin no posterior al inicio: aviso local con el texto de CA-04 y no se envía nada (DH4)', async () => {
       const proponerReprogramacion = vi.fn<ApiSolicitudes['proponerReprogramacion']>()
       mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(VALIDADO)), proponerReprogramacion })
@@ -441,6 +651,8 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(proponerReprogramacion).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         fecha_inicio: '2026-10-28T09:00:00-05:00',
         fecha_fin: '2026-10-28T10:30:00-05:00',
+        // Fase 7 · SE6: sin tocar el grupo, se propone el MISMO lugar (el del fixture).
+        sub_espacio: 'CABINA_AUDIO',
         motivo: 'Mantenimiento del set de grabación',
       })
       expect(api.actualizarTablero).not.toHaveBeenCalled()

@@ -1,5 +1,5 @@
 import { ConflictException, Logger } from '@nestjs/common';
-import { CategoriaSolicitud, PrismaClient, RolUsuario, Solicitud } from '@prisma/client';
+import { CategoriaSolicitud, PrismaClient, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import { MENSAJE_CAMBIO_CONCURRENTE, SolicitudesService } from '../../src/solicitudes/solicitudes.service';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import type { UsuarioAutenticado } from '../../src/auth/interfaces/usuario-autenticado.interface';
@@ -162,7 +162,12 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
       const franja = propuesta(n);
       return service.proponerReprogramacion(
         r,
-        { fecha_inicio: franja.inicio, fecha_fin: franja.fin, motivo: `Propuesta concurrente número ${n}` },
+        {
+          fecha_inicio: franja.inicio,
+          fecha_fin: franja.fin,
+          sub_espacio: SubEspacio.ESTUDIO_COMPLETO, // Fase 7 · SE6: el mismo lugar
+          motivo: `Propuesta concurrente número ${n}`,
+        },
         STAFF_A,
       );
     },

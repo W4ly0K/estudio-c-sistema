@@ -1,4 +1,4 @@
-import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud } from '@prisma/client';
+import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import {
   Injectable,
   BadRequestException,
@@ -22,6 +22,7 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
+import { SUB_ESPACIO_POR_DEFECTO_TEMPORAL, subEspaciosEnConflicto } from './reglas/sub-espacios';
 import {
   ESTADO_INICIAL,
   evaluarAccion,
@@ -67,6 +68,31 @@ export const MENSAJE_FECHAS_SOLO_EN_RECIBIDO =
 export const MENSAJE_FRANJA_VENCIDA =
   'No se puede aprobar una solicitud cuya franja ya inició o pasó. Reprográmela antes de aprobarla.';
 
+/**
+ * Fase 7 · ADR-007 NA2 · T10: D7 invertida. "No atendida" registra que la franja pasó sin
+ * respuesta; con la franja por delante, la salida es validarla o rechazarla con un motivo.
+ */
+export const MENSAJE_NO_ATENDIDA_FRANJA_FUTURA =
+  'Solo se puede cerrar como "No atendida" una solicitud cuya franja ya inició o pasó. Si no se va a atender, recházela con un motivo.';
+
+/** Fase 7 · NA2 · T10: se cierra la franja REGISTRADA; moverla al mismo tiempo no tiene sentido. */
+export const MENSAJE_NO_ATENDIDA_SIN_FECHAS =
+  'Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.';
+
+/**
+ * Fase 7 · ADR-007 SE5 · D-4: una vez validada, el sub-espacio solo cambia por mutuo
+ * acuerdo (CA-10, Q-A5), igual que la franja (D2).
+ */
+export const MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO =
+  'El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.';
+
+/**
+ * Fase 7 · ADR-007 SE5 · D-4: en "Recibido" el Staff ajusta el sub-espacio AL VALIDAR (Q-A4).
+ * Un cambio suelto no tendría transición que lo registre (CA-09, Q-A12).
+ */
+export const MENSAJE_SUBESPACIO_SOLO_AL_APROBAR =
+  'El sub-espacio solo se ajusta al validar la solicitud: envíelo junto con el estado "Validado".';
+
 /** E5: el log nunca guarda motivos de rechazo huérfanos. */
 export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
   'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
@@ -101,9 +127,12 @@ export const MENSAJE_REPROGRAMAR_EN_RECIBIDO =
 export const MENSAJE_PROPUESTA_YA_PENDIENTE =
   'La solicitud ya tiene una propuesta de reprogramación pendiente de respuesta del solicitante.';
 
-/** K4: proponer la franja actual no es una reprogramación. */
+/**
+ * K4 (redefinida en la Fase 7 · D-2, Q-A6): proponer la MISMA franja en el MISMO
+ * sub-espacio no es una reprogramación. Cambiar solo la hora, solo el lugar o ambos, sí.
+ */
 export const MENSAJE_PROPUESTA_SIN_CAMBIOS =
-  'La franja propuesta es igual a la actual: no hay nada que reprogramar.';
+  'La propuesta es igual a la reserva vigente (misma franja y mismo sub-espacio): no hay nada que reprogramar.';
 
 /** Fase 5.5a · CA-10 · T7: respuesta del comando /reprogramacion/aceptar. */
 export const MENSAJE_REPROGRAMACION_ACEPTADA =
@@ -135,6 +164,10 @@ export const SELECT_COMANDO_SOLICITANTE = {
   fecha_fin: true,
   fecha_propuesta_inicio: true,
   fecha_propuesta_fin: true,
+  // Fase 7 · SE6: T7 evalúa CA-06 en el sub-espacio PROPUESTO, lo traslada y audita el
+  // cambio desde el vigente (L4, L7, L8).
+  sub_espacio: true,
+  sub_espacio_propuesto: true,
 } satisfies Prisma.SolicitudSelect;
 
 type LecturaComando = Prisma.SolicitudGetPayload<{ select: typeof SELECT_COMANDO_SOLICITANTE }>;
@@ -159,6 +192,8 @@ const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
   'RECHAZAR',
   'INICIAR_PRODUCCION',
   'FINALIZAR',
+  // Fase 7 · T10: sin cuerpo propio (solo el destino), por eso viaja por el PATCH como T2 (NA2).
+  'CERRAR_NO_ATENDIDA',
 ]);
 
 @Injectable()
@@ -190,12 +225,19 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
     }
 
-    // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable (409 único) ---
+    // Fase 7 · SE5: el sub-espacio que propone el solicitante. Expand: sin él, el completo
+    // (espejo del DEFAULT temporal), que se escribe EXPLÍCITO para no depender de la columna.
+    const subEspacio = createSolicitudeDto.sub_espacio ?? SUB_ESPACIO_POR_DEFECTO_TEMPORAL;
+
+    // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable (409 único), por sub-espacio ---
     if (
-      await this.hayTraslape({
-        inicio: createSolicitudeDto.fecha_inicio,
-        fin: createSolicitudeDto.fecha_fin,
-      })
+      await this.hayTraslape(
+        {
+          inicio: createSolicitudeDto.fecha_inicio,
+          fin: createSolicitudeDto.fecha_fin,
+        },
+        subEspacio,
+      )
     ) {
       throw new ConflictException(MENSAJE_CA06);
     }
@@ -220,6 +262,7 @@ export class SolicitudesService {
           fecha_fin: createSolicitudeDto.fecha_fin,
           estado: ESTADO_INICIAL,
           es_urgencia: horario.urgente,
+          sub_espacio: subEspacio,
         
           recursos: { 
             create: createSolicitudeDto.recursos?.map(recurso => ({
@@ -239,11 +282,18 @@ export class SolicitudesService {
    * Intervalo semiabierto [inicio, fin), igual que la restricción del motor.
    * Minimización: solo se pide el radicado y nunca sale de este método.
    * excluirRadicado evita que una reprogramación choque consigo misma.
+   * Fase 7 · SE4: solo cuentan las reservas de los sub-espacios EN CONFLICTO con el pedido
+   * (el mismo físico o el completo), espejo de los dos EXCLUDE parciales del motor.
    */
-  private async hayTraslape(franja: FranjaSolicitada, excluirRadicado?: string): Promise<boolean> {
+  private async hayTraslape(
+    franja: FranjaSolicitada,
+    subEspacio: SubEspacio,
+    excluirRadicado?: string,
+  ): Promise<boolean> {
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
         estado: { notIn: [...ESTADOS_QUE_LIBERAN_FRANJA] },
+        sub_espacio: { in: [...subEspaciosEnConflicto(subEspacio)] },
         AND: [{ fecha_inicio: { lt: franja.fin } }, { fecha_fin: { gt: franja.inicio } }],
         ...(excluirRadicado !== undefined ? { NOT: { radicado: excluirRadicado } } : {}),
       },
@@ -355,6 +405,13 @@ export class SolicitudesService {
     const cambiaEstado = estadoFinal !== existente.estado;
     const cambianFechas =
       updateSolicitudeDto.fecha_inicio !== undefined || updateSolicitudeDto.fecha_fin !== undefined;
+    // Fase 7 · SE5: el sub-espacio EFECTIVO también es parte de lo que quedará guardado.
+    const subEspacioFinal = updateSolicitudeDto.sub_espacio ?? existente.sub_espacio;
+    const cambiaSubEspacio = subEspacioFinal !== existente.sub_espacio;
+    // P-1: la franja se mueve DE VERDAD (enviar las mismas fechas no es un ajuste que auditar).
+    const cambiaFranja =
+      franja.inicio.getTime() !== existente.fecha_inicio.getTime() ||
+      franja.fin.getTime() !== existente.fecha_fin.getTime();
 
     // --- 1. E5: el motivo de rechazo solo acompaña un rechazo real.
     if (
@@ -368,10 +425,29 @@ export class SolicitudesService {
     // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
     const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal) : undefined;
 
+    // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
+    // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
+    if (accion === 'CERRAR_NO_ATENDIDA' && cambianFechas) {
+      throw new BadRequestException(MENSAJE_NO_ATENDIDA_SIN_FECHAS);
+    }
+
     // --- 3. D2: la franja se edita solo mientras la solicitud sigue en "Recibido" (estado
     // GUARDADO). Permite el rescate atómico: fechas nuevas + aprobación en un solo PATCH.
     if (cambianFechas && existente.estado !== ESTADO_INICIAL) {
       throw new ConflictException(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+    }
+
+    // --- 3b. D-4 (Fase 7 · SE5): el sub-espacio, igual que la franja, solo se toca en
+    // "Recibido" (409 fuera de él, como D2) y, además, SOLO al validar (400 en otro caso:
+    // como E5, el campo no tiene sentido sin su transición). Se mira la PRESENCIA del campo:
+    // repetir el sub-espacio actual sin validar tampoco es una petición válida.
+    if (updateSolicitudeDto.sub_espacio !== undefined) {
+      if (existente.estado !== ESTADO_INICIAL) {
+        throw new ConflictException(MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO);
+      }
+      if (accion !== 'APROBAR') {
+        throw new BadRequestException(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      }
     }
 
     // --- 4. Reglas de horario SOLO si cambian las fechas: marcar "Entregado" una
@@ -392,10 +468,21 @@ export class SolicitudesService {
       throw new ConflictException(MENSAJE_FRANJA_VENCIDA);
     }
 
-    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas se
-    // movieron. D1 eliminó la reactivación: los estados que liberan la franja son finales,
+    // --- 5b. T10 (Fase 7 · NA2): D7 invertida, con el MISMO criterio de frontera: un inicio
+    // igual a "ahora" ya cuenta como iniciado. Solo se cierra como no atendida lo que ya venció.
+    if (accion === 'CERRAR_NO_ATENDIDA' && franja.inicio.getTime() > ahora.getTime()) {
+      throw new ConflictException(MENSAJE_NO_ATENDIDA_FRANJA_FUTURA);
+    }
+
+    // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas o el
+    // sub-espacio se movieron (Fase 7: pasar de la cabina al completo puede chocar sin tocar
+    // la hora). D1 eliminó la reactivación: los estados que liberan la franja son finales,
     // así que un cambio de estado ya no puede volver a ocuparla. Sin auto-colisión.
-    if (ocupaFranja(estadoFinal) && cambianFechas && (await this.hayTraslape(franja, radicado))) {
+    if (
+      ocupaFranja(estadoFinal) &&
+      (cambianFechas || cambiaSubEspacio) &&
+      (await this.hayTraslape(franja, subEspacioFinal, radicado))
+    ) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
@@ -405,6 +492,7 @@ export class SolicitudesService {
       ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
+      ...(cambiaSubEspacio ? { sub_espacio: subEspacioFinal } : {}),
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
     };
 
@@ -421,6 +509,8 @@ export class SolicitudesService {
         estado: existente.estado,
         fecha_inicio: existente.fecha_inicio,
         fecha_fin: existente.fecha_fin,
+        // Fase 7 · SE5: sobre el sub-espacio guardado también se calculó CA-06.
+        sub_espacio: existente.sub_espacio,
       },
       data,
       recursos,
@@ -431,6 +521,14 @@ export class SolicitudesService {
             estado_nuevo: estadoFinal,
             modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
             motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+            // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
+            // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
+            ...(accion === 'APROBAR' && cambiaSubEspacio
+              ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
+              : {}),
+            ...(accion === 'APROBAR' && cambiaFranja
+              ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
+              : {}),
           }
         : undefined,
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
@@ -504,34 +602,57 @@ export class SolicitudesService {
       inicio: existente.fecha_propuesta_inicio,
       fin: existente.fecha_propuesta_fin,
     };
+    // Fase 7 · SE6: una propuesta sin sub-espacio es anterior a la Fase 7 (o de antes de que
+    // T5 lo escribiera): entonces solo cambiaba la hora, en el MISMO lugar. M4 lo hará
+    // imposible desde el contract (7A.8), que además poblará esas filas.
+    const subEspacioPropuesto = existente.sub_espacio_propuesto ?? existente.sub_espacio;
+    const cambiaSubEspacio = subEspacioPropuesto !== existente.sub_espacio;
+    // P-1: con K4 redefinida, una propuesta puede conservar la hora y cambiar solo el lugar.
+    const cambiaFranja =
+      propuesta.inicio.getTime() !== existente.fecha_inicio.getTime() ||
+      propuesta.fin.getTime() !== existente.fecha_fin.getTime();
 
     // L4/L5: CA-04 otra vez, con el Reloj de ESTA petición (la propuesta pudo vencer).
     if (!evaluarHorario(propuesta, ahora, calendarioLaboralColombia).valido) {
       throw new ConflictException(MENSAJE_PROPUESTA_VENCIDA);
     }
 
-    // L4: CA-06 de la propuesta (consulta previa); el motor la confirma al escribir.
-    if (await this.hayTraslape(propuesta, radicado)) {
+    // L4: CA-06 de la propuesta (consulta previa) en el sub-espacio PROPUESTO; el motor la
+    // confirma al escribir.
+    if (await this.hayTraslape(propuesta, subEspacioPropuesto, radicado)) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
     const solicitud = await this.escribirConCompareAndSet({
       radicado,
-      // L7: CAS estricto: dueño, estado leído y EXACTAMENTE la propuesta validada.
-      esperado: { id_usuario: usuario.id, estado: existente.estado, fecha_propuesta_inicio: propuesta.inicio, fecha_propuesta_fin: propuesta.fin },
-      // L8 · L6: la propuesta pasa a ser la franja oficial y se limpia.
+      // L7: CAS estricto: dueño, estado leído y EXACTAMENTE la propuesta validada (franja y
+      // lugar, también el NULL de una propuesta anterior a la Fase 7) sobre el lugar vigente.
+      esperado: {
+        id_usuario: usuario.id,
+        estado: existente.estado,
+        fecha_propuesta_inicio: propuesta.inicio,
+        fecha_propuesta_fin: propuesta.fin,
+        sub_espacio: existente.sub_espacio,
+        sub_espacio_propuesto: existente.sub_espacio_propuesto,
+      },
+      // L8 · L6: la propuesta pasa a ser la franja (y el lugar) oficial y se limpia.
       data: {
         estado: transicion.destino,
         fecha_inicio: propuesta.inicio,
         fecha_fin: propuesta.fin,
+        ...(cambiaSubEspacio ? { sub_espacio: subEspacioPropuesto } : {}),
         fecha_propuesta_inicio: null,
         fecha_propuesta_fin: null,
+        sub_espacio_propuesto: null,
         es_urgencia: false,
       },
       log: {
         estado_anterior: existente.estado,
         estado_nuevo: transicion.destino,
         modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
+        // Fase 7 · SE7 y P-1 (Q-A12): T7 termina en "Validado", como exigen A3 y F3.
+        ...(cambiaSubEspacio ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioPropuesto } : {}),
+        ...(cambiaFranja ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin } : {}),
       },
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
@@ -557,7 +678,13 @@ export class SolicitudesService {
     const solicitud = await this.escribirConCompareAndSet({
       radicado,
       esperado: { id_usuario: usuario.id, estado: existente.estado },
-      data: { estado: transicion.destino, fecha_propuesta_inicio: null, fecha_propuesta_fin: null },
+      // Fase 7 · SE6: la propuesta se limpia completa (franja y lugar).
+      data: {
+        estado: transicion.destino,
+        fecha_propuesta_inicio: null,
+        fecha_propuesta_fin: null,
+        sub_espacio_propuesto: null,
+      },
       log: {
         estado_anterior: existente.estado,
         estado_nuevo: transicion.destino,
@@ -634,11 +761,15 @@ export class SolicitudesService {
     }
 
     const propuesta: FranjaSolicitada = { inicio: dto.fecha_inicio, fin: dto.fecha_fin };
+    // Fase 7 · SE6 (Q-A6): la propuesta es franja Y lugar. Para cambiar solo la hora se
+    // envía el sub-espacio vigente; para cambiar solo el lugar, la franja vigente.
+    const subEspacioPropuesto = dto.sub_espacio;
 
-    // K4: proponer la misma franja no es una reprogramación.
+    // K4 (D-2): solo es "sin cambios" si coinciden la franja Y el sub-espacio.
     if (
       propuesta.inicio.getTime() === existente.fecha_inicio.getTime() &&
-      propuesta.fin.getTime() === existente.fecha_fin.getTime()
+      propuesta.fin.getTime() === existente.fecha_fin.getTime() &&
+      subEspacioPropuesto === existente.sub_espacio
     ) {
       throw new BadRequestException(MENSAJE_PROPUESTA_SIN_CAMBIOS);
     }
@@ -651,18 +782,28 @@ export class SolicitudesService {
 
     // K5 · D3: CA-06 de la franja PROPUESTA (capa amable), sin auto-colisión: la franja
     // oficial de esta misma solicitud sigue ocupada mientras la propuesta esté pendiente.
-    if (await this.hayTraslape(propuesta, radicado)) {
+    // Fase 7 · SE6: en el sub-espacio PROPUESTO. Cambiar solo de lugar en la misma franja no
+    // choca consigo misma (se excluye la propia solicitud).
+    if (await this.hayTraslape(propuesta, subEspacioPropuesto, radicado)) {
       throw new ConflictException(MENSAJE_CA06);
     }
 
-    // K6: la franja oficial y es_urgencia NO cambian; solo el estado y la propuesta.
+    // K6: la franja oficial, el sub-espacio y es_urgencia NO cambian; solo el estado y la
+    // propuesta (franja y lugar). La propuesta no se reserva en el motor (D3).
     const solicitud = await this.escribirConCompareAndSet({
       radicado,
-      esperado: { estado: existente.estado, fecha_inicio: existente.fecha_inicio, fecha_fin: existente.fecha_fin },
+      esperado: {
+        estado: existente.estado,
+        fecha_inicio: existente.fecha_inicio,
+        fecha_fin: existente.fecha_fin,
+        // Fase 7: K4 y CA-06 se calcularon también sobre el sub-espacio vigente.
+        sub_espacio: existente.sub_espacio,
+      },
       data: {
         estado: resultado.transicion.destino,
         fecha_propuesta_inicio: propuesta.inicio,
         fecha_propuesta_fin: propuesta.fin,
+        sub_espacio_propuesto: subEspacioPropuesto,
       },
       log: {
         estado_anterior: existente.estado,

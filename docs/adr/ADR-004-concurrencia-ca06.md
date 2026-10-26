@@ -4,6 +4,7 @@
 |---|---|
 | **Estado** | ✅ Aceptado |
 | **Fecha** | 2026-10-03 |
+| **Actualización** | 2026-10-23 · Fase 7: la **forma** de la Decisión Y la reemplaza [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2). La restricción global se sustituyó por dos restricciones parciales, una por sub-espacio físico. El principio de esta decisión, la Decisión Z y las Decisiones AA a AF siguen vigentes. Nota posterior en §2 |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-4-concurrencia-ca06` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (la Decisión H de minimización se extiende a CA-06) y [ADR-003](ADR-003-reglas-de-horario.md) (sus reglas puras se reutilizan en `update()`) |
@@ -43,6 +44,8 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06"
 - **Z:** el `CHECK` se crea **antes** que el `EXCLUDE`. PostgreSQL evalúa los `CHECK` antes de los índices, así que unas fechas invertidas producen un `23514` claro en lugar del error interno de `tsrange`.
 
 **Evidencia en producción de la Decisión Y:** en la prueba de integración I-1 (10 peticiones simultáneas por la misma franja contra PostgreSQL real), **las 9 peticiones rechazadas pasaron la consulta previa y las detuvo el motor (9 de 9)**. La consulta previa, por sí sola, no protege nada bajo concurrencia.
+
+> **Nota posterior de actualización (Fase 7, 2026-10-23).** Desde la migración `20261023120000_ca06_subespacios`, aplicada en producción el 2026-10-23, `Solicitud_sin_traslape_ca06` **ya no existe**. La reemplazan dos restricciones de exclusión **parciales**, `Solicitud_sin_traslape_ca06_cabina` y `Solicitud_sin_traslape_ca06_estudio`: cada una compara solo el rango de su sub-espacio físico, y el «Estudio C completo» entra en las dos. Su `WHERE` suma `'No atendida'` a los estados que liberan la franja. Se conservan el principio de la Decisión Y (el motor es el garante), la ausencia de `btree_gist`, la Decisión Z y las Decisiones AA a AF. El detector (Decisión AC) reconoce ahora una lista cerrada de nombres. Detalle en [ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.2 y §2.3.
 
 ### Migraciones versionadas (Decisiones AA y AB)
 

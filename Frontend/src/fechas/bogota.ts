@@ -105,3 +105,33 @@ export function formatearFranja(inicioIso: string, finIso: string): string {
   if (instante(inicioIso) === null || instante(finIso) === null) return FECHA_NO_DISPONIBLE
   return `${formatearFecha(inicioIso)} · ${formatearHora(inicioIso)} – ${formatearHora(finIso)}`
 }
+
+/** Los valores que esperan `<input type="date">` y `<input type="time">`. */
+export interface CamposBogota {
+  readonly fecha: string
+  readonly hora: string
+}
+
+const FORMATO_CAMPOS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONA_ESTUDIO,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23', // "00:30" y no "24:30" a la medianoche.
+})
+
+/**
+ * Fase 7 · 7B.3: el inverso de aIsoBogota. Un instante del servidor (`…Z`) en los valores de
+ * los `<input>` (`YYYY-MM-DD` y `HH:MM`), en la hora de Bogotá y nunca en la del navegador:
+ * "Validar con ajustes" parte de la franja guardada. `null` si el instante no se puede leer
+ * (el formulario queda vacío; nada se inventa).
+ */
+export function aCamposBogota(iso: string): CamposBogota | null {
+  const fecha = instante(iso)
+  if (fecha === null) return null
+  const partes = FORMATO_CAMPOS.formatToParts(fecha)
+  const valor = (tipo: Intl.DateTimeFormatPartTypes): string => partes.find((p) => p.type === tipo)?.value ?? ''
+  return { fecha: `${valor('year')}-${valor('month')}-${valor('day')}`, hora: `${valor('hour')}:${valor('minute')}` }
+}
