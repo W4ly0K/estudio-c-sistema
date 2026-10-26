@@ -2,9 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | ✅ Aceptado · fase *expand* implementada y **aplicada en producción** (7A.0 a 7A.7 y 7B.1 a 7B.3) · fase *contract* pendiente (7A.8, en un PR posterior al merge) |
+| **Estado** | ✅ Aceptado · **completo**: *expand* (7A.0 a 7A.7 y 7B.1 a 7B.3, PR #10) y *contract* (7A.8) aplicados en producción |
 | **Fecha** | 2026-10-22 |
 | **Actualización** | 2026-10-23 · Implementación completa del *expand*: P-1 aprobada, `DEFAULT` temporal, M4 diferida al *contract*, D-4, K4 ampliada, «Validar con ajustes» y migración aplicada en producción con precheck y postcheck (§2, §3, §4 y §7) |
+| **Actualización** | 2026-10-26 · *Contract* cerrado (M4, `DROP DEFAULT`, detector sin la restricción global y T7 *fail-closed*, §2.1, §2.3, §2.6 y §2.10) y nueva decisión SE10: el sub-espacio solo se elige en una solicitud de espacio físico (§2.13). DA-3 resuelta (§3) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-7-subespacios` (desde `develop` @ `db87225`) |
 | **Reemplaza** | La **Decisión Y** de [ADR-004](ADR-004-concurrencia-ca06.md) **en su forma** (un solo calendario global, una sola restricción). Se conservan su principio (el motor es el garante de CA-06), la Decisión Z y las Decisiones AA a AF. |
@@ -49,7 +50,7 @@ enum SubEspacio {
 
 - **Una sola columna** `Solicitud.sub_espacio SubEspacio NOT NULL`.
 - **Estado final, después del *contract* (7A.8): sin valor por defecto.** Olvidar el sub-espacio es un error, no un valor silencioso.
-- **Durante el *expand*: `DEFAULT 'ESTUDIO_COMPLETO'` temporal** (Decisión EX, §2.10). El código anterior a la Fase 7 no envía el sub-espacio, y con este valor cada fila nueva se comporta exactamente como con la restricción global: el completo choca con todo.
+- **Durante el *expand* hubo un `DEFAULT 'ESTUDIO_COMPLETO'` temporal** (Decisión EX, §2.10): el código anterior a la Fase 7 no enviaba el sub-espacio, y con ese valor cada fila nueva se comportaba exactamente como con la restricción global. **Se retiró en el *contract* (aplicado el 2026-10-26):** desde entonces el motor rechaza una fila sin lugar (23502, I-35a).
 - **Alternativas descartadas** (Diagnóstico A.3):
   - **A-1**, enum de 2 valores con `WITH =` y `btree_gist`: no puede expresar «el completo choca con todo».
   - **A-2**, catálogo `Sub_Espacio` con FK: tiene el mismo límite que A-1 y un catálogo editable no aporta nada con un número fijo de sub-espacios físicos.
@@ -82,7 +83,7 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06_estudio"
 
 - `RESTRICCIONES_CA06` es una **lista cerrada**: hoy `[Solicitud_sin_traslape_ca06, Solicitud_sin_traslape_ca06_cabina, Solicitud_sin_traslape_ca06_estudio]`. La firma es una alternancia **anclada** de esos nombres exactos, escapados para la expresión regular, con la misma terminación de la Decisión AC.
 - **No se reconoce «cualquier nombre que empiece con `Solicitud_sin_traslape_ca06_`».** Un detector por prefijo reintroduciría el riesgo que cerró la Decisión AC: una restricción futura con el mismo SQLSTATE se disfrazaría de CA-06. El caso del sufijo `_v2` se conserva y se suma un tercer nombre de la familia que no debe reconocerse.
-- **Orden *expand/contract* (Decisión AE):** el detector que reconoce los nombres nuevos se publicó **antes** que la migración (7A.1). El nombre global sigue en la lista mientras pueda existir alguna base sin migrar; se retira en el *contract* (7A.8). En ningún momento una carrera respondió 500.
+- **Orden *expand/contract* (Decisión AE):** el detector que reconoce los nombres nuevos se publicó **antes** que la migración (7A.1). El nombre global siguió en la lista mientras pudo existir alguna base sin migrar y **se retiró en 7A.8.1** (`158e104`): un 23P01 con ese nombre ya no es CA-06 (casos 4g a 4i de `traslape-ca06.spec.ts`). En ningún momento una carrera respondió 500.
 
 ### 2.4 Fuente única del conflicto entre sub-espacios (Decisión SE4, amplía la Decisión AH)
 
@@ -98,9 +99,7 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06_estudio"
 
 ### 2.5 Quién elige y cuándo cambia el sub-espacio (Decisiones SE5 y D-4)
 
-- **Creación (Q-A4):** el solicitante elige entre las tres opciones.
-  - En el **frontend** es obligatorio desde ya: `CuerpoCrearSolicitud.sub_espacio` no es opcional y el formulario B2 no marca ninguna opción de entrada, porque marcar el completo por defecto bloquearía el Estudio sin necesidad.
-  - En el **backend** es opcional durante el *expand* (`@IsOptional() @IsEnum(SubEspacio)`); sin él se reserva el completo (`SUB_ESPACIO_POR_DEFECTO_TEMPORAL`). Pasa a ser obligatorio en el *contract*.
+- **Creación (Q-A4, modificada por SE10):** solo una solicitud de espacio físico elige el sub-espacio, y ahí es obligatorio; los servicios reservan el completo (§2.13). El formulario B2 no marca ninguna opción de entrada, porque marcar el completo por defecto bloquearía el Estudio sin necesidad.
 - **En `Recibido` (D-4):** el Staff cambia el sub-espacio **solo junto con `APROBAR`** (T1), con o sin fechas nuevas. Es el rescate atómico de D2 + D7 ampliado al lugar. Se mira la **presencia** del campo: repetir el sub-espacio actual sin validar tampoco es una petición válida.
   - `sub_espacio` sin `APROBAR` → **400** `El sub-espacio solo se ajusta al validar la solicitud: envíelo junto con el estado "Validado".` (mismo criterio que E5).
   - `sub_espacio` fuera de `Recibido` → **409** `El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.` (mismo criterio que D2).
@@ -115,16 +114,17 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06_estudio"
 - **K4 redefinida (D-2):** la propuesta debe diferir de la reserva vigente en **la franja o el sub-espacio**. Si es idéntica en ambos → **400** `La propuesta es igual a la reserva vigente (misma franja y mismo sub-espacio): no hay nada que reprogramar.` Antes, una propuesta con la misma franja era siempre inválida; ahora es válida si cambia el lugar (Q-A6).
 - **K5 y L4:** CA-06 de la propuesta se evalúa en el **sub-espacio propuesto**, excluyendo la propia solicitud: cambiar solo de lugar en la misma franja no choca consigo misma.
 - **L7 y L8:** el *compare-and-set* de T7 exige también el `sub_espacio_propuesto` leído. Aceptar mueve `sub_espacio` al propuesto y limpia la propuesta; T8 la limpia.
-- **Propuesta sin lugar (`NULL`):** T7 la lee como «el mismo lugar» (`sub_espacio_propuesto ?? sub_espacio`). Es el único significado posible para una propuesta escrita antes de la Fase 7, cuando T5 solo cambiaba la hora. El frontend aplica la misma regla al mostrarla.
-- **K9 ampliado al motor (M4), diferido al *contract* (7A.8):**
+- **Propuesta sin lugar (`NULL`):** durante el *expand*, T7 la leía como «el mismo lugar» (`?? sub_espacio`): era el único significado posible para una propuesta escrita antes de la Fase 7. **Desde el *contract* es imposible (M4)** y, si apareciera, T7 responde 409 `MENSAJE_PROPUESTA_NO_DISPONIBLE` sin suponer un lugar (C-4, `158e104`, A-11b). El frontend conserva el `??` solo al **mostrar** una propuesta.
+- **K9 ampliado al motor (M4), aplicado en el *contract* (7A.8, 2026-10-26):**
 
 ```sql
 ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_subespacio_check"
   CHECK ((fecha_propuesta_inicio IS NULL) = (sub_espacio_propuesto IS NULL));
 ```
 
-  - **Por qué no en el *expand*:** M4 habría rechazado las propuestas que el código anterior a la Fase 7 escribía sin lugar, y ese código sigue en uso hasta el merge.
-  - **Su poblado en el *contract*:** las filas en `Pendiente de Reprogramación` reciben `sub_espacio_propuesto = sub_espacio` (copiar el valor de cada fila, no un literal): el lugar de una propuesta escrita antes de la Fase 7 es el de su reserva.
+  - **Por qué no en el *expand*:** M4 habría rechazado las propuestas que el código anterior a la Fase 7 escribía sin lugar, y ese código siguió en uso hasta el merge del PR #10.
+  - **Su poblado en el *contract*:** las filas con franja propuesta y sin lugar reciben `sub_espacio_propuesto = sub_espacio` (copiar el valor de cada fila, no un literal), con la misma condición que M4. En producción tocó **0 filas**: no había propuestas pendientes (precheck 7A.8.0).
+  - M4 entra en la familia K9: I-12 verifica ahora las **cuatro** restricciones con su definición exacta.
 
 ### 2.7 Auditoría del ajuste: lugar y franja (Decisiones SE7 y P-1, amplían CA-09)
 
@@ -185,7 +185,8 @@ Una sola migración escrita a mano (Decisión AB), `20261023120000_ca06_subespac
 | 7A.3 | La migración (*expand*) con el `DEFAULT` temporal y sin M4 | El código anterior sigue creando solicitudes y propuestas sin lugar |
 | 7A.4 a 7B.3 | El servicio, la API y la interfaz con sub-espacio | La interfaz siempre envía el sub-espacio |
 | 7A.7 | Aplicación en producción con `npm run db:migrate` | Única vía permitida contra Supabase (Decisión AA) |
-| **7A.8 (*contract*, PR posterior al merge)** | `DROP DEFAULT`, M4 con su poblado, retiro del nombre global del detector (y nueva captura de los oráculos), `sub_espacio` obligatorio en `CreateSolicitudeDto` | Solo es seguro cuando el único código en uso ya envía siempre el sub-espacio. Antes del merge, `develop` todavía apunta a producción cada vez que alguien lo levanta |
+| **7B.4** | La regla por categoría (SE10) | Antes de retirar el `DEFAULT`, para que el camino de los servicios ya escriba su lugar de forma explícita y probada |
+| **7A.8 (*contract*, ✅ 2026-10-26)** | Poblado, M4 y `DROP DEFAULT` (`20261027120000_ca06_subespacios_contract`); detector sin la restricción global y oráculos verificados contra el motor (I-9, I-30a); T7 *fail-closed* | Solo es seguro cuando el único código en uso ya envía siempre el sub-espacio: se aplicó después del merge del PR #10. Postcheck en producción: las 18 columnas en su valor y conteos idénticos (26 / 40 / 5) |
 
 - **Verificación previa de solo lectura en producción (`precheck-7a.sql`):** siete bloqueantes, entre ellos `restriccion_global_instalada = 1`, `traslapes_activos = 0` y la ausencia de todo lo que la migración crea.
 - **Ensayo:** en la base desechable, protegida por la guardia de tres capas (Decisión AI), y en un PostgreSQL local: aplicación limpia, *checksum*, precheck y postcheck completos.
@@ -211,6 +212,16 @@ Una sola migración escrita a mano (Decisión AB), `20261023120000_ca06_subespac
 
 Actividades externas al Estudio (D-1), aforo por sub-espacio (D-7: `num_participantes` sin `CHECK`), reglas de incompatibilidad entre servicios (Q-A9), horarios por sub-espacio (Q-A10), turnos del personal (Q-A8, el sistema no lo modela), cierre automático (Q-B3) e inventario (DT-1).
 
+### 2.13 El sub-espacio según la categoría (Decisión SE10)
+
+- **Directriz del Responsable del 26/10/2026, que modifica la decisión de Q-A3:** solo la categoría «Solicitud de espacio físico» (`ESPACIOS`) elige el sub-espacio al radicar, y ahí es obligatorio (CA-12). En las demás categorías el solicitante no lo elige y el servicio guarda `ESTUDIO_COMPLETO` (`SUB_ESPACIO_DE_SERVICIOS`, CA-18). PRD v2.3.
+- **Fuente única:** `subEspacioAlRadicar()` en `reglas/sub-espacios.ts`, un módulo puro. El frontend copia la categoría (`CATEGORIA_QUE_ELIGE_SUB_ESPACIO`) y `contrato.test.ts` vigila que no diverja.
+- **Un servicio que envía un sub-espacio recibe 400** (`El sub-espacio solo se elige en una solicitud de espacio físico; para los demás servicios lo asigna el Estudio C.`): no se ignora en silencio, con el mismo criterio de E5 y D-4. Una solicitud de espacio físico sin él recibe 400 del pipe. En el cliente, la unión discriminada `CuerpoCrearSolicitud` hace que ninguno de los dos cuerpos compile.
+- **B2:** el selector solo aparece en «Solicitud de espacio físico»; en un servicio se explica que el Estudio C reserva el espacio completo y que el Staff puede ajustarlo. Cambiar de categoría borra la elección.
+- **Sin `CHECK` que ate categoría y lugar:** el Staff puede reducir el completo de un servicio al validar (D-4). La regla aplica **al radicar**, no al dato.
+- **Riesgo de capacidad, aceptado por el stakeholder:** un servicio bloquea los dos sub-espacios hasta que el Staff lo ajuste, y al radicar puede recibir 409 si a esa hora ya hay una cabina o un estudio reservados.
+- **Datos existentes:** los servicios radicados con un lugar elegido entre el 7A.7 y el 7B.4 se conservan (DT-3).
+
 ---
 
 ## 3. Preguntas resueltas y deuda aceptada
@@ -221,7 +232,7 @@ Actividades externas al Estudio (D-1), aforo por sub-espacio (D-7: `num_particip
 | P-2 | Edición de fechas en `Recibido` **sin** aprobar (D2, permitida y sin log) | Se conserva como está. Queda la asimetría: la franja se puede editar suelta y el sub-espacio no (D-4). La interfaz no la ofrece |
 | DA-1 | Fechas enviadas junto con `RECHAZAR` | El servidor las acepta (D2 en `Recibido`) y no las registra: F3 solo admite la franja anterior en un log que termina en `Validado`. **Deuda aceptada en el servidor**; el cliente no puede producirla porque `CambiosTablero` no lo compila (§2.11) |
 | DA-2 | El historial no muestra los ajustes de lugar y de franja | Auditoría completa en la base; las proyecciones aún no exponen las columnas (§2.7). Aprobado como deuda documentada el 2026-10-23 |
-| DA-3 | M4 todavía no protege la propuesta completa (franja **y** lugar) | Diferida al *contract* (§2.6). Mientras tanto, T7 lee `NULL` como «el mismo lugar» |
+| DA-3 | M4 todavía no protege la propuesta completa (franja **y** lugar) | ✅ **Resuelta** (2026-10-26): M4 aplicada en producción y T7 *fail-closed* ante una propuesta sin lugar (§2.6) |
 
 ---
 
@@ -237,8 +248,10 @@ Actividades externas al Estudio (D-1), aforo por sub-espacio (D-7: `num_particip
 | Concurrencia | I-33: `create()` por sub-espacio en carreras (el motor resolvió 7 de 8 en I-33c y 5 de 5 en I-33d) · I-34: T1, T5 y T7 con sub-espacio, incluida la carrera de dos Staff que validan con lugares distintos (gana uno y el log describe exactamente su ajuste) |
 | Frontend (7B.1 a 7B.3) | Esquemas Zod estrictos y deriva del enum contra Prisma · B2 sin opción marcada, envío del elegido y bloqueo sin elección · T5 arranca en el lugar vigente · insignias, tarjetas, detalle y propuesta (solo se tacha lo que cambia) · «Validar con ajustes»: campos prellenados, bloqueo sin cambios, solo lugar, solo franja, rescate, aviso local de CA-04, 409 de CA-06 y borrador abandonado · `aCamposBogota` y `camposDeLaFranja` en las 4 zonas (`test:tz`) · `@ts-expect-error` para los cuerpos imposibles |
 | Producción (7A.7) | Precheck con todos los bloqueantes en su valor · `prisma migrate status` con una sola pendiente · `npm run db:migrate` · postcheck con los 20 valores esperados y conteos idénticos · tablero con lo histórico como «Estudio C completo» |
+| SE10 (7B.4) | `sub-espacios.spec.ts` (`subEspacioAlRadicar` por categoría) · SE10-a a SE10-c (servicio) · e2e 45a a 45d · `update-solicitude.dto.spec.ts` (el pipe y el PATCH) · I-33e (un servicio choca con una cabina) · frontend: B2 condicional, borrado al cambiar de categoría, cuerpos sin lugar en un servicio, `@ts-expect-error` y deriva de la categoría en `contrato.test.ts` |
+| *Contract* (7A.8) | I-35a (sin lugar → 23502) · I-35b a I-35d (M4 en sus dos sentidos y la propuesta completa) · I-12 con las cuatro restricciones K9 · I-31a sin `DEFAULT` · oráculos verificados carácter por carácter contra el motor (I-9 e I-30a) · 4g a 4i (la restricción global ya no es CA-06) · A-11b (T7 *fail-closed*) · ensayo local de la migración, incluida su atomicidad · precheck y postcheck en producción |
 
-Al cierre: 84 pruebas de integración en verde contra la base desechable; `npm test`, `npm run test:tz` (4 zonas) y `npm run typecheck` en verde en cada paso del frontend.
+Al cierre del *expand*: 84 pruebas de integración; al cierre del *contract* (2026-10-26): backend `npm test` 884 + 1 omitida, `test:tz` 769 en las 4 zonas, `test:e2e` 76 e integración 89; frontend 522 en las 4 zonas; lint en 0 en los dos proyectos.
 
 ---
 
@@ -262,12 +275,7 @@ Al cierre: 84 pruebas de integración en verde contra la base desechable; `npm t
 
 ## 6. Pendiente
 
-- **7A.8 · *contract*** (PR posterior al merge de este frente):
-  - `DROP DEFAULT` de `sub_espacio` (I-31a pasa a esperar `null`, a propósito);
-  - M4 con el poblado `sub_espacio_propuesto = sub_espacio` en `Pendiente de Reprogramación`;
-  - retirar `Solicitud_sin_traslape_ca06` de `RESTRICCIONES_CA06` y volver a capturar los oráculos de errores del motor;
-  - `sub_espacio` obligatorio en `CreateSolicitudeDto`;
-  - decidir si el respaldo `?? sub_espacio` de T7 se conserva como defensa o se retira.
+- ✅ **7A.8 · *contract*:** cerrado el 2026-10-26 (§2.10). El `sub_espacio` obligatorio para todas las categorías se reemplazó por SE10 (§2.13), y el respaldo `?? sub_espacio` de T7 se retiró a favor del 409 *fail-closed*.
 - **DA-2:** exponer las columnas del ajuste en las proyecciones y mostrarlas en la línea de vida.
 - **Texto de T10:** desde 7A.7 el motor libera la franja de una solicitud «No atendida». El diálogo puede decirlo, porque hoy evita prometerlo a propósito.
 - **ADR-005 §3:** el retiro de una propuesta por el Staff sigue sin implementar (ahora sin id).
@@ -290,4 +298,10 @@ Al cierre: 84 pruebas de integración en verde contra la base desechable; `npm t
 | `ad854fd` | 7B.3 · El Staff valida con ajustes de franja y sub-espacio en un solo `PATCH` (rescate Q-B2) |
 | `dd8ff70` | 7B.3 · El panel del solicitante y la confirmación del radicado muestran el sub-espacio |
 | — | 7A.7 · `npm run db:migrate` en producción (2026-10-23), con precheck y postcheck |
-| — | 7A.9 · Este ADR, las notas de ADR-004, ADR-005 y ADR-006 y los README |
+| `405ce6c` · `c85e061` | 7A.9 · Este ADR, las notas de ADR-004, ADR-005 y ADR-006 y los README |
+| `792ee30` | Merge del PR #10 en `develop` (punto de partida del *contract*) |
+| — | 7A.8.0 · Precheck del *contract* en producción: 11 bloqueantes en su valor, 26 / 40 / 5, `propuestas_a_poblar = 0` |
+| `e76e8ba` | 7B.4 y 7A.8.2 · El sub-espacio solo se elige en una solicitud de espacio físico (SE10) y migración del *contract* (poblado, M4 y `DROP DEFAULT`) |
+| `158e104` | 7A.8.1 · El detector de CA-06 ya no reconoce la restricción global y T7 rechaza una propuesta sin lugar |
+| — | 7A.8.3 · `npm run db:migrate` en producción (2026-10-26) y postcheck con las 18 columnas en su valor |
+| — | 7A.8.4 · Este ADR completo, los README y el PRD v2.3 |
