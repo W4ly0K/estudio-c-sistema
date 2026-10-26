@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { textoDeError } from './api/errores';
 import {
   CATEGORIAS,
+  CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
   type Categoria,
   type Solicitud,
   type SolicitudPropia,
@@ -9,7 +10,13 @@ import {
   type UsuarioSesion,
 } from './api/esquemas';
 import { useApi } from './api/contexto-api';
-import { CampoSubEspacio, TEXTO_ELIGE_SUB_ESPACIO, TEXTO_LEYENDA_SUB_ESPACIO } from './componentes/CampoSubEspacio';
+import type { CuerpoCrearSolicitud } from './api/solicitudes';
+import {
+  CampoSubEspacio,
+  TEXTO_ELIGE_SUB_ESPACIO,
+  TEXTO_LEYENDA_SUB_ESPACIO,
+  TEXTO_LUGAR_DE_SERVICIOS,
+} from './componentes/CampoSubEspacio';
 import { CamposFranja } from './componentes/CamposFranja';
 import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
@@ -28,7 +35,10 @@ interface FormularioSolicitud {
   franja: ValoresFranja;
   categoria: Categoria;
   proposito: string;
-  /** Fase 7 · Q-A4: lo PROPONE el solicitante; sin valor inicial para no elegir por él. */
+  /**
+   * Fase 7 · Q-A4 y SE10: lo PROPONE el solicitante, solo en una solicitud de espacio físico;
+   * sin valor inicial para no elegir por él. Fuera de esa categoría siempre es null.
+   */
   subEspacio: SubEspacio | null;
 }
 
@@ -59,6 +69,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
     titulo: `${id}-titulo`,
     categoria: `${id}-categoria`,
     proposito: `${id}-proposito`,
+    lugarDeServicios: `${id}-lugar-servicios`,
   };
   const [solicitudes, setSolicitudes] = useState<SolicitudPropia[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +79,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   // Modal NATIVO (DV6): el navegador captura el foco, cierra con Escape y vuelve inerte el fondo.
   const dialogoRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<FormularioSolicitud>(FORMULARIO_VACIO);
+  const eligeLugar = form.categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO;
   const [errorValidacion, setErrorValidacion] = useState('');
 
   // Una sola fuente de verdad: el estado `dialogo` manda y el <dialog> lo obedece.
@@ -111,20 +123,23 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
       setErrorValidacion(franja.error);
       return;
     }
-    // Fase 7: el navegador ya lo exige (`required`); esta guarda es la defensa en profundidad
-    // y lo que le permite a TypeScript enviar un SubEspacio y no un null.
-    if (form.subEspacio === null) {
-      setErrorValidacion(TEXTO_ELIGE_SUB_ESPACIO);
-      return;
+    const comun = { proposito: form.proposito, fecha_inicio: franja.inicio, fecha_fin: franja.fin };
+    let cuerpo: CuerpoCrearSolicitud;
+    // Fase 7 · SE10: el lugar solo viaja en una solicitud de espacio físico. La rama decide
+    // también el tipo: TypeScript no deja enviar un servicio con lugar ni un espacio sin él.
+    if (form.categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO) {
+      // El navegador ya lo exige (`required`); esta guarda es la defensa en profundidad y lo
+      // que le permite a TypeScript enviar un SubEspacio y no un null.
+      if (form.subEspacio === null) {
+        setErrorValidacion(TEXTO_ELIGE_SUB_ESPACIO);
+        return;
+      }
+      cuerpo = { ...comun, categoria: form.categoria, sub_espacio: form.subEspacio };
+    } else {
+      cuerpo = { ...comun, categoria: form.categoria };
     }
 
-    const resultado = await api.crear({
-      categoria: form.categoria,
-      proposito: form.proposito,
-      fecha_inicio: franja.inicio,
-      fecha_fin: franja.fin,
-      sub_espacio: form.subEspacio,
-    });
+    const resultado = await api.crear(cuerpo);
 
     if (!resultado.ok) {
       // Mensajes del servidor tal cual (CA-04, CA-06...); una sesión vencida ya la cerró la App.
@@ -223,10 +238,14 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   required 
                   className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.categoria}
+                  // SE10: en un servicio, el texto que explica el lugar describe la categoría elegida.
+                  aria-describedby={eligeLugar ? undefined : ids.lugarDeServicios}
                   onChange={e => {
                     // Sin aserción: solo se acepta un valor que esté en el contrato.
                     const categoria = CATEGORIAS.find((c) => c === e.target.value);
-                    if (categoria) setForm({ ...form, categoria });
+                    // SE10: al salir de "espacio físico" la elección se BORRA: un lugar elegido antes
+                    // no viaja oculto, y volver a esa categoría pide elegir de nuevo.
+                    if (categoria) setForm({ ...form, categoria, subEspacio: null });
                   }}
                 >
                   {CATEGORIAS.map((categoria) => (
@@ -235,12 +254,19 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                 </select>
               </div>
 
-              {/* Fase 7 · PRD v2.2 §4.1: dónde se hará la actividad (lo puede ajustar el Staff al validar). */}
-              <CampoSubEspacio
-                leyenda={TEXTO_LEYENDA_SUB_ESPACIO}
-                valor={form.subEspacio}
-                onCambio={(subEspacio) => setForm({ ...form, subEspacio })}
-              />
+              {/* Fase 7 · SE10: el lugar solo se elige en una solicitud de espacio físico (lo puede
+                  ajustar el Staff al validar); en un servicio se explica qué reserva el Estudio C. */}
+              {eligeLugar ? (
+                <CampoSubEspacio
+                  leyenda={TEXTO_LEYENDA_SUB_ESPACIO}
+                  valor={form.subEspacio}
+                  onCambio={(subEspacio) => setForm({ ...form, subEspacio })}
+                />
+              ) : (
+                <p id={ids.lugarDeServicios} className="text-xs text-gray-500">
+                  {TEXTO_LUGAR_DE_SERVICIOS}
+                </p>
+              )}
 
               <div>
                 <label htmlFor={ids.proposito} className="block text-gray-600 mb-1">Propósito de la reserva</label>

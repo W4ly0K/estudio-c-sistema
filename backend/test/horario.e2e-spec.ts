@@ -1,17 +1,19 @@
 import { INestApplication, Logger } from '@nestjs/common';
-import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, RolUsuario, SubEspacio } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
 import { MENSAJE_MOTIVO_REPROGRAMACION, MENSAJE_SUBESPACIO_PROPUESTO } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
 import { MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
+import { MENSAJE_SUBESPACIO_DE_CREACION } from '../src/solicitudes/dto/create-solicitude.dto';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
   MENSAJE_REPROGRAMACION_PROPUESTA,
   MENSAJE_REPROGRAMAR_EN_RECIBIDO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
 } from '../src/solicitudes/solicitudes.service';
@@ -39,8 +41,9 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
   let token: string;
   let tokenStaff: string;
 
+  // Fase 7 · SE10: un servicio (sin sub-espacio). El espacio físico tiene su bloque (45).
   const cuerpo = (fecha_inicio: string, fecha_fin: string) => ({
-    categoria: CategoriaSolicitud.ESPACIOS,
+    categoria: CategoriaSolicitud.VIDEO,
     proposito: 'Grabación de clase magistral',
     fecha_inicio,
     fecha_fin,
@@ -352,6 +355,41 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
       expect(respuesta.body.message).toEqual([MENSAJE_SUBESPACIO_PROPUESTO]);
       expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /solicitudes · el sub-espacio según la categoría (Fase 7 · 7B.4 · ADR-007 SE10)', () => {
+    const franja = cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00');
+
+    it('45a. espacio físico sin sub-espacio → 400 del pipe con el mensaje de CA-12, sin llegar al servicio', async () => {
+      const respuesta = await radicar({ ...franja, categoria: CategoriaSolicitud.ESPACIOS }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_SUBESPACIO_DE_CREACION]);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('45b. espacio físico con la cabina → 201 y se guarda la cabina', async () => {
+      await radicar({ ...franja, categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO }).expect(201);
+
+      expect(prisma.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: SubEspacio.CABINA_AUDIO }) }),
+      );
+    });
+
+    it('45c. un servicio CON sub-espacio → 400 del servicio (no se ignora), sin escribir', async () => {
+      const respuesta = await radicar({ ...franja, categoria: CategoriaSolicitud.PODCAST, sub_espacio: SubEspacio.CABINA_AUDIO }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('45d. un servicio sin sub-espacio → 201 y el Estudio C reserva el completo', async () => {
+      await radicar({ ...franja, categoria: CategoriaSolicitud.PODCAST }).expect(201);
+
+      expect(prisma.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: SubEspacio.ESTUDIO_COMPLETO }) }),
+      );
     });
   });
 

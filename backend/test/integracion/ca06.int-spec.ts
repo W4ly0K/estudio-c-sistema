@@ -82,6 +82,8 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
         fecha_inicio: bogota(dia, desde),
         fecha_fin: bogota(dia, hasta),
         estado,
+        // Fase 7 · contract (7A.8): sin DEFAULT. El completo, que es lo que antes ponía la columna.
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
       },
     });
 
@@ -146,6 +148,9 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
         fecha_propuesta_inicio: bogota('28', '09:00'),
         fecha_propuesta_fin: bogota('28', '10:00'),
         estado: 'Pendiente de Reprogramación',
+        // Fase 7 · contract (7A.8): sin DEFAULT, y M4 exige el lugar de la propuesta (el mismo).
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
+        sub_espacio_propuesto: SubEspacio.ESTUDIO_COMPLETO,
       },
     });
 

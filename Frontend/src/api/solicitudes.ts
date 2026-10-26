@@ -14,6 +14,7 @@ import {
   type SolicitudPropia,
   type SolicitudTablero,
   type SubEspacio,
+  type CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
 } from './esquemas'
 import type { Estado, TRANSICIONES } from './maquina-estados'
 
@@ -24,20 +25,26 @@ import type { Estado, TRANSICIONES } from './maquina-estados'
  * servidor rechazaría con 400 o 409 por su forma, aquí no compila.
  */
 
-/** POST /solicitudes. Las fechas, ISO 8601 con zona horaria explícita (README §9). */
-export interface CuerpoCrearSolicitud {
-  readonly categoria: Categoria
+/** Lo común a toda radicación. Las fechas, ISO 8601 con zona horaria explícita (README §9). */
+interface RadicacionComun {
   readonly proposito: string
   readonly fecha_inicio: string
   readonly fecha_fin: string
-  /**
-   * Fase 7 · PRD v2.2 §4.1: OBLIGATORIO aquí, aunque el backend lo admita opcional durante
-   * el expand (lo hará obligatorio en el contract, 7A.8): la UI nunca deja que el servidor
-   * elija el lugar por el solicitante.
-   */
-  readonly sub_espacio: SubEspacio
   readonly recursos?: readonly { readonly id_recurso: number; readonly cantidad: number }[]
 }
+
+/** La categoría en la que el solicitante elige el lugar (SE10). */
+type CategoriaQueElige = typeof CATEGORIA_QUE_ELIGE_SUB_ESPACIO
+
+/**
+ * POST /solicitudes. Fase 7 · 7B.4 (ADR-007 SE10): unión discriminada por la categoría, igual
+ * que la regla del backend. Una solicitud de espacio físico SIN lugar (CA-12) o un servicio
+ * CON lugar (400 del servidor) no compilan: el servidor nunca elige por el solicitante, y el
+ * cliente nunca envía una elección que el servidor rechazaría.
+ */
+export type CuerpoCrearSolicitud =
+  | (RadicacionComun & { readonly categoria: CategoriaQueElige; readonly sub_espacio: SubEspacio })
+  | (RadicacionComun & { readonly categoria: Exclude<Categoria, CategoriaQueElige>; readonly sub_espacio?: never })
 
 /**
  * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9 y, desde la Fase 7, T10). Se DERIVAN de la

@@ -60,12 +60,14 @@ model Solicitud {
   fecha_propuesta_fin    DateTime?          // Nullable
   estado                 String
   es_urgencia            Boolean            @default(false)
-  /// Fase 7 (ADR-007 SE1 y SE8): NOT NULL; lo existente quedó en ESTUDIO_COMPLETO. El
-  /// @default es TEMPORAL (expand): se retira en el paso 7A.8, cuando la API exija el
-  /// sub-espacio. CA-06 por sub-espacio: Solicitud_sin_traslape_ca06_cabina y _estudio.
-  sub_espacio            SubEspacio         @default(ESTUDIO_COMPLETO)
+  /// Fase 7 (ADR-007 SE1, SE8 y SE10): NOT NULL y SIN valor por defecto desde el contract
+  /// (7A.8): quien escribe una solicitud decide su lugar (create() lo escribe siempre). Lo
+  /// anterior a la Fase 7 quedó en ESTUDIO_COMPLETO. CA-06 por sub-espacio:
+  /// Solicitud_sin_traslape_ca06_cabina y _estudio.
+  sub_espacio            SubEspacio
   /// Fase 7 (ADR-007 SE6): el sub-espacio de la propuesta de reprogramación (CA-10, Q-A6).
-  /// Su CHECK de coherencia con la propuesta (M4) llega con el contract (7A.8).
+  /// M4 (Solicitud_propuesta_subespacio_check, contract 7A.8): existe si y solo si existe la
+  /// franja propuesta. Prisma no modela CHECK: ver la migración del contract.
   sub_espacio_propuesto  SubEspacio?
 
   // Relaciones

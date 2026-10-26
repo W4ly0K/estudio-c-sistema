@@ -60,10 +60,10 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
     expect(resultado).toEqual({ ok: false, error: { tipo: 'contrato' } })
   })
 
-  it('crear → POST /solicitudes con el cuerpo tal cual', async () => {
+  it('crear → POST /solicitudes con el cuerpo tal cual (espacio físico, con su lugar)', async () => {
     const { cliente, llamada } = crearEntornoDePrueba(json(201, { ...SOLICITUD, estado: 'Recibido' }))
     const cuerpo = {
-      categoria: 'PODCAST',
+      categoria: 'ESPACIOS',
       proposito: 'Grabación del episodio piloto',
       fecha_inicio: '2026-10-15T09:00:00-05:00',
       fecha_fin: '2026-10-15T11:00:00-05:00',
@@ -165,10 +165,12 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
       // @ts-expect-error Fase 7 · SE6: proponer exige el sub-espacio (franja y lugar).
       void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', motivo: 'Motivo suficiente' })
-      // @ts-expect-error Fase 7 · Q-A4: crear exige que el solicitante elija el sub-espacio.
-      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y' })
+      // @ts-expect-error Fase 7 · SE10 (CA-12): una solicitud de espacio físico exige el sub-espacio.
+      void api.crear({ categoria: 'ESPACIOS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y' })
+      // @ts-expect-error Fase 7 · SE10: un servicio no lleva sub-espacio (lo asigna el Estudio C).
+      void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
       // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
-      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'SALA_3' })
+      void api.crear({ categoria: 'ESPACIOS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'SALA_3' })
     }
     expect(soloTipos).toBeTypeOf('function')
   })

@@ -5,6 +5,12 @@ import { AYUDAS_SUB_ESPACIO, ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiqu
 // Fast Refresh (react/only-export-components): este archivo exporta un componente y literales.
 export const TEXTO_LEYENDA_SUB_ESPACIO = 'Sub-espacio'
 export const TEXTO_ELIGE_SUB_ESPACIO = 'Elige el sub-espacio donde se hará la actividad.'
+/**
+ * Fase 7 · 7B.4 (ADR-007 SE10): en un servicio el solicitante no elige; se le dice qué pasa,
+ * porque su tarjeta mostrará "Estudio C completo" sin que lo haya elegido.
+ */
+export const TEXTO_LUGAR_DE_SERVICIOS =
+  'Para este servicio el Estudio C reserva el espacio completo; el Staff puede ajustarlo al validar.'
 
 interface CampoSubEspacioProps {
   /** El nombre accesible del grupo: "Sub-espacio" en B2, "Sub-espacio propuesto" en T5. */

@@ -1,4 +1,4 @@
-import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, Prisma, PrismaClient, RolUsuario, SubEspacio } from '@prisma/client';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import { MOTIVO_RECHAZO_MAXIMO, MOTIVO_RECHAZO_MINIMO } from '../../src/solicitudes/dto/update-solicitude.dto';
 import { SELECT_DETALLE_SOLICITANTE } from '../../src/solicitudes/proyecciones/detalle-solicitud.proyeccion';
@@ -69,6 +69,7 @@ describe('Motivo del rechazo contra PostgreSQL real (integración · Fase 6.5b)'
         fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
         fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
         estado: 'Recibido',
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO, // Fase 7 · contract (7A.8): sin DEFAULT
       },
     });
   });

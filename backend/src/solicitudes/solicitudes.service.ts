@@ -8,7 +8,7 @@ import {
   NotFoundException,
   NotImplementedException,
 } from '@nestjs/common';
-import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
+import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,7 +22,7 @@ import {
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
-import { SUB_ESPACIO_POR_DEFECTO_TEMPORAL, subEspaciosEnConflicto } from './reglas/sub-espacios';
+import { type ErrorSubEspacioAlRadicar, subEspacioAlRadicar, subEspaciosEnConflicto } from './reglas/sub-espacios';
 import {
   ESTADO_INICIAL,
   evaluarAccion,
@@ -92,6 +92,23 @@ export const MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO =
  */
 export const MENSAJE_SUBESPACIO_SOLO_AL_APROBAR =
   'El sub-espacio solo se ajusta al validar la solicitud: envíelo junto con el estado "Validado".';
+
+/**
+ * Fase 7 · 7B.4 (ADR-007 SE10): en un servicio el lugar lo asigna el Estudio C (el completo al
+ * radicar y, si hace falta, el ajuste del Staff al validar). Enviarlo no se ignora en silencio.
+ */
+export const MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS =
+  'El sub-espacio solo se elige en una solicitud de espacio físico; para los demás servicios lo asigna el Estudio C.';
+
+/**
+ * SE10: un mensaje por cada error de subEspacioAlRadicar(). Record sobre la unión: un error
+ * nuevo no compila hasta tener su mensaje (Decisión D-Q). El primero lo responde casi siempre
+ * el pipe con el MISMO texto; este es la defensa en profundidad del servicio.
+ */
+const MENSAJES_SUBESPACIO_AL_RADICAR: Readonly<Record<ErrorSubEspacioAlRadicar, string>> = {
+  REQUERIDO_EN_ESPACIOS: MENSAJE_SUBESPACIO_DE_CREACION,
+  SOLO_EN_ESPACIOS: MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
+};
 
 /** E5: el log nunca guarda motivos de rechazo huérfanos. */
 export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
@@ -210,6 +227,14 @@ export class SolicitudesService {
     // del radicado corresponden al MISMO instante (sin carrera a medianoche).
     const ahora = this.reloj.ahora();
 
+    // --- 0. Fase 7 · SE10: el sub-espacio según la categoría. Es la forma de la petición, así
+    // que va primero, como E5 en update(): no se evalúa nada con un cuerpo incoherente.
+    const lugar = subEspacioAlRadicar(createSolicitudeDto.categoria, createSolicitudeDto.sub_espacio);
+    if (!lugar.ok) {
+      throw new BadRequestException(MENSAJES_SUBESPACIO_AL_RADICAR[lugar.error]);
+    }
+    const subEspacio = lugar.subEspacio;
+
     // --- 1. Reglas de horario puras (Fase 3): CA-04, pasado, mismo día, día
     // hábil y urgencia por 5 días hábiles. Van ANTES de CA-06: una entrada
     // inválida se rechaza sin consultar la base de datos.
@@ -224,10 +249,6 @@ export class SolicitudesService {
     if (!horario.valido) {
       throw new BadRequestException(MENSAJES_ERROR_HORARIO[horario.error]);
     }
-
-    // Fase 7 · SE5: el sub-espacio que propone el solicitante. Expand: sin él, el completo
-    // (espejo del DEFAULT temporal), que se escribe EXPLÍCITO para no depender de la columna.
-    const subEspacio = createSolicitudeDto.sub_espacio ?? SUB_ESPACIO_POR_DEFECTO_TEMPORAL;
 
     // --- 2. Mitigación M3: Anti-Traslape (CA-06), capa amable (409 único), por sub-espacio ---
     if (
@@ -262,6 +283,7 @@ export class SolicitudesService {
           fecha_fin: createSolicitudeDto.fecha_fin,
           estado: ESTADO_INICIAL,
           es_urgencia: horario.urgente,
+          // Siempre explícito: desde el contract (7A.8) la columna no tiene DEFAULT.
           sub_espacio: subEspacio,
         
           recursos: { 

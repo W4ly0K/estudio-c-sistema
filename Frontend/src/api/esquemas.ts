@@ -26,6 +26,12 @@ export const CATEGORIAS = ['PODCAST', 'VIDEO', 'ESPACIOS', 'STREAMING', 'ASESORI
  */
 export const SUB_ESPACIOS = ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] as const;
 
+/**
+ * Fase 7 · 7B.4 (ADR-007 SE10, directriz del 26/10/2026): la única categoría en la que el
+ * solicitante elige el sub-espacio. Copia de la constante del backend (contrato.test.ts la vigila).
+ */
+export const CATEGORIA_QUE_ELIGE_SUB_ESPACIO = 'ESPACIOS' satisfies (typeof CATEGORIAS)[number];
+
 export const esquemaEstado = z.enum(ESTADOS);
 export const esquemaRol = z.enum(ROLES);
 export const esquemaCategoria = z.enum(CATEGORIAS);

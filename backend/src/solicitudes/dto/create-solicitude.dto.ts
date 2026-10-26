@@ -1,7 +1,15 @@
-import { IsString, IsNotEmpty, IsArray, ValidateNested, IsInt, Min, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, ValidateNested, IsInt, Min, IsOptional, IsEnum, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client'; // <-- 1. Importamos los Enums de Prisma
 import { FechaConZonaHoraria } from '../../common/validadores/fecha-con-zona-horaria.decorator';
+
+/**
+ * Fase 7 · 7B.4 (ADR-007 SE10): un solo mensaje para las dos fallas del pipe (falta en una
+ * solicitud de espacio físico, o llega un valor que no existe). Que un servicio NO lleve
+ * sub-espacio lo decide el servicio (MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS).
+ */
+export const MENSAJE_SUBESPACIO_DE_CREACION =
+  'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO (obligatorio en una solicitud de espacio físico).';
 
 // Sub-clase para validar los recursos individuales del arreglo
 class RecursoSolicitadoDto {
@@ -38,15 +46,16 @@ export class CreateSolicitudeDto {
   @FechaConZonaHoraria()
   fecha_fin: Date;
 
-  // Fase 7 · ADR-007 SE5 (Q-A4): el solicitante PROPONE el sub-espacio; el Staff puede
-  // ajustarlo al validar (T1). Opcional durante el expand: sin él se reserva el Estudio C
-  // completo, exactamente como antes de la v2.2 (SUB_ESPACIO_POR_DEFECTO_TEMPORAL). En el
-  // contract (7A.8) pasa a ser obligatorio, junto con el formulario del frontend.
-  // UpdateSolicitudeDto lo hereda (PartialType); el servicio decide cuándo se admite (D-4).
-  @IsOptional()
-  @IsEnum(SubEspacio, {
-    message: 'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO',
-  })
+  // Fase 7 · 7B.4 (ADR-007 SE10, directriz del 26/10/2026): el solicitante elige el
+  // sub-espacio SOLO en una solicitud de espacio físico, y ahí es obligatorio (CA-12). En las
+  // demás categorías el pipe solo exige que, si llega, sea un valor real; que no deba llegar
+  // lo decide el servicio con subEspacioAlRadicar() (400 con su propio mensaje).
+  // UpdateSolicitudeDto lo hereda: PartialType le suma su @IsOptional y class-validator exige
+  // que TODAS las condiciones se cumplan, así que en el PATCH solo se valida si viene (D-4).
+  @ValidateIf(
+    (dto: CreateSolicitudeDto) => dto.categoria === CategoriaSolicitud.ESPACIOS || dto.sub_espacio !== undefined,
+  )
+  @IsEnum(SubEspacio, { message: MENSAJE_SUBESPACIO_DE_CREACION })
   sub_espacio?: SubEspacio;
 
   // Nuevo campo: Un arreglo de recursos opcional
