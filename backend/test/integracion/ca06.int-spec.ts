@@ -18,6 +18,7 @@ import {
   type SubEspacioFisico,
 } from '../../src/solicitudes/reglas/sub-espacios';
 import { RelojFijo } from '../utils/reloj-fijo';
+import { MENSAJE_23P01_CREATE, reemplazarUnaVez } from '../utils/errores-postgres.fixture';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 
 /**
@@ -291,6 +292,16 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
       expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain('23P01');
       expect((error as Prisma.PrismaClientUnknownRequestError).message).toContain(`${RESTRICCION_DEL_SUBESPACIO[fisico]}\\"`);
       expect(esViolacionDeTraslapeCa06(error)).toBe(true);
+      // Fase 7 · 7A.8: el oráculo de errores-postgres.fixture.ts ES este mensaje, carácter por
+      // carácter (con la restricción de la cabina; en el estudio, el nombre es la única diferencia).
+      // Si Prisma o PostgreSQL cambian el formato, falla aquí y el diff trae el mensaje real.
+      expect((error as Prisma.PrismaClientUnknownRequestError).message).toBe(
+        reemplazarUnaVez(
+          MENSAJE_23P01_CREATE,
+          `\\"${RESTRICCION_DEL_SUBESPACIO.CABINA_AUDIO}\\""`,
+          `\\"${RESTRICCION_DEL_SUBESPACIO[fisico]}\\""`,
+        ),
+      );
     });
 
     const CABINA = RESTRICCION_DEL_SUBESPACIO.CABINA_AUDIO;

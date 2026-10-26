@@ -315,6 +315,8 @@ describe('Cadena de seguridad Zero Trust (e2e)', () => {
       estado: 'Pendiente de Reprogramación',
       fecha_propuesta_inicio: new Date('2026-10-28T09:00:00-05:00'),
       fecha_propuesta_fin: new Date('2026-10-28T10:00:00-05:00'),
+      // Fase 7 · M4 (contract 7A.8): la propuesta tiene franja Y lugar; aquí, el mismo de la reserva.
+      sub_espacio_propuesto: SOLICITUD_E2E.sub_espacio,
     };
 
     it.each(['aceptar', 'rechazar'] as const)('25. STAFF → %s → 403 (solo el dueño responde)', async (accion) => {

@@ -70,7 +70,7 @@ const solicitudBase: Solicitud = {
   fecha_propuesta_fin: null,
   estado: 'Recibido',
   es_urgencia: false,
-  // Fase 7 · 7A.3: lo que la base guarda hoy por el DEFAULT temporal (ADR-007 SE1).
+  // Fase 7: lo histórico quedó en el completo (SE8); en "Recibido" no hay propuesta (M4).
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
 };
@@ -1621,6 +1621,8 @@ describe('SolicitudesService', () => {
       fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
       fecha_propuesta_inicio: PROPUESTA.inicio,
       fecha_propuesta_fin: PROPUESTA.fin,
+      // Fase 7 · M4 (contract 7A.8): la propuesta tiene franja Y lugar; por defecto, el mismo.
+      sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
       es_urgencia: true, // L6: aceptar debe dejarla en false
       ...cambios,
     });
@@ -1674,9 +1676,9 @@ describe('SolicitudesService', () => {
           estado: 'Pendiente de Reprogramación',
           fecha_propuesta_inicio: PROPUESTA.inicio,
           fecha_propuesta_fin: PROPUESTA.fin,
-          // Fase 7 · L7: el lugar vigente y el propuesto (aquí NULL: propuesta anterior a la Fase 7).
+          // Fase 7 · L7: el lugar vigente y el propuesto (aquí, el mismo).
           sub_espacio: 'ESTUDIO_COMPLETO',
-          sub_espacio_propuesto: null,
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
         },
         data: {
           estado: 'Validado',
@@ -1889,6 +1891,19 @@ describe('SolicitudesService', () => {
 
     it('A-11 · L4 fail-closed: "Pendiente" sin propuesta guardada → 409 y aviso, sin escribir', async () => {
       leer(pendiente({ fecha_propuesta_inicio: null }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('A-11b · C-4 fail-closed: propuesta con franja y SIN lugar → 409 y aviso, sin suponer un lugar ni escribir', async () => {
+      leer(pendiente({ sub_espacio_propuesto: null }));
 
       const error = await capturar(aceptar());
 

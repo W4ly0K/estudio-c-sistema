@@ -615,8 +615,14 @@ export class SolicitudesService {
       (motivo) => this.errorDeRespuestaAPropuesta(motivo),
     );
 
-    // L4 · fail-closed: "Pendiente" sin propuesta guardada es un dato inconsistente.
-    if (existente.fecha_propuesta_inicio === null || existente.fecha_propuesta_fin === null) {
+    // L4 · fail-closed: "Pendiente" sin propuesta COMPLETA (franja Y lugar) es un dato
+    // inconsistente. Fase 7 · 7A.8: desde el contract, M4 lo impide en el motor; aquí no se
+    // supone un lugar (antes, un lugar ausente se leía como "el mismo").
+    if (
+      existente.fecha_propuesta_inicio === null ||
+      existente.fecha_propuesta_fin === null ||
+      existente.sub_espacio_propuesto === null
+    ) {
       this.logger.warn(`Solicitud pendiente sin propuesta guardada: ${radicado}.`);
       throw new ConflictException(MENSAJE_PROPUESTA_NO_DISPONIBLE);
     }
@@ -624,10 +630,8 @@ export class SolicitudesService {
       inicio: existente.fecha_propuesta_inicio,
       fin: existente.fecha_propuesta_fin,
     };
-    // Fase 7 · SE6: una propuesta sin sub-espacio es anterior a la Fase 7 (o de antes de que
-    // T5 lo escribiera): entonces solo cambiaba la hora, en el MISMO lugar. M4 lo hará
-    // imposible desde el contract (7A.8), que además poblará esas filas.
-    const subEspacioPropuesto = existente.sub_espacio_propuesto ?? existente.sub_espacio;
+    // Fase 7 · SE6: el lugar de la propuesta (la guardia de arriba ya descartó el null).
+    const subEspacioPropuesto = existente.sub_espacio_propuesto;
     const cambiaSubEspacio = subEspacioPropuesto !== existente.sub_espacio;
     // P-1: con K4 redefinida, una propuesta puede conservar la hora y cambiar solo el lugar.
     const cambiaFranja =
@@ -648,14 +652,14 @@ export class SolicitudesService {
     const solicitud = await this.escribirConCompareAndSet({
       radicado,
       // L7: CAS estricto: dueño, estado leído y EXACTAMENTE la propuesta validada (franja y
-      // lugar, también el NULL de una propuesta anterior a la Fase 7) sobre el lugar vigente.
+      // lugar) sobre el lugar vigente.
       esperado: {
         id_usuario: usuario.id,
         estado: existente.estado,
         fecha_propuesta_inicio: propuesta.inicio,
         fecha_propuesta_fin: propuesta.fin,
         sub_espacio: existente.sub_espacio,
-        sub_espacio_propuesto: existente.sub_espacio_propuesto,
+        sub_espacio_propuesto: subEspacioPropuesto,
       },
       // L8 · L6: la propuesta pasa a ser la franja (y el lugar) oficial y se limpia.
       data: {
