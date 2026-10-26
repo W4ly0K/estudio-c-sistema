@@ -233,7 +233,8 @@ describe('SolicitudesService', () => {
   });
 
   describe('create() — CA-06 sin condición de carrera (Fase 4)', () => {
-    const dtoValido: CreateSolicitudeDto = {
+    // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
+    const dtoValido: Pick<CreateSolicitudeDto, 'categoria' | 'proposito' | 'fecha_inicio' | 'fecha_fin'> = {
       categoria: CategoriaSolicitud.ESPACIOS,
       proposito: solicitudBase.proposito,
       fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),

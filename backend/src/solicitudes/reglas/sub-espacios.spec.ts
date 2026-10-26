@@ -95,7 +95,8 @@ describe('Sub-espacios y CA-06 (PRD v2.2 §5.1 · ADR-007 SE1, SE2 y SE4)', () =
   });
 
   it('los nombres de las restricciones son los de la lista cerrada del detector (7A.1)', () => {
-    expect([...Object.values(RESTRICCION_DEL_SUBESPACIO)].sort()).toEqual([...RESTRICCIONES_CA06_POR_SUBESPACIO].sort());
+    // Object.values ya es un arreglo nuevo; la constante del detector es de solo lectura y sí se copia.
+    expect(Object.values(RESTRICCION_DEL_SUBESPACIO).sort()).toEqual([...RESTRICCIONES_CA06_POR_SUBESPACIO].sort());
   });
 });
 
