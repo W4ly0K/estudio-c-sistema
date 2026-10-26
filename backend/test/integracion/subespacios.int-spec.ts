@@ -10,13 +10,15 @@ import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 /**
  * Fase 7 · 7A.3 · migración 20261023120000_ca06_subespacios contra PostgreSQL REAL
  * (PRD v2.2 §5.1; ADR-007 SE1, SE2, SE7, NA1 y P-1).
- *  - I-31: ALINEACIÓN. Columnas, DEFAULT temporal y los seis CHECK del log, con la
- *    definición exacta que guarda el motor.
+ *  - I-31: ALINEACIÓN. Columnas (sin DEFAULT desde el contract, 7A.8) y los seis CHECK del
+ *    log, con la definición exacta que guarda el motor.
  *  - I-32: COMPORTAMIENTO del motor. La tabla del PRD §5.1 sin pasar por el servicio.
  *  - I-33 (7A.6): el SERVICIO crea por sub-espacio, también en carreras: la capa amable
  *    y el motor deciden lo mismo y el resultado no depende del orden.
  *  - I-34 (7A.6): T1, T5 y T7 con sub-espacio contra la base real (CHECK del log A1 a A3 y
  *    F1 a F3, compare-and-set y EXCLUDE), también en carreras.
+ *  - I-35 (7A.8): el contract. Sin DEFAULT el motor rechaza una fila sin lugar, y M4 exige el
+ *    lugar de la propuesta junto con su franja (y nunca sin ella).
  * Las carreras son LIBRES (PostgreSQL decide el orden): se verifican propiedades que valen
  * en cualquier orden. El código HTTP (201/409) lo fijan las pruebas e2e; aquí, el servicio.
  */
@@ -51,7 +53,10 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
     throw new Error('Se esperaba un rechazo del motor');
   };
 
-  /** Inserta saltándose el servicio: solo el motor decide. Sin sub-espacio usa el DEFAULT. */
+  /**
+   * Inserta saltándose el servicio: solo el motor decide. Contract (7A.8): la columna ya no
+   * tiene DEFAULT, así que el lugar va SIEMPRE explícito; sin indicarlo, el completo.
+   */
   const insertar = (radicado: string, desde: string, hasta: string, cambios: Partial<Prisma.SolicitudUncheckedCreateInput> = {}) =>
     prisma.solicitud.create({
       data: {
@@ -62,12 +67,13 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
         fecha_inicio: bogota('27', desde),
         fecha_fin: bogota('27', hasta),
         estado: 'Recibido',
+        sub_espacio: ESTUDIO_COMPLETO,
         ...cambios,
       },
     });
 
   describe('I-31 · ALINEACIÓN de la migración', () => {
-    it('I-31a · columnas nuevas: sub_espacio NOT NULL con el DEFAULT temporal; el resto admite NULL', async () => {
+    it('I-31a · columnas nuevas: sub_espacio NOT NULL y, desde el contract, SIN valor por defecto; el resto admite NULL', async () => {
       const columnas = await prisma.$queryRaw<
         { tabla: string; columna: string; tipo: string; admite_nulo: string; por_defecto: string | null }[]
       >`
@@ -89,8 +95,8 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
           columna: 'sub_espacio',
           tipo: 'SubEspacio',
           admite_nulo: 'NO',
-          // Expand (7A.3): se retira en el contract (7A.8) y esta línea cambiará a null a propósito.
-          por_defecto: `'${ESTUDIO_COMPLETO}'::"SubEspacio"`,
+          // Contract (7A.8): el DEFAULT temporal del expand ya no existe (cambio anunciado en 7A.3).
+          por_defecto: null,
         },
         { tabla: 'Solicitud', columna: 'sub_espacio_propuesto', tipo: 'SubEspacio', admite_nulo: 'YES', por_defecto: null },
       ]);
@@ -161,10 +167,9 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
       expect(esViolacionDeTraslapeCa06(error)).toBe(true);
     });
 
-    it('I-32c · expand: sin sub-espacio, la fila nueva es ESTUDIO_COMPLETO y bloquea los dos (como la global)', async () => {
-      const guardada = await insertar('EC-INT-A', '09:00', '10:00');
+    it('I-32c · el completo bloquea los dos sub-espacios (como la restricción global de antes)', async () => {
+      await insertar('EC-INT-A', '09:00', '10:00', { sub_espacio: ESTUDIO_COMPLETO });
 
-      expect(guardada.sub_espacio).toBe(ESTUDIO_COMPLETO);
       expect(esViolacionDeTraslapeCa06(await capturar(insertar('EC-INT-B', '09:30', '10:30', { sub_espacio: CABINA_AUDIO })))).toBe(true);
       expect(esViolacionDeTraslapeCa06(await capturar(insertar('EC-INT-C', '09:30', '10:30', { sub_espacio: ESTUDIO_GRABACION })))).toBe(true);
     });
@@ -211,6 +216,57 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
       expect(await prisma.log_Auditoria.count()).toBe(1);
     });
   });
+  describe('I-35 · CONTRACT (7A.8 · ADR-007 SE1 y SE6)', () => {
+    const M4 = 'Solicitud_propuesta_subespacio_check';
+
+    it('I-35a · sin DEFAULT: una fila sin sub-espacio la rechaza el motor (23502), no la completa', async () => {
+      // SQL directo y sin parámetros: el cliente de Prisma ya no permite omitir el campo (el tipo
+      // lo exige). Las columnas son timestamp en UTC: 14:00 Z son las 09:00 en Bogotá.
+      const error = await capturar(prisma.$executeRaw`
+        INSERT INTO "Solicitud" (radicado, id_usuario, categoria, proposito, fecha_inicio, fecha_fin, estado)
+        VALUES ('EC-INT-A', 'uuid-integracion-subespacios', 'VIDEO', 'Sin lugar',
+                '2026-10-27 14:00:00', '2026-10-27 15:00:00', 'Recibido')`);
+
+      // El INSERT da valor a TODAS las demás columnas NOT NULL que no tienen DEFAULT, así que un
+      // 23502 solo puede venir de sub_espacio. Prisma 5.22 no reenvía el nombre de la columna en
+      // $executeRaw (solo "Failing row contains (…)"): se midió, no se supuso.
+      expect((error as Error).message).toContain('Code: `23502`');
+      expect(await prisma.solicitud.count()).toBe(0);
+    });
+
+    it('I-35b · M4: una propuesta con franja y SIN lugar → 23514 de M4 (ya no existe la propuesta sin lugar)', async () => {
+      const error = await capturar(
+        insertar('EC-INT-A', '09:00', '10:00', {
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: bogota('28', '09:00'),
+          fecha_propuesta_fin: bogota('28', '10:00'),
+          sub_espacio_propuesto: null,
+        }),
+      );
+
+      expect((error as Error).message).toContain('23514');
+      expect((error as Error).message).toContain(M4);
+      expect(esViolacionDeTraslapeCa06(error)).toBe(false);
+    });
+
+    it('I-35c · M4: un lugar propuesto SIN franja propuesta → 23514 de M4 (T7 y T8 limpian los dos juntos)', async () => {
+      const error = await capturar(insertar('EC-INT-A', '09:00', '10:00', { estado: 'Validado', sub_espacio_propuesto: CABINA_AUDIO }));
+
+      expect((error as Error).message).toContain(M4);
+    });
+
+    it('I-35d · M4: la propuesta completa (franja y lugar) en Pendiente es legal', async () => {
+      await insertar('EC-INT-A', '09:00', '10:00', {
+        estado: 'Pendiente de Reprogramación',
+        fecha_propuesta_inicio: bogota('28', '09:00'),
+        fecha_propuesta_fin: bogota('28', '10:00'),
+        sub_espacio_propuesto: CABINA_AUDIO,
+      });
+
+      expect(await prisma.solicitud.count()).toBe(1);
+    });
+  });
+
   describe('Servicio contra la base real (7A.6)', () => {
     /** Lunes 5-oct-2026, 10:00 en Bogotá: las franjas de octubre y noviembre están por delante. */
     const AHORA = new Date('2026-10-05T10:00:00-05:00');
@@ -247,11 +303,14 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
       azar.mockRestore();
     });
 
-    /** Martes 27-oct (hábil) por defecto, dentro del bloque de la mañana. */
+    /**
+     * Martes 27-oct (hábil) por defecto, dentro del bloque de la mañana. Fase 7 · SE10: solo una
+     * solicitud de espacio físico elige el lugar.
+     */
     const crear = (subEspacio: SubEspacio, dia = '27', desde = '09:00', hasta = '10:00') =>
       service.create(
         {
-          categoria: CategoriaSolicitud.VIDEO,
+          categoria: CategoriaSolicitud.ESPACIOS,
           proposito: 'Batería de integración de sub-espacios',
           fecha_inicio: bogota(dia, desde),
           fecha_fin: bogota(dia, hasta),
@@ -301,6 +360,20 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
 
         expect(esConflictoCa06(error)).toBe(true);
         expect(await prisma.solicitud.count()).toBe(1);
+      });
+
+      it('I-33e · SE10: un servicio sin lugar se guarda en el completo y choca con una cabina en la misma franja', async () => {
+        await crear(CABINA_AUDIO);
+
+        const servicio = (desde: string, hasta: string) =>
+          service.create(
+            { categoria: CategoriaSolicitud.PODCAST, proposito: 'Servicio de la batería', fecha_inicio: bogota('27', desde), fecha_fin: bogota('27', hasta) },
+            SOLICITANTE.id,
+          );
+
+        expect(esConflictoCa06(await capturar(servicio('09:30', '10:30')))).toBe(true);
+        const libre = await servicio('10:00', '11:00');
+        expect(libre.sub_espacio).toBe(ESTUDIO_COMPLETO);
       });
 
       it('I-33c · CARRERA: 5 en la cabina y 5 en el estudio a la vez en la misma franja → exactamente 1 por sub-espacio', async () => {

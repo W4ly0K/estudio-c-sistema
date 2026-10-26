@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import {
   esViolacionDeTraslapeCa06,
-  RESTRICCION_CA06,
   RESTRICCIONES_CA06,
   RESTRICCIONES_CA06_POR_SUBESPACIO,
 } from './traslape-ca06';
@@ -10,6 +9,7 @@ import {
   errorDesconocidoDePrisma,
   MENSAJE_23514_CHECK,
   MENSAJE_23P01_CREATE,
+  MENSAJE_23P01_CREATE_GLOBAL,
   MENSAJE_23P01_TRANSACCION,
   MENSAJE_23P01_TX_INTERACTIVA,
   MENSAJE_23P01_UPDATE,
@@ -17,38 +17,45 @@ import {
   VERSION_PRISMA_DEL_SONDEO,
 } from '../../../test/utils/errores-postgres.fixture';
 
-// Ancla del nombre dentro del campo message del 23P01 real (texto literal: \"nombre\"").
-const NOMBRE_EN_MESSAGE = `\\"${RESTRICCION_CA06}\\""`;
-// Texto que un usuario podría escribir en "proposito" imitando la firma completa.
-const FIRMA_FORJADA = `code: "23P01", message: "conflicting \\"${RESTRICCION_CA06}\\""`;
-
 // Fase 7 (ADR-007 · SE2): nombres escritos A MANO, no derivados de la constante, para
 // que la prueba sea un oráculo independiente del código que verifica.
 const CABINA = 'Solicitud_sin_traslape_ca06_cabina';
 const ESTUDIO = 'Solicitud_sin_traslape_ca06_estudio';
+// La restricción global de la Fase 4, retirada en el contract (7A.8): ya no es CA-06.
+const GLOBAL = 'Solicitud_sin_traslape_ca06';
 
-/** Un 23P01 real de create() cuya restricción se llama `nombre` (la única diferencia). */
+// Anclas del nombre dentro del campo message del 23P01 real (texto literal: \"nombre\"").
+const NOMBRE_EN_MESSAGE = `\\"${CABINA}\\""`;
+const GLOBAL_EN_MESSAGE = `\\"${GLOBAL}\\""`;
+// Texto que un usuario podría escribir en "proposito" imitando la firma completa.
+const FIRMA_FORJADA = `code: "23P01", message: "conflicting \\"${CABINA}\\""`;
+
+/** Un 23P01 real (de la cabina) cuya restricción se llama `nombre` (la única diferencia). */
 const conNombre = (mensaje: string, nombre: string): string =>
   reemplazarUnaVez(mensaje, NOMBRE_EN_MESSAGE, `\\"${nombre}\\""`);
 
+/** Un 23P01 real del sondeo 4.2 (restricción global) con el nombre vigente `nombre`. */
+const desdeGlobal = (mensaje: string, nombre: string): string =>
+  reemplazarUnaVez(mensaje, GLOBAL_EN_MESSAGE, `\\"${nombre}\\""`);
+
 describe('esViolacionDeTraslapeCa06 (detector del 23P01 de CA-06)', () => {
-  it('la restricción global se llama como en la migración de la Fase 4', () => {
-    expect(RESTRICCION_CA06).toBe('Solicitud_sin_traslape_ca06');
+  it('C3-a · contract (7A.8): la restricción global de la Fase 4 ya NO está en la lista', () => {
+    expect(RESTRICCIONES_CA06).not.toContain(GLOBAL);
   });
 
   it('las restricciones por sub-espacio se llaman como en ADR-007 (SE2)', () => {
     expect(RESTRICCIONES_CA06_POR_SUBESPACIO).toEqual([CABINA, ESTUDIO]);
   });
 
-  it('la lista es CERRADA: la global (hasta el contract de 7A.8) y una por sub-espacio, sin más', () => {
-    expect(RESTRICCIONES_CA06).toEqual([RESTRICCION_CA06, CABINA, ESTUDIO]);
+  it('la lista es CERRADA: una por sub-espacio físico, sin más', () => {
+    expect(RESTRICCIONES_CA06).toEqual([CABINA, ESTUDIO]);
   });
 
   describe('reconoce la violación de NUESTRA restricción', () => {
     it.each<[string, string]>([
-      ['1 · mensaje real de create() (sondeo 4.2)', MENSAJE_23P01_CREATE],
-      ['2 · mensaje real de update() (sondeo 4.2)', MENSAJE_23P01_UPDATE],
-      ['2b · mensaje real de $transaction en update() (sondeo 4.2)', MENSAJE_23P01_TRANSACCION],
+      ['1 · mensaje real de create() en la cabina (integración I-30a)', MENSAJE_23P01_CREATE],
+      ['2 · formato real de update() (sondeo 4.2) con la cabina', desdeGlobal(MENSAJE_23P01_UPDATE, CABINA)],
+      ['2b · formato real de $transaction en update() (sondeo 4.2) con la cabina', desdeGlobal(MENSAJE_23P01_TRANSACCION, CABINA)],
       ['2c · mensaje real de updateMany en una $transaction interactiva (integración I-9)', MENSAJE_23P01_TX_INTERACTIVA],
       [
         '3 · PostgreSQL con mensajes en español (lc_messages)',
@@ -60,7 +67,7 @@ describe('esViolacionDeTraslapeCa06 (detector del 23P01 de CA-06)', () => {
       ],
       ['1d · Fase 7: restricción de la cabina (create)', conNombre(MENSAJE_23P01_CREATE, CABINA)],
       ['1e · Fase 7: restricción del estudio (create)', conNombre(MENSAJE_23P01_CREATE, ESTUDIO)],
-      ['2d · Fase 7: restricción de la cabina (update)', conNombre(MENSAJE_23P01_UPDATE, CABINA)],
+      ['2d · Fase 7: restricción del estudio (update)', desdeGlobal(MENSAJE_23P01_UPDATE, ESTUDIO)],
       [
         '2e · Fase 7: restricción del estudio en una $transaction interactiva',
         conNombre(MENSAJE_23P01_TX_INTERACTIVA, ESTUDIO),
@@ -82,10 +89,12 @@ describe('esViolacionDeTraslapeCa06 (detector del 23P01 de CA-06)', () => {
     it.each<[string, unknown]>([
       [
         '4 · nombre con sufijo (_v2)',
-        errorDesconocidoDePrisma(
-          reemplazarUnaVez(MENSAJE_23P01_CREATE, NOMBRE_EN_MESSAGE, `\\"${RESTRICCION_CA06}_v2\\""`),
-        ),
+        errorDesconocidoDePrisma(reemplazarUnaVez(MENSAJE_23P01_CREATE_GLOBAL, GLOBAL_EN_MESSAGE, `\\"${GLOBAL}_v2\\""`)),
       ],
+      // Contract (7A.8): los 23P01 reales de la restricción global ya no son CA-06.
+      ['4g · contract: create() real de la restricción global (sondeo 4.2)', errorDesconocidoDePrisma(MENSAJE_23P01_CREATE_GLOBAL)],
+      ['4h · contract: update() real de la restricción global (sondeo 4.2)', errorDesconocidoDePrisma(MENSAJE_23P01_UPDATE)],
+      ['4i · contract: $transaction real de la restricción global (sondeo 4.2)', errorDesconocidoDePrisma(MENSAJE_23P01_TRANSACCION)],
       // Fase 7 · SE3: la familia "Solicitud_sin_traslape_ca06_*" NO se reconoce por prefijo.
       [
         '4b · nombre de la familia que no está en la lista (_ca06_otra)',
@@ -140,7 +149,7 @@ describe('esViolacionDeTraslapeCa06 (detector del 23P01 de CA-06)', () => {
           reemplazarUnaVez(
             reemplazarUnaVez(MENSAJE_23P01_CREATE, NOMBRE_EN_MESSAGE, '\\"Reserva_equipo_sin_traslape\\""'),
             '."), column:',
-            `. ${comoDebugDeRust(`"${RESTRICCION_CA06}"`)}"), column:`,
+            `. ${comoDebugDeRust(`"${CABINA}"`)}"), column:`,
           ),
         ),
       ],

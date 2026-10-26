@@ -206,7 +206,8 @@ Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo 
 - ✅ **6.5 · Vista del Staff (cerrada):** tablero por estado, detalle C3 y acciones T1, T2, T4, T5 y T9 (ADR-006 §2.12). Lo que quedó fuera está en ADR-006 §5.
 - ✅ **6.6 · Cierre de la Fase 6** (bitácora, ADR y PR).
 - ✅ **Fase 7 · Frente A (sub-espacios):** el sub-espacio en el contrato, B1, B1b, B2, el tablero y los detalles; T5 con lugar; «Cerrar como no atendida» (T10) y «Validar con ajustes» (ADR-007).
+- ✅ **Fase 7 · *contract* y SE10 (PRD v2.3):** B2 muestra el selector de sub-espacio **solo** para «Espacio físico»; en los demás servicios explica que se reserva el Estudio C completo. `CuerpoCrearSolicitud` es una unión discriminada por `categoria`, así que un servicio con `sub_espacio` no compila, y cambiar de categoría borra la elección. El backend lo exige igual (400) y la base de datos ya no tiene valor por defecto (ADR-007 §2.13).
 - **Fase 7 · pendiente (ADR-007 §6):**
   - el historial (línea de vida) todavía no muestra los ajustes de lugar y de franja que el log ya guarda (DA-2);
   - el diálogo de T10 puede decir que la franja queda libre (el motor ya la libera);
-  - con el *contract* (7A.8) el backend exigirá el sub-espacio que este cliente ya envía siempre.
+  - el retiro de una propuesta por el Staff sigue fuera de alcance (ADR-005 §3).

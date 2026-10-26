@@ -1,7 +1,6 @@
 import { CategoriaSolicitud, Prisma, PrismaClient, SubEspacio } from '@prisma/client';
-import { esViolacionDeTraslapeCa06, RESTRICCION_CA06 } from '../../src/solicitudes/errores/traslape-ca06';
-import { RESTRICCION_DEL_SUBESPACIO } from '../../src/solicitudes/reglas/sub-espacios';
-import { MENSAJE_23P01_TX_INTERACTIVA, reemplazarUnaVez } from '../utils/errores-postgres.fixture';
+import { esViolacionDeTraslapeCa06 } from '../../src/solicitudes/errores/traslape-ca06';
+import { MENSAJE_23P01_TX_INTERACTIVA } from '../utils/errores-postgres.fixture';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
 
 /**
@@ -93,16 +92,9 @@ describe('Transacción interactiva y compare-and-set contra PostgreSQL real (int
     expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
     expect(esViolacionDeTraslapeCa06(error)).toBe(true);
     // El oráculo del fixture ES este mensaje: si Prisma o PostgreSQL cambian el formato, falla aquí.
-    // Fase 7 · 7A.3: el oráculo se capturó con la restricción global; desde la migración de los
-    // sub-espacios el motor nombra la de la cabina. El NOMBRE es la única diferencia admitida: todo
-    // el resto del formato se sigue comparando carácter por carácter.
-    expect((error as Prisma.PrismaClientUnknownRequestError).message).toBe(
-      reemplazarUnaVez(
-        MENSAJE_23P01_TX_INTERACTIVA,
-        `\\"${RESTRICCION_CA06}\\""`,
-        `\\"${RESTRICCION_DEL_SUBESPACIO.CABINA_AUDIO}\\""`,
-      ),
-    );
+    // Fase 7 · 7A.8: el oráculo ya nombra la restricción de la cabina; se compara completo, sin
+    // ninguna diferencia admitida.
+    expect((error as Prisma.PrismaClientUnknownRequestError).message).toBe(MENSAJE_23P01_TX_INTERACTIVA);
     expect(await prisma.log_Auditoria.count()).toBe(0);
     expect(await prisma.solicitud.findUnique({ where: { radicado: 'EC-INT-B' } })).toMatchObject({
       estado: 'Recibido',

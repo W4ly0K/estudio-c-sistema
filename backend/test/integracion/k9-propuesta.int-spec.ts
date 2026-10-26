@@ -20,6 +20,8 @@ const K9 = Object.freeze({
   completa: 'Solicitud_propuesta_completa_check',
   segunEstado: 'Solicitud_propuesta_segun_estado_check',
   fechas: 'Solicitud_propuesta_fechas_validas_check',
+  // Fase 7 · M4 (contract 7A.8): K9 ampliado al lugar de la propuesta (ADR-007 SE6).
+  subEspacio: 'Solicitud_propuesta_subespacio_check',
 } as const);
 
 /** El literal de M2 se deriva de la máquina (destino de T5), nunca se repite a mano. */
@@ -79,6 +81,10 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
         fecha_propuesta_inicio: fila.propuestaInicio ?? null,
         fecha_propuesta_fin: fila.propuestaFin ?? null,
         estado: fila.estado,
+        // Fase 7 · contract (7A.8): el lugar va atado al INICIO de la propuesta, como exige M4.
+        // Así cada caso de M1 a M3 sigue rompiendo UNA sola regla.
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
+        sub_espacio_propuesto: fila.propuestaInicio === undefined ? null : SubEspacio.ESTUDIO_COMPLETO,
       },
     });
 
@@ -103,7 +109,7 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
     expect(violadas(error)).toEqual([restriccion]);
   };
 
-  it('I-12 · ALINEACIÓN: las tres restricciones instaladas, validadas y con la definición exacta', async () => {
+  it('I-12 · ALINEACIÓN: las cuatro restricciones (M1 a M3 y M4 de la Fase 7) instaladas, validadas y con la definición exacta', async () => {
     const restricciones = await prisma.$queryRaw<{ conname: string; convalidated: boolean; definicion: string }[]>`
       SELECT conname, convalidated, pg_get_constraintdef(oid) AS definicion
       FROM pg_constraint
@@ -128,6 +134,11 @@ describe('Invariante K9 de la reprogramación contra PostgreSQL real (integraci�
         conname: K9.segunEstado,
         convalidated: true,
         definicion: `CHECK (((estado = '${PENDIENTE}'::text) = (fecha_propuesta_inicio IS NOT NULL)))`,
+      },
+      {
+        conname: K9.subEspacio,
+        convalidated: true,
+        definicion: 'CHECK (((fecha_propuesta_inicio IS NULL) = (sub_espacio_propuesto IS NULL)))',
       },
     ]);
   });

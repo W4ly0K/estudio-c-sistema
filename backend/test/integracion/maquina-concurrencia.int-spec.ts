@@ -218,6 +218,9 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
         fecha_propuesta_inicio: conPropuesta?.inicio ?? null,
         fecha_propuesta_fin: conPropuesta?.fin ?? null,
         estado: s.estado,
+        // Fase 7 · contract (7A.8): sin DEFAULT, y M4 exige el lugar con la propuesta (el mismo).
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO,
+        sub_espacio_propuesto: conPropuesta === undefined ? null : SubEspacio.ESTUDIO_COMPLETO,
       },
     });
   };

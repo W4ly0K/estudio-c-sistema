@@ -1,4 +1,4 @@
-import { SubEspacio } from '@prisma/client';
+import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 
 /**
  * Sub-espacios del Estudio C (PRD v2.2 §5.1, ADR-007 SE1, SE2 y SE4). Módulo puro: no
@@ -19,11 +19,41 @@ export const SUB_ESPACIOS = Object.freeze([
 ] as const);
 
 /**
- * Expand (ADR-007, 7A.3 → 7A.8): lo que se reserva cuando la petición no trae sub-espacio.
- * Espejo del DEFAULT temporal de la columna: el completo bloquea los dos, igual que el
- * calendario único de antes de la v2.2. Se retira en el contract, cuando sea obligatorio.
+ * Fase 7 · 7B.4 (ADR-007 SE10, directriz del 26/10/2026): la única categoría en la que el
+ * solicitante ELIGE el sub-espacio al radicar es la solicitud de espacio físico.
  */
-export const SUB_ESPACIO_POR_DEFECTO_TEMPORAL: SubEspacio = SubEspacio.ESTUDIO_COMPLETO;
+export const CATEGORIA_QUE_ELIGE_SUB_ESPACIO = CategoriaSolicitud.ESPACIOS;
+
+/**
+ * SE10: lo que reservan las demás categorías (servicios) al radicar. Es una REGLA de negocio,
+ * no un valor por defecto: el completo protege los dos sub-espacios hasta que el Staff ajuste
+ * el lugar al validar (D-4, «Validar con ajustes»). Desde el contract (7A.8) la columna no
+ * tiene DEFAULT: el servicio escribe siempre este valor de forma explícita.
+ */
+export const SUB_ESPACIO_DE_SERVICIOS: SubEspacio = SubEspacio.ESTUDIO_COMPLETO;
+
+/** Por qué no se puede radicar con lo recibido. Los mensajes viven en la capa HTTP. */
+export type ErrorSubEspacioAlRadicar = 'REQUERIDO_EN_ESPACIOS' | 'SOLO_EN_ESPACIOS';
+
+export type ResultadoSubEspacioAlRadicar =
+  | { readonly ok: true; readonly subEspacio: SubEspacio }
+  | { readonly ok: false; readonly error: ErrorSubEspacioAlRadicar };
+
+/**
+ * SE10: el sub-espacio que se guarda al radicar, según la categoría.
+ *  - Espacio físico: el que eligió el solicitante, obligatorio.
+ *  - Servicios: el completo; enviar uno es un error (no se ignora en silencio: el cliente
+ *    creería que eligió algo), con el mismo criterio de E5 y D-4.
+ */
+export function subEspacioAlRadicar(
+  categoria: CategoriaSolicitud,
+  enviado: SubEspacio | undefined,
+): ResultadoSubEspacioAlRadicar {
+  if (categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO) {
+    return enviado === undefined ? { ok: false, error: 'REQUERIDO_EN_ESPACIOS' } : { ok: true, subEspacio: enviado };
+  }
+  return enviado === undefined ? { ok: true, subEspacio: SUB_ESPACIO_DE_SERVICIOS } : { ok: false, error: 'SOLO_EN_ESPACIOS' };
+}
 
 /** Los sub-espacios que existen físicamente; el completo es la unión de los dos. */
 export type SubEspacioFisico = typeof SubEspacio.CABINA_AUDIO | typeof SubEspacio.ESTUDIO_GRABACION;

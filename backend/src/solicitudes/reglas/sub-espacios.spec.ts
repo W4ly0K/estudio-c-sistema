@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SubEspacio } from '@prisma/client';
+import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { RESTRICCIONES_CA06_POR_SUBESPACIO } from '../errores/traslape-ca06';
 import {
+  CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
   OCUPA,
   RESTRICCION_DEL_SUBESPACIO,
-  SUB_ESPACIO_POR_DEFECTO_TEMPORAL,
+  SUB_ESPACIO_DE_SERVICIOS,
   SUB_ESPACIOS,
+  subEspacioAlRadicar,
   subEspaciosEnConflicto,
   type SubEspacioFisico,
 } from './sub-espacios';
@@ -14,6 +16,10 @@ import {
 const MIGRACION_SUBESPACIOS = join(
   __dirname,
   '../../../prisma/migrations/20261023120000_ca06_subespacios/migration.sql',
+);
+const MIGRACION_CONTRACT = join(
+  __dirname,
+  '../../../prisma/migrations/20261027120000_ca06_subespacios_contract/migration.sql',
 );
 
 const { CABINA_AUDIO, ESTUDIO_GRABACION, ESTUDIO_COMPLETO } = SubEspacio;
@@ -76,14 +82,15 @@ describe('Sub-espacios y CA-06 (PRD v2.2 §5.1 · ADR-007 SE1, SE2 y SE4)', () =
     expect(subEspaciosEnConflicto(a).includes(b)).toBe(choca);
   });
 
-  it('expand: sin sub-espacio se reserva el completo, que choca con todo (como el calendario único)', () => {
-    expect(SUB_ESPACIO_POR_DEFECTO_TEMPORAL).toBe(ESTUDIO_COMPLETO);
-    expect(subEspaciosEnConflicto(SUB_ESPACIO_POR_DEFECTO_TEMPORAL)).toEqual([...SUB_ESPACIOS]);
+  it('SE10: un servicio reserva el completo, que choca con todo (protege los dos sub-espacios)', () => {
+    expect(SUB_ESPACIO_DE_SERVICIOS).toBe(ESTUDIO_COMPLETO);
+    expect(subEspaciosEnConflicto(SUB_ESPACIO_DE_SERVICIOS)).toEqual([...SUB_ESPACIOS]);
   });
 
-  it('expand: el valor por defecto del código es el DEFAULT temporal de la columna en la migración', () => {
-    const sql = readFileSync(MIGRACION_SUBESPACIOS, 'utf8').replace(/--.*$/gm, '');
-    expect(sql).toMatch(new RegExp(`ALTER COLUMN "sub_espacio" SET DEFAULT '${SUB_ESPACIO_POR_DEFECTO_TEMPORAL}'`));
+  it('contract (7A.8): la columna ya no tiene DEFAULT; el código es el único que decide el lugar', () => {
+    const sql = readFileSync(MIGRACION_CONTRACT, 'utf8').replace(/\r\n/g, '\n').replace(/--.*$/gm, '');
+    expect(sql).toMatch(/ALTER TABLE "Solicitud" ALTER COLUMN "sub_espacio" DROP DEFAULT;/);
+    expect(sql).not.toMatch(/SET DEFAULT/);
   });
 
   it('la relación de conflicto es simétrica', () => {
@@ -123,6 +130,33 @@ describe('Sub-espacios: el código coincide EXACTAMENTE con los predicados de la
       exclusiones.some((e) => e.subEspacios.includes(a) && e.subEspacios.includes(b));
     for (const a of SUB_ESPACIOS) {
       expect(SUB_ESPACIOS.filter((b) => chocanEnElSql(a, b))).toEqual([...subEspaciosEnConflicto(a)]);
+    }
+  });
+});
+
+describe('subEspacioAlRadicar (Fase 7 · 7B.4 · ADR-007 SE10)', () => {
+  const SERVICIOS = Object.values(CategoriaSolicitud).filter((c) => c !== CATEGORIA_QUE_ELIGE_SUB_ESPACIO);
+
+  it('solo la solicitud de espacio físico elige; las otras cuatro categorías son servicios', () => {
+    expect(CATEGORIA_QUE_ELIGE_SUB_ESPACIO).toBe(CategoriaSolicitud.ESPACIOS);
+    expect([...SERVICIOS].sort()).toEqual(['ASESORIAS', 'PODCAST', 'STREAMING', 'VIDEO']);
+  });
+
+  it.each(SUB_ESPACIOS)('espacio físico con %s → se guarda lo elegido', (subEspacio) => {
+    expect(subEspacioAlRadicar(CategoriaSolicitud.ESPACIOS, subEspacio)).toEqual({ ok: true, subEspacio });
+  });
+
+  it('espacio físico sin sub-espacio → REQUERIDO_EN_ESPACIOS (CA-12)', () => {
+    expect(subEspacioAlRadicar(CategoriaSolicitud.ESPACIOS, undefined)).toEqual({ ok: false, error: 'REQUERIDO_EN_ESPACIOS' });
+  });
+
+  it.each(SERVICIOS)('%s sin sub-espacio → el completo', (categoria) => {
+    expect(subEspacioAlRadicar(categoria, undefined)).toEqual({ ok: true, subEspacio: ESTUDIO_COMPLETO });
+  });
+
+  it.each(SERVICIOS)('%s con un sub-espacio (cualquiera, incluso el completo) → SOLO_EN_ESPACIOS: no se ignora', (categoria) => {
+    for (const subEspacio of SUB_ESPACIOS) {
+      expect(subEspacioAlRadicar(categoria, subEspacio)).toEqual({ ok: false, error: 'SOLO_EN_ESPACIOS' });
     }
   });
 });

@@ -5,6 +5,7 @@ import Dashboard from './Dashboard'
 import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import { TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './componentes/ExitoRadicado'
+import { TEXTO_LUGAR_DE_SERVICIOS } from './componentes/CampoSubEspacio'
 import type { SubEspacio } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
@@ -24,21 +25,22 @@ const mostrar = (api: ApiSolicitudes) =>
   )
 
 /**
- * Llena el formulario B2: martes 20 de octubre de 2026, de `inicio` a `fin`, en la cabina.
- * Fase 7: `subEspacio = null` deja el grupo sin elegir (el navegador frena el envío).
+ * Llena el formulario B2: martes 20 de octubre de 2026, de `inicio` a `fin`.
+ * Fase 7 · SE10: un sub-espacio → solicitud de espacio físico en ese lugar; `null` → espacio
+ * físico sin elegir (el navegador frena el envío); `'servicio'` → un Video, que no elige lugar.
  */
 function llenarFormulario(
   contenedor: HTMLElement,
   inicio = '08:00',
   fin = '10:00',
-  subEspacio: SubEspacio | null = 'CABINA_AUDIO',
+  lugar: SubEspacio | null | 'servicio' = 'CABINA_AUDIO',
 ): void {
   // Consultas ACCESIBLES (DV6): si una etiqueta no está asociada a su campo, la prueba falla.
   const formulario = within(contenedor)
-  fireEvent.change(formulario.getByLabelText('Categoría'), { target: { value: 'VIDEO' } })
-  if (subEspacio !== null) {
+  fireEvent.change(formulario.getByLabelText('Categoría'), { target: { value: lugar === 'servicio' ? 'VIDEO' : 'ESPACIOS' } })
+  if (lugar !== null && lugar !== 'servicio') {
     const grupo = formulario.getByRole('group', { name: 'Sub-espacio' })
-    fireEvent.click(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO[subEspacio]))
+    fireEvent.click(within(grupo).getByLabelText(ETIQUETAS_SUB_ESPACIO[lugar]))
   }
   fireEvent.change(formulario.getByLabelText('Propósito de la reserva'), { target: { value: 'Grabación de clase' } })
   fireEvent.change(formulario.getByLabelText('Fecha'), { target: { value: '2026-10-20' } })
@@ -105,7 +107,7 @@ describe('Dashboard con la api inyectada', () => {
     const exito = await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
     expect(within(exito).getByText('EC-2026-0999')).toBeInTheDocument()
     expect(crear).toHaveBeenCalledWith(
-      expect.objectContaining({ categoria: 'VIDEO', proposito: 'Grabación de clase', sub_espacio: 'CABINA_AUDIO' }),
+      expect.objectContaining({ categoria: 'ESPACIOS', proposito: 'Grabación de clase', sub_espacio: 'CABINA_AUDIO' }),
     )
     expect(screen.queryByRole('button', { name: 'Enviar Radicado' })).not.toBeInTheDocument()
 
@@ -176,6 +178,67 @@ describe('Dashboard con la api inyectada', () => {
 
       expect(crear).not.toHaveBeenCalled()
       expect(screen.getByRole('button', { name: 'Enviar Radicado' })).toBeInTheDocument()
+    })
+  })
+
+  describe('sub-espacio según la categoría (Fase 7 · 7B.4 · ADR-007 SE10)', () => {
+    const abrir = async () => {
+      const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+        ok: true,
+        datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido', sub_espacio: 'ESTUDIO_COMPLETO' },
+      })
+      const resultado = mostrar(apiFalsa({ crear }))
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      return { crear, ...resultado }
+    }
+    const categoria = () => screen.getByLabelText('Categoría')
+
+    it('el grupo aparece solo en "Solicitud de espacio físico"; en un servicio se explica qué reserva el Estudio C', async () => {
+      await abrir()
+
+      expect(screen.getByRole('group', { name: 'Sub-espacio' })).toBeInTheDocument()
+      expect(screen.queryByText(TEXTO_LUGAR_DE_SERVICIOS)).not.toBeInTheDocument()
+
+      for (const servicio of ['PODCAST', 'VIDEO', 'STREAMING', 'ASESORIAS']) {
+        fireEvent.change(categoria(), { target: { value: servicio } })
+        expect(screen.queryByRole('group', { name: 'Sub-espacio' })).not.toBeInTheDocument()
+        // La explicación describe la categoría elegida (también para el lector de pantalla).
+        expect(categoria()).toHaveAccessibleDescription(TEXTO_LUGAR_DE_SERVICIOS)
+      }
+    })
+
+    it('un servicio se envía SIN sub-espacio (lo asigna el Estudio C)', async () => {
+      const { crear, container } = await abrir()
+
+      llenarFormulario(container, '08:00', '10:00', 'servicio')
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      await vi.waitFor(() => expect(crear).toHaveBeenCalledOnce())
+      expect(crear.mock.calls[0]?.[0]).toEqual({
+        categoria: 'VIDEO',
+        proposito: 'Grabación de clase',
+        fecha_inicio: '2026-10-20T08:00:00-05:00',
+        fecha_fin: '2026-10-20T10:00:00-05:00',
+      })
+    })
+
+    it('al salir de "espacio físico" la elección se borra: no viaja oculta y volver pide elegir de nuevo', async () => {
+      const { crear, container } = await abrir()
+      const grupo = () => screen.getByRole('group', { name: 'Sub-espacio' })
+
+      fireEvent.click(within(grupo()).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
+      fireEvent.change(categoria(), { target: { value: 'PODCAST' } })
+      fireEvent.change(categoria(), { target: { value: 'ESPACIOS' } })
+
+      for (const opcion of within(grupo()).getAllByRole('radio')) expect(opcion).not.toBeChecked()
+
+      // Y un servicio enviado después de haber elegido un lugar tampoco lo lleva.
+      fireEvent.click(within(grupo()).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO))
+      llenarFormulario(container, '08:00', '10:00', 'servicio')
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+      await vi.waitFor(() => expect(crear).toHaveBeenCalledOnce())
+      expect(crear.mock.calls[0]?.[0]).not.toHaveProperty('sub_espacio')
     })
   })
 

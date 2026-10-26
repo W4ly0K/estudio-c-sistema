@@ -76,6 +76,7 @@ describe('Motivo de la reprogramación contra PostgreSQL real (integración · F
         fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
         fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
         estado: 'Validado',
+        sub_espacio: SubEspacio.ESTUDIO_COMPLETO, // Fase 7 · contract (7A.8): sin DEFAULT
       },
     });
   });

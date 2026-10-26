@@ -1,7 +1,7 @@
 import { BadRequestException, Type } from '@nestjs/common';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
-import { CreateSolicitudeDto } from './create-solicitude.dto';
+import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './create-solicitude.dto';
 import { MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
 import {
   MENSAJE_MOTIVO_REPROGRAMACION,
@@ -26,18 +26,22 @@ async function erroresDe(cuerpo: object, metatype: Type<unknown>): Promise<strin
 const inicio = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const fin = new Date(inicio.getTime() + 60 * 60 * 1000);
 
-// Exactamente los 4 campos que envía Dashboard.jsx
-const cuerpoFrontend = {
-  categoria: CategoriaSolicitud.ESPACIOS,
+// Los campos comunes del formulario B2.
+const franjaYProposito = {
   proposito: 'Grabación de clase magistral',
   fecha_inicio: inicio.toISOString(),
   fecha_fin: fin.toISOString(),
 };
+// Fase 7 · SE10: lo que envía B2 en una solicitud de espacio físico (con el lugar elegido)...
+const cuerpoFrontend = { ...franjaYProposito, categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO };
+// ...y en un servicio: sin sub-espacio (el Estudio C asigna el completo).
+const cuerpoDeServicio = { ...franjaYProposito, categoria: CategoriaSolicitud.PODCAST };
 
 describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
   describe('CreateSolicitudeDto', () => {
-    it('acepta el cuerpo que envía el frontend (sin regresión)', async () => {
+    it('acepta los dos cuerpos que envía el frontend: espacio físico con lugar y servicio sin él', async () => {
       expect(await erroresDe(cuerpoFrontend, CreateSolicitudeDto)).toEqual([]);
+      expect(await erroresDe(cuerpoDeServicio, CreateSolicitudeDto)).toEqual([]);
     });
 
     it.each([
@@ -69,7 +73,22 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(errores).toContain('property id_usuario should not exist');
     });
 
-    // Fase 7 · 7A.4 (ADR-007 SE5): el sub-espacio es opcional durante el expand.
+    // Fase 7 · 7B.4 (ADR-007 SE10): obligatorio en una solicitud de espacio físico (CA-12).
+    it('espacio físico sin sub-espacio → 400 del pipe con el mensaje de CA-12', async () => {
+      const sinLugar = { ...franjaYProposito, categoria: CategoriaSolicitud.ESPACIOS };
+      expect(await erroresDe(sinLugar, CreateSolicitudeDto)).toEqual([MENSAJE_SUBESPACIO_DE_CREACION]);
+    });
+
+    it('servicio CON un sub-espacio válido: el pipe lo deja pasar y lo rechaza el servicio (SE10)', async () => {
+      expect(await erroresDe({ ...cuerpoDeServicio, sub_espacio: SubEspacio.CABINA_AUDIO }, CreateSolicitudeDto)).toEqual([]);
+    });
+
+    it('servicio con un sub-espacio inventado → 400 del pipe (si llega, siempre debe ser un valor real)', async () => {
+      expect(await erroresDe({ ...cuerpoDeServicio, sub_espacio: 'SALA_3' }, CreateSolicitudeDto)).toEqual([
+        MENSAJE_SUBESPACIO_DE_CREACION,
+      ]);
+    });
+
     it.each(Object.values(SubEspacio))('acepta el sub-espacio %s', async (subEspacio) => {
       expect(await erroresDe({ ...cuerpoFrontend, sub_espacio: subEspacio }, CreateSolicitudeDto)).toEqual([]);
     });
@@ -80,7 +99,7 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       ['un número', 1],
     ])('rechaza con 400 un sub_espacio con %s', async (_caso, valor) => {
       const errores = await erroresDe({ ...cuerpoFrontend, sub_espacio: valor }, CreateSolicitudeDto);
-      expect(errores).toContain('El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO');
+      expect(errores).toContain(MENSAJE_SUBESPACIO_DE_CREACION);
     });
   });
 
@@ -91,9 +110,11 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
 
     it('hereda el sub_espacio opcional (cuándo se admite lo decide el servicio: D-4)', async () => {
       expect(await erroresDe({ estado: 'Validado', sub_espacio: SubEspacio.CABINA_AUDIO }, UpdateSolicitudeDto)).toEqual([]);
-      expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(
-        'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO',
-      );
+      expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(MENSAJE_SUBESPACIO_DE_CREACION);
+    });
+
+    it('SE10 no se hereda al PATCH: categoría "espacio físico" sin sub-espacio pasa el pipe (PartialType)', async () => {
+      expect(await erroresDe({ categoria: CategoriaSolicitud.ESPACIOS }, UpdateSolicitudeDto)).toEqual([]);
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {

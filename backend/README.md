@@ -39,9 +39,9 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 
 Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
 
-Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) y `20261023120000_ca06_subespacios` (sub-espacios, CA-06 por sub-espacio físico, estado «No atendida» y auditoría del ajuste, Fase 7, [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md)).
+Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261023120000_ca06_subespacios` (*expand* de la Fase 7: sub-espacios, CA-06 por sub-espacio físico, estado «No atendida» y auditoría del ajuste) y `20261027120000_ca06_subespacios_contract` (*contract*: poblado de propuestas, `CHECK` M4 y `DROP DEFAULT`), las dos en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md).
 
-**Fase 7 · *expand/contract*.** `20261023120000_ca06_subespacios` es la fase *expand*: `sub_espacio` nace con un `DEFAULT 'ESTUDIO_COMPLETO'` **temporal** para que el código anterior siga funcionando, y la restricción M4 de la propuesta todavía no existe. El *contract* (paso 7A.8, en un PR posterior al merge) los retira o los agrega. Mientras tanto, contra producción solo se levanta el backend desde una rama que ya incluya la Fase 7: el detector de `develop` anterior a la fase no reconoce los nombres nuevos de las restricciones y respondería 500 en lugar de 409 ante una carrera (el motor igual la bloquea).
+**Fase 7 · *expand/contract* (cerrado el 2026-10-26).** Desde el *contract*, `sub_espacio` es `NOT NULL` **sin valor por defecto** y una propuesta tiene franja y lugar juntos o ninguno (M4): una solicitud se escribe siempre con su lugar. ⚠️ **No se levanta contra esta base código anterior a la Fase 7** (por ejemplo, la rama `main`): sus inserciones fallan por el `NOT NULL` sin `DEFAULT` (500), y su detector no reconoce los nombres de las restricciones por sub-espacio.
 
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
@@ -253,13 +253,20 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
 - `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
-- `sub_espacio` (Fase 7) es `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`; lo anterior a la Fase 7 vale `ESTUDIO_COMPLETO`. `sub_espacio_propuesto` es el lugar de una propuesta de reprogramación; `null` con una propuesta pendiente significa **el mismo lugar** (propuestas escritas antes de la Fase 7). Las columnas del ajuste que guarda el log (`sub_espacio_anterior`, `sub_espacio_nuevo`, `fecha_*_anterior`) **todavía no** se exponen (ADR-007, DA-2).
+- `sub_espacio` (Fase 7) es `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`; lo anterior a la Fase 7 vale `ESTUDIO_COMPLETO`. `sub_espacio_propuesto` es el lugar de una propuesta de reprogramación: con una propuesta pendiente **siempre tiene valor** y sin ella siempre es `null` (M4, desde el *contract*). Las columnas del ajuste que guarda el log (`sub_espacio_anterior`, `sub_espacio_nuevo`, `fecha_*_anterior`) **todavía no** se exponen (ADR-007, DA-2).
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
 ## 9. Contrato de `POST /solicitudes` para el frontend (pantalla B2)
 
-**Sub-espacio (Fase 7).** `sub_espacio`: `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`. Un valor fuera de la lista responde **400** desde el pipe con `El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO`. Durante el *expand* es **opcional** y sin él se reserva el Estudio C completo, como antes de la Fase 7; el frontend lo envía siempre y será obligatorio en el *contract* (7A.8).
+**Sub-espacio según la categoría (Fase 7 · SE10, PRD v2.3).** `sub_espacio`: `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`. Solo una solicitud de espacio físico (`ESPACIOS`) lo elige; los demás servicios reservan el Estudio C completo, y el Staff puede ajustarlo al validar (§10).
+
+| Categoría | `sub_espacio` | Resultado |
+|---|---|---|
+| `ESPACIOS` | Presente y válido | Se guarda el elegido |
+| `ESPACIOS` | Ausente o inválido | **400** del pipe: `["El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO (obligatorio en una solicitud de espacio físico)."]` |
+| `PODCAST`, `VIDEO`, `STREAMING`, `ASESORIAS` | Ausente | Se guarda `ESTUDIO_COMPLETO` |
+| `PODCAST`, `VIDEO`, `STREAMING`, `ASESORIAS` | Presente | **400** del servicio, antes que cualquier otra regla: `El sub-espacio solo se elige en una solicitud de espacio físico; para los demás servicios lo asigna el Estudio C.` (con un valor inventado, el 400 del pipe) |
 
 **Fechas:** `fecha_inicio` y `fecha_fin` deben ser ISO 8601 con zona horaria explícita. Cualquiera de estas formas es válida:
 
@@ -419,7 +426,7 @@ Cuerpo: la franja **propuesta**, con las mismas reglas de fecha de la §9, el **
 
 Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `Reprogramación aceptada: la solicitud vuelve a "Validado" con la nueva franja.` y `solicitud` (proyección del solicitante) en `Validado`, con `fecha_inicio`/`fecha_fin` iguales a la propuesta, `sub_espacio` igual al propuesto, `fecha_propuesta_*` y `sub_espacio_propuesto` en `null` y `es_urgencia` en `false` (la fecha la eligió el Estudio C). El motivo de la propuesta sigue en `logs`, en el registro de T5.
 
-- **Fase 7:** CA-06 se revalida en el sub-espacio propuesto. Una propuesta pendiente sin lugar (`null`, anterior a la Fase 7) se acepta en **el mismo lugar**. El log de T7 guarda el ajuste que de verdad ocurrió (lugar, franja o ambos).
+- **Fase 7:** CA-06 se revalida en el sub-espacio propuesto, y el log de T7 guarda el ajuste que de verdad ocurrió (lugar, franja o ambos). Una propuesta sin lugar es imposible desde el *contract* (M4); si apareciera, responde el 409 de «propuesta no disponible» sin suponer un lugar.
 
 | Caso, en orden de evaluación | HTTP | `message` |
 |---|---|---|
@@ -427,7 +434,7 @@ Sin cuerpo: se acepta exactamente la propuesta guardada. **200:** `mensaje` = `R
 | Sin propuesta pendiente (`Recibido`, `Validado` o `En Producción`) | 409 | `La solicitud no tiene una propuesta de reprogramación pendiente.` |
 | Estado final | 409 | `La solicitud está en un estado final y no admite cambios de estado.` |
 | Estado guardado fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
-| Propuesta no disponible (dato inconsistente; la base de datos lo impide desde K9) | 409 | `La propuesta de reprogramación no está disponible. Comuníquese con el Estudio C.` |
+| Propuesta no disponible (dato inconsistente: sin franja o, desde la Fase 7, sin lugar; la base de datos lo impide con K9 y M4) | 409 | `La propuesta de reprogramación no está disponible. Comuníquese con el Estudio C.` |
 | La propuesta ya inició o no cumple el horario de atención | 409 | `La propuesta ya no es válida: su franja ya inició o no cumple el horario de atención. Puede rechazarla o comunicarse con el Estudio C.` |
 | La franja propuesta ya fue ocupada | 409 | `Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.` |
 

@@ -27,6 +27,7 @@ import {
   MENSAJE_SOLICITUD_CANCELADA,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
   MENSAJE_SUBESPACIO_SOLO_AL_APROBAR,
+  MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
   MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
@@ -40,7 +41,7 @@ import {
 } from './proyecciones/detalle-solicitud.proyeccion';
 import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
+import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import type { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { type ErrorHorario, MENSAJES_ERROR_HORARIO } from './reglas/horario.validator';
@@ -69,7 +70,7 @@ const solicitudBase: Solicitud = {
   fecha_propuesta_fin: null,
   estado: 'Recibido',
   es_urgencia: false,
-  // Fase 7 · 7A.3: lo que la base guarda hoy por el DEFAULT temporal (ADR-007 SE1).
+  // Fase 7: lo histórico quedó en el completo (SE8); en "Recibido" no hay propuesta (M4).
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
 };
@@ -136,8 +137,9 @@ describe('SolicitudesService', () => {
   });
 
   it('create() persiste como id_usuario el identificador recibido del token', async () => {
+    // Fase 7 · SE10: un servicio (sin sub-espacio); el espacio físico tiene sus propias pruebas.
     const dto: CreateSolicitudeDto = {
-      categoria: CategoriaSolicitud.ESPACIOS,
+      categoria: CategoriaSolicitud.VIDEO,
       proposito: solicitudBase.proposito,
       fecha_inicio: solicitudBase.fecha_inicio,
       fecha_fin: solicitudBase.fecha_fin,
@@ -156,7 +158,7 @@ describe('SolicitudesService', () => {
 
   describe('create() — reglas de horario integradas (Fase 3)', () => {
     const dtoEntre = (inicio: string, fin: string): CreateSolicitudeDto => ({
-      categoria: CategoriaSolicitud.ESPACIOS,
+      categoria: CategoriaSolicitud.VIDEO, // Fase 7 · SE10: un servicio, sin sub-espacio
       proposito: solicitudBase.proposito,
       fecha_inicio: new Date(inicio),
       fecha_fin: new Date(fin),
@@ -234,8 +236,9 @@ describe('SolicitudesService', () => {
 
   describe('create() — CA-06 sin condición de carrera (Fase 4)', () => {
     // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
+    // Fase 7 · SE10: un servicio (sin sub-espacio). El espacio físico lo cubren 4 y SE10-a a SE10-c.
     const dtoValido: Pick<CreateSolicitudeDto, 'categoria' | 'proposito' | 'fecha_inicio' | 'fecha_fin'> = {
-      categoria: CategoriaSolicitud.ESPACIOS,
+      categoria: CategoriaSolicitud.VIDEO,
       proposito: solicitudBase.proposito,
       fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
       fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
@@ -250,6 +253,16 @@ describe('SolicitudesService', () => {
     afterEach(() => {
       avisos.mockRestore();
     });
+
+    /** Devuelve lo que rechazó la operación; si se resolviera, la prueba falla. */
+    const capturarRechazo = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('la operación debía rechazar');
+    };
 
     /** Ejecuta create() y devuelve lo que rechazó; si se resolviera, la prueba falla. */
     const rechazo = async (): Promise<unknown> => {
@@ -276,10 +289,13 @@ describe('SolicitudesService', () => {
 
     // ── Fase 7 · 7A.4 · CA-06 por sub-espacio en la creación (ADR-007 SE4 y SE5) ──
 
-    it('4 · con sub-espacio: la consulta previa solo mira los sub-espacios en conflicto y lo guarda', async () => {
+    it('4 · espacio físico con sub-espacio: la consulta previa solo mira los sub-espacios en conflicto y lo guarda', async () => {
       prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
 
-      await service.create({ ...dtoValido, sub_espacio: SubEspacio.CABINA_AUDIO }, 'uuid-del-token');
+      await service.create(
+        { ...dtoValido, categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO },
+        'uuid-del-token',
+      );
 
       expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -291,7 +307,7 @@ describe('SolicitudesService', () => {
       );
     });
 
-    it('5 · expand: sin sub-espacio se reserva el completo EXPLÍCITO y choca con los tres (como el calendario único)', async () => {
+    it('5 · SE10: un servicio sin sub-espacio reserva el completo EXPLÍCITO y choca con los tres', async () => {
       prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
 
       await service.create(dtoValido, 'uuid-del-token');
@@ -302,6 +318,47 @@ describe('SolicitudesService', () => {
       expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO' }) }),
       );
+    });
+
+    // ── Fase 7 · 7B.4 · el sub-espacio según la categoría (ADR-007 SE10) ──
+
+    it('SE10-a · espacio físico sin sub-espacio → 400 (CA-12) sin consultar la base', async () => {
+      const error = await capturarRechazo(service.create({ ...dtoValido, categoria: CategoriaSolicitud.ESPACIOS }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_DE_CREACION);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [CategoriaSolicitud.PODCAST, SubEspacio.CABINA_AUDIO],
+      [CategoriaSolicitud.VIDEO, SubEspacio.ESTUDIO_GRABACION],
+      [CategoriaSolicitud.STREAMING, SubEspacio.ESTUDIO_COMPLETO],
+      [CategoriaSolicitud.ASESORIAS, SubEspacio.CABINA_AUDIO],
+    ])('SE10-b · %s con sub-espacio (%s) → 400: no se ignora en silencio, y no se escribe nada', async (categoria, subEspacio) => {
+      const error = await capturarRechazo(service.create({ ...dtoValido, categoria, sub_espacio: subEspacio }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('SE10-c · la forma va primero: un servicio con sub-espacio Y una franja inválida responde el 400 de SE10', async () => {
+      const error = await capturarRechazo(
+        service.create(
+          {
+            ...dtoValido,
+            sub_espacio: SubEspacio.CABINA_AUDIO,
+            fecha_inicio: new Date('2026-10-27T10:00:00-05:00'),
+            fecha_fin: new Date('2026-10-27T09:00:00-05:00'),
+          },
+          'uuid-del-token',
+        ),
+      );
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
     });
 
     it('2 · la consulta previa solo pide el radicado (minimización)', async () => {
@@ -1564,6 +1621,8 @@ describe('SolicitudesService', () => {
       fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
       fecha_propuesta_inicio: PROPUESTA.inicio,
       fecha_propuesta_fin: PROPUESTA.fin,
+      // Fase 7 · M4 (contract 7A.8): la propuesta tiene franja Y lugar; por defecto, el mismo.
+      sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
       es_urgencia: true, // L6: aceptar debe dejarla en false
       ...cambios,
     });
@@ -1617,9 +1676,9 @@ describe('SolicitudesService', () => {
           estado: 'Pendiente de Reprogramación',
           fecha_propuesta_inicio: PROPUESTA.inicio,
           fecha_propuesta_fin: PROPUESTA.fin,
-          // Fase 7 · L7: el lugar vigente y el propuesto (aquí NULL: propuesta anterior a la Fase 7).
+          // Fase 7 · L7: el lugar vigente y el propuesto (aquí, el mismo).
           sub_espacio: 'ESTUDIO_COMPLETO',
-          sub_espacio_propuesto: null,
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
         },
         data: {
           estado: 'Validado',
@@ -1832,6 +1891,19 @@ describe('SolicitudesService', () => {
 
     it('A-11 · L4 fail-closed: "Pendiente" sin propuesta guardada → 409 y aviso, sin escribir', async () => {
       leer(pendiente({ fecha_propuesta_inicio: null }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('A-11b · C-4 fail-closed: propuesta con franja y SIN lugar → 409 y aviso, sin suponer un lugar ni escribir', async () => {
+      leer(pendiente({ sub_espacio_propuesto: null }));
 
       const error = await capturar(aceptar());
 
