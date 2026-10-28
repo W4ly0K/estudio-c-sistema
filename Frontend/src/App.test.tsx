@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
@@ -192,8 +192,11 @@ describe('App', () => {
     mostrarApp('/tablero')
 
     expect(await screen.findByRole('heading', { name: TEXTO_TITULO_TABLERO })).toBeInTheDocument()
-    const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
-    expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
+    // El título se pinta antes de que el efecto del tablero pida "/solicitudes": se espera la petición, no se supone.
+    await waitFor(() => {
+      const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
+      expect(rutas).toEqual(['/auth/perfil', '/solicitudes'])
+    })
   })
 
   it('Fase 7 · C1: el solicitante en "/mis-solicitudes" ve su panel, con las mismas peticiones que en "/"', async () => {
