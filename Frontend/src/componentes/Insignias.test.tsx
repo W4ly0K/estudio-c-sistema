@@ -15,7 +15,7 @@ describe('Insignias (DV6)', () => {
     expect(container.querySelector(`[data-estado="${estado}"]`)).toHaveTextContent(estado)
   })
 
-  it('los 8 estados se ven distintos entre sí', () => {
+  it('los 9 estados se ven distintos entre sí', () => {
     const clases = ESTADOS.map((estado) => {
       const { container, unmount } = render(<InsigniaEstado estado={estado} perspectiva="STAFF" />)
       const clase = container.firstElementChild?.className ?? ''
@@ -30,6 +30,7 @@ describe('Insignias (DV6)', () => {
     ['Rechazado', 'border-dashed'],
     ['Pendiente de Reprogramación', 'border-dotted'],
     ['En Producción', 'bg-gray-900'],
+    ['Edición y postproducción', 'bg-gray-700'],
     ['No atendida', 'border-2'],
   ] as const)('"%s" se distingue por la forma o el contraste (%s), no solo por el color', (estado, clase) => {
     const { container } = render(<InsigniaEstado estado={estado} perspectiva="STAFF" />)

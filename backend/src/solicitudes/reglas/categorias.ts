@@ -1,4 +1,5 @@
 import { CategoriaSolicitud } from '@prisma/client';
+import type { IdTransicion } from './maquina-estados';
 
 /**
  * Fase 8 · Fuente única de las reglas que dependen de la CATEGORÍA de una solicitud
@@ -51,3 +52,18 @@ export const CATEGORIAS_CON_EDICION: readonly CategoriaSolicitud[] = Object.free
 export const CATEGORIAS_CON_ENLACE: readonly CategoriaSolicitud[] = Object.freeze(
   CATEGORIAS.filter((categoria) => POLITICA_POR_CATEGORIA[categoria].enlaceAlEntregar === 'OBLIGATORIO'),
 );
+
+/**
+ * Fase 8 · requisito 3: la máquina de estados dice si un paso EXISTE; la categoría, si le
+ * APLICA. T9 (entrega directa) es solo de las categorías sin edición; T11 y T12, solo de las
+ * que pasan por ella. Las demás transiciones aplican a todas.
+ */
+export const TRANSICIONES_SIN_EDICION: readonly IdTransicion[] = Object.freeze(['T9']);
+export const TRANSICIONES_CON_EDICION: readonly IdTransicion[] = Object.freeze(['T11', 'T12']);
+
+export function transicionAplicaALaCategoria(id: IdTransicion, categoria: CategoriaSolicitud): boolean {
+  const { pasaPorEdicion } = POLITICA_POR_CATEGORIA[categoria];
+  if (TRANSICIONES_CON_EDICION.includes(id)) return pasaPorEdicion;
+  if (TRANSICIONES_SIN_EDICION.includes(id)) return !pasaPorEdicion;
+  return true;
+}

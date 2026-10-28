@@ -10,7 +10,8 @@ import {
   MENSAJE_CA06,
   RESTRICCIONES_CA06_POR_SUBESPACIO,
 } from '../../src/solicitudes/errores/traslape-ca06';
-import { ESTADOS_QUE_LIBERAN_FRANJA } from '../../src/solicitudes/reglas/estados';
+import { ESTADO_QUE_LIBERA_SEGUN_CATEGORIA, ESTADOS_QUE_LIBERAN_FRANJA } from '../../src/solicitudes/reglas/estados';
+import { CATEGORIAS_CON_EDICION } from '../../src/solicitudes/reglas/categorias';
 import {
   OCUPA,
   RESTRICCION_DEL_SUBESPACIO,
@@ -230,10 +231,16 @@ describe('CA-06 contra PostgreSQL real (integración · Fase 4.6)', () => {
       // PostgreSQL reescribe el NOT IN como "<> ALL (ARRAY[...])" y el IN como "= ANY (ARRAY[...])":
       // los literales se distinguen por su tipo (::text los estados, ::"SubEspacio" los sub-espacios).
       const clausulaWhere = instalada?.definicion.split('WHERE')[1] ?? '';
-      const estados = [...clausulaWhere.matchAll(/'([^']*)'::text/g)].map((m) => m[1]);
+      // Fase 8: los que liberan siempre van en el "<> ALL (ARRAY[...])"; "Entregado" aparece
+      // aparte, condicionado a las categorías con edición (::"CategoriaSolicitud").
+      const listaQueLibera = /<> ALL \(ARRAY\[([^\]]*)\]\)/.exec(clausulaWhere)?.[1] ?? '';
+      const estados = [...listaQueLibera.matchAll(/'([^']*)'::text/g)].map((m) => m[1]);
+      const categorias = [...clausulaWhere.matchAll(/'([^']*)'::"CategoriaSolicitud"/g)].map((m) => m[1]);
       const subEspacios = [...clausulaWhere.matchAll(/'([^']*)'::"SubEspacio"/g)].map((m) => m[1]);
 
       expect(estados.sort()).toEqual([...ESTADOS_QUE_LIBERAN_FRANJA].sort());
+      expect(clausulaWhere).toContain(`'${ESTADO_QUE_LIBERA_SEGUN_CATEGORIA}'::text`);
+      expect(categorias.sort()).toEqual([...CATEGORIAS_CON_EDICION].sort());
       expect(subEspacios.sort()).toEqual(SUB_ESPACIOS.filter((opcion) => OCUPA[opcion].includes(fisico)).sort());
     }
     expect(restricciones.some((r) => r.contype === 'c' && r.conname === 'Solicitud_fechas_validas_check')).toBe(true);

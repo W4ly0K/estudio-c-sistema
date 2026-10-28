@@ -109,7 +109,7 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
                 {avisoUrgentes}
               </p>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
               {tablero.activas.map((columna) => (
                 <Columna key={columna.estado} columna={columna} cerrada={false} />
               ))}

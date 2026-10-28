@@ -15,7 +15,8 @@ import {
 
 const MIGRACION_SUBESPACIOS = join(
   __dirname,
-  '../../../prisma/migrations/20261023120000_ca06_subespacios/migration.sql',
+  // Fase 8 · 8.5: la definición VIGENTE de las restricciones (las recrea con el estado nuevo).
+  '../../../prisma/migrations/20261028120000_ca06_edicion_postproduccion/migration.sql',
 );
 const MIGRACION_CONTRACT = join(
   __dirname,
@@ -55,7 +56,8 @@ function exclusionesDeLaMigracion(): ExclusionEnElSql[] {
   const literales = (lista: string): string[] => [...lista.matchAll(/'([^']*)'/g)].map((m) => m[1]);
   return [
     ...sql.matchAll(
-      /ADD CONSTRAINT "([^"]+)"\s+EXCLUDE[^;]*?estado NOT IN \(([^)]*)\)\s+AND sub_espacio IN \(([^)]*)\)\);/g,
+      // Fase 8: entre las dos listas puede ir la cláusula de "Entregado" por categoría.
+      /ADD CONSTRAINT "([^"]+)"\s+EXCLUDE[^;]*?estado NOT IN \(([^)]*)\)(?:\s+AND NOT \([^()]*\([^)]*\)\))?\s+AND sub_espacio IN \(([^)]*)\)\);/g,
     ),
   ].map(([, nombre, estados, subEspacios]) => ({
     nombre,

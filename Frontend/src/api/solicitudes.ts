@@ -47,12 +47,12 @@ export type CuerpoCrearSolicitud =
   | (RadicacionComun & { readonly categoria: Exclude<Categoria, CategoriaQueElige>; readonly sub_espacio?: never })
 
 /**
- * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9 y, desde la Fase 7, T10). Se DERIVAN de la
+ * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9, desde la Fase 7 T10 y, desde la Fase 8, T11 y T12). Se DERIVAN de la
  * tabla de la máquina: "Pendiente de Reprogramación" (T5) no está y no compila.
  */
 type TransicionDelTablero = Extract<
   (typeof TRANSICIONES)[number],
-  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' | 'CERRAR_NO_ATENDIDA' }
+  { accion: 'APROBAR' | 'RECHAZAR' | 'INICIAR_PRODUCCION' | 'FINALIZAR' | 'CERRAR_NO_ATENDIDA' | 'INICIAR_EDICION' }
 >
 export type DestinoDelTablero = TransicionDelTablero['destino']
 

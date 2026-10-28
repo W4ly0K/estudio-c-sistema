@@ -23,7 +23,8 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
         <h3 id={`${id}-linea`} className="text-sm font-bold text-primary mb-5">
           Línea de vida
         </h3>
-        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Fase 8: 5 pasos con la edición (PODCAST y VIDEO), 4 sin ella. Clases literales para Tailwind. */}
+        <ol className={`grid gap-4 ${linea.pasos.length === 5 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
           {linea.pasos.map((paso, indice) => {
             const nodo = NODO[paso.situacion]
             return (

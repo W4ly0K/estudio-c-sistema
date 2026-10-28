@@ -11,6 +11,8 @@ import {
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
   MENSAJE_CANCELAR_EN_PRODUCCION,
+  MENSAJE_EDICION_NO_APLICA,
+  MENSAJE_EDICION_OBLIGATORIA,
   MENSAJE_FRANJA_VENCIDA,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
   MENSAJE_NO_ATENDIDA_FRANJA_FUTURA,
@@ -575,6 +577,60 @@ describe('SolicitudesService', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
     });
+
+    // Fase 8 · requisito 3: el camino de entrega depende de la categoría GUARDADA.
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-1 · %s: el salto directo T9 (En Producción → Entregado) → 409 de edición obligatoria, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Entregado' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_OBLIGATORIA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-2 · %s: T11 (En Producción → Edición y postproducción) se escribe y se audita, sin consultar CA-06',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        await actualizar({ estado: 'Edición y postproducción' });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Edición y postproducción' });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ estado_anterior: 'En Producción', estado_nuevo: 'Edición y postproducción' }),
+        });
+      },
+    );
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.STREAMING, CategoriaSolicitud.ASESORIAS])(
+      'E-3 · %s: T11 no le aplica → 409, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Edición y postproducción' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_NO_APLICA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-4 · %s: T12 (Edición y postproducción → Entregado) entrega sin consultar CA-06 (no vuelve a ocupar la franja)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'Edición y postproducción' }));
+
+        await actualizar({ estado: 'Entregado' });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       ['martes 13: aún urgente', '2026-10-13', true],

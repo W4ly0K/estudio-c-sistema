@@ -19,7 +19,7 @@ function columnaDe(columnas: readonly ColumnaTablero<Ordenable>[], estado: Estad
 const radicados = (columna: ColumnaTablero<Ordenable>) => columna.solicitudes.map((s) => s.radicado)
 
 describe('agruparTablero (6.5.1 · DE3)', () => {
-  it('las 4 columnas activas en el orden del flujo y las cerradas, aunque no haya solicitudes', () => {
+  it('las 5 columnas activas en el orden del flujo y las cerradas, aunque no haya solicitudes', () => {
     const tablero = agruparTablero([])
 
     expect(tablero.activas.map((c) => c.estado)).toEqual([
@@ -27,6 +27,7 @@ describe('agruparTablero (6.5.1 · DE3)', () => {
       'Validado',
       'Pendiente de Reprogramación',
       'En Producción',
+      'Edición y postproducción',
     ])
     expect(tablero.cerradas.map((c) => c.estado)).toEqual(['Entregado', 'Rechazado', 'Cancelado por el Usuario', 'No atendida'])
     expect([...tablero.activas, ...tablero.cerradas].every((c) => c.solicitudes.length === 0)).toBe(true)

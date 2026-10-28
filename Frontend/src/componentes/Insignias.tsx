@@ -11,6 +11,8 @@ const ESTILO: Readonly<Record<Estado, { readonly clases: string; readonly simbol
   Recibido: { clases: 'bg-gray-100 border border-gray-400 text-gray-700', simbolo: '' },
   Validado: { clases: 'bg-white border border-gray-900 text-gray-900', simbolo: '' },
   'En Producción': { clases: 'bg-gray-900 border border-gray-900 text-white', simbolo: '●' },
+  // Fase 8: en curso como "En Producción", pero en otra etapa: gris medio (no negro) y un lápiz.
+  'Edición y postproducción': { clases: 'bg-gray-700 border border-gray-700 text-white', simbolo: '✎' },
   Entregado: { clases: 'bg-gray-100 border border-gray-900 text-gray-900', simbolo: '✓' },
   Rechazado: { clases: 'bg-white border border-dashed border-gray-900 text-gray-900', simbolo: '✕' },
   'Cancelado por el Usuario': { clases: 'bg-gray-200 border border-gray-200 text-gray-500', simbolo: '' },

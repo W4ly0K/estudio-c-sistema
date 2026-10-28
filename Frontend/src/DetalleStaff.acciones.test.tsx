@@ -5,7 +5,7 @@ import DetalleStaff, { TEXTO_RECARGA_FALLIDA } from './DetalleStaff'
 import { ProveedorApi } from './api/ProveedorApi'
 import type { Resultado } from './api/cliente'
 import { TEXTO_SIN_CONEXION } from './api/errores'
-import type { DetalleStaff as DatosDetalleStaff } from './api/esquemas'
+import type { Categoria, DetalleStaff as DatosDetalleStaff } from './api/esquemas'
 import type { Estado } from './api/maquina-estados'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes'
 import type { ApiSolicitudes } from './api/solicitudes'
@@ -68,12 +68,15 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     vi.useRealTimers()
   })
 
-  it.each<[Estado, string[]]>([
-    ['Recibido', ['Validar', 'Validar con ajustes', 'Rechazar']],
-    ['Validado', ['Iniciar producción', 'Proponer reprogramación']],
-    ['En Producción', ['Marcar como entregada']],
-  ])('en "%s" la resolución ofrece %j', async (estado, botones) => {
-    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))) })
+  it.each<[Estado, Categoria, string[]]>([
+    ['Recibido', 'PODCAST', ['Validar', 'Validar con ajustes', 'Rechazar']],
+    ['Validado', 'PODCAST', ['Iniciar producción', 'Proponer reprogramación']],
+    ['En Producción', 'ESPACIOS', ['Marcar como entregada']],
+    // Fase 8 · requisito 3: PODCAST y VIDEO pasan por edición antes de la entrega.
+    ['En Producción', 'PODCAST', ['Pasar a edición']],
+    ['Edición y postproducción', 'VIDEO', ['Marcar como entregada']],
+  ])('en "%s" (%s) la resolución ofrece %j', async (estado, categoria, botones) => {
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en(estado), categoria })) })
 
     const resolucion = await screen.findByRole('region', { name: 'Resolución' })
     expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual(botones)
@@ -127,12 +130,18 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(screen.queryByText('Cargando la solicitud...')).not.toBeInTheDocument()
   })
 
-  it.each<[Estado, string, string, Estado]>([
-    ['Validado', 'Iniciar producción', 'Sí, iniciar la producción', 'En Producción'],
-    ['En Producción', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
-  ])('desde "%s", "%s" envía su destino', async (estado, boton, confirmar, destino) => {
+  it.each<[Estado, Categoria, string, string, Estado]>([
+    ['Validado', 'PODCAST', 'Iniciar producción', 'Sí, iniciar la producción', 'En Producción'],
+    ['En Producción', 'ESPACIOS', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
+    // Fase 8 · requisito 3: T11 y T12 por el mismo PATCH, solo con el destino.
+    ['En Producción', 'VIDEO', 'Pasar a edición', 'Sí, pasar a edición', 'Edición y postproducción'],
+    ['Edición y postproducción', 'PODCAST', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
+  ])('desde "%s" (%s), "%s" envía su destino', async (estado, categoria, boton, confirmar, destino) => {
     const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
-    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))), actualizarTablero })
+    mostrar({
+      detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en(estado), categoria })),
+      actualizarTablero,
+    })
     await esperarDetalle()
 
     fireEvent.click(screen.getByRole('button', { name: boton }))

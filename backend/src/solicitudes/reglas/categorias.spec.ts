@@ -4,8 +4,10 @@ import {
   CATEGORIAS_CON_EDICION,
   CATEGORIAS_CON_ENLACE,
   POLITICA_POR_CATEGORIA,
+  transicionAplicaALaCategoria,
   type PoliticaCategoria,
 } from './categorias';
+import { TRANSICIONES } from './maquina-estados';
 
 /**
  * ORÁCULO: transcripción a mano de las directrices del tutor (requisitos 3 y 4) y de ADR-007
@@ -54,5 +56,29 @@ describe('Política por categoría (Fase 8 · 8.1)', () => {
     }
     expect(Object.isFrozen(CATEGORIAS_CON_EDICION)).toBe(true);
     expect(Object.isFrozen(CATEGORIAS_CON_ENLACE)).toBe(true);
+  });
+});
+
+describe('transicionAplicaALaCategoria (Fase 8 · requisito 3)', () => {
+  const CON_REGLA_PROPIA = ['T9', 'T11', 'T12'];
+
+  // ORÁCULO (directriz del tutor): con edición, T4 → T11 → T12; sin edición, T4 → T9.
+  it.each(CATEGORIAS)('%s: T9 solo sin edición; T11 y T12 solo con edición; el resto, siempre', (categoria) => {
+    const conEdicion = ORACULO[categoria].pasaPorEdicion;
+    expect(transicionAplicaALaCategoria('T9', categoria)).toBe(!conEdicion);
+    expect(transicionAplicaALaCategoria('T11', categoria)).toBe(conEdicion);
+    expect(transicionAplicaALaCategoria('T12', categoria)).toBe(conEdicion);
+    for (const { id } of TRANSICIONES.filter((t) => !CON_REGLA_PROPIA.includes(t.id))) {
+      expect(transicionAplicaALaCategoria(id, categoria)).toBe(true);
+    }
+  });
+
+  it('cada categoría tiene exactamente un camino de entrega desde "En Producción"', () => {
+    for (const categoria of CATEGORIAS) {
+      const salidas = TRANSICIONES.filter(
+        (t) => t.origen === 'En Producción' && transicionAplicaALaCategoria(t.id, categoria),
+      );
+      expect(salidas).toHaveLength(1);
+    }
   });
 });

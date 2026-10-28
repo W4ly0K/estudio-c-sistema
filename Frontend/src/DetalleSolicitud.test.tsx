@@ -59,7 +59,7 @@ describe('DetalleSolicitud (B3)', () => {
     const camino = within(linea)
       .getAllByRole('listitem')
       .filter((li) => li.hasAttribute('data-situacion'))
-    expect(camino.map((li) => li.getAttribute('data-situacion'))).toEqual(['completado', 'actual', 'pendiente', 'pendiente'])
+    expect(camino.map((li) => li.getAttribute('data-situacion'))).toEqual(['completado', 'actual', 'pendiente', 'pendiente', 'pendiente'])
     expect(camino[1]).toHaveAttribute('aria-current', 'step')
     expect(camino[1]).toHaveTextContent('en curso')
   })

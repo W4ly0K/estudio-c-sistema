@@ -105,7 +105,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
 
   // Un único "ahora" por render: la advertencia DA4 y la oferta de T10 usan el mismo instante.
   const ahora = new Date()
-  const acciones = accionesVisiblesDelStaff(detalle.estado, detalle.fecha_inicio, ahora)
+  const acciones = accionesVisiblesDelStaff(detalle.estado, detalle.categoria, detalle.fecha_inicio, ahora)
   const opciones = opcionesDelStaff(acciones)
   const franjaActual = formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)
   // DA4: se advierte sin bloquear; el reloj del servidor es el que decide (D7).
