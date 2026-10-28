@@ -96,13 +96,13 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     await esperarDetalle()
 
     const dialogo = abrir('Validar', 'Validar la solicitud')
-    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Validado"/)
+    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Revisado y aprobado"/)
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, validar' }))
 
     expect(await screen.findByRole('button', { name: 'Iniciar producción' })).toBeEnabled()
     expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Validado' })
     expect(detalleStaff).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
     // Cerrado con close(), no arrancado del DOM todavía abierto.
     expect(dialogo).toBeInTheDocument()
     expect(dialogo).not.toHaveAttribute('open')
@@ -272,13 +272,13 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(TEXTO_RECARGA_FALLIDA)
     expect(alerta).toHaveTextContent(TEXTO_SIN_CONEXION)
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
 
     fireEvent.click(screen.getByRole('button', { name: 'Recargar la solicitud' }))
 
     expect(await screen.findByRole('button', { name: 'Iniciar producción' })).toBeInTheDocument()
     expect(actualizarTablero).toHaveBeenCalledOnce() // recargar NO repite la acción
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
   })
 
   it('DA4: con la franja ya iniciada lo advierte, sin deshabilitar "Validar" (decide el servidor)', async () => {
@@ -382,7 +382,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       await esperarDetalle()
 
       const dialogo = abrirAjuste()
-      expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Validado"/)
+      expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Revisado y aprobado"/)
       expect(within(dialogo).getByText(formatearFranja(RECIBIDO.fecha_inicio, RECIBIDO.fecha_fin))).toBeInTheDocument()
       expect(within(dialogo).getByLabelText('Fecha')).toHaveValue('2026-10-15')
       expect(within(dialogo).getByLabelText('Hora de inicio')).toHaveValue('09:00')
@@ -420,7 +420,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
       fireEvent.click(confirmarAjuste(dialogo))
 
-      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
       expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         estado: 'Validado',
         sub_espacio: 'ESTUDIO_GRABACION',
@@ -462,7 +462,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO))
       fireEvent.click(confirmarAjuste(dialogo))
 
-      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
       expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         estado: 'Validado',
         fecha_inicio: '2026-10-22T14:00:00-05:00',

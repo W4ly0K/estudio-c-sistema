@@ -69,7 +69,7 @@ describe('DetalleSolicitud (B3)', () => {
 
     const historial = await screen.findByRole('region', { name: 'Historial de cambios' })
     expect(within(historial).getByText('Solicitud radicada')).toBeInTheDocument()
-    expect(within(historial).getByText('Recibido → Validado')).toBeInTheDocument()
+    expect(within(historial).getByText('Recibido → Confirmado')).toBeInTheDocument()
     expect(within(historial).getByText('Por: Staff Estudio C')).toBeInTheDocument()
     expect(within(historial).getByText('sábado, 10 de octubre de 2026 · 10:20')).toBeInTheDocument()
   })

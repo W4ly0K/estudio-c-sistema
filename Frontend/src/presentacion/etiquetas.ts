@@ -1,4 +1,5 @@
 import type { Categoria, SubEspacio } from '../api/esquemas'
+import type { Estado, Rol } from '../api/maquina-estados'
 
 /**
  * Nombres legibles de las categorías (wireframe B2). `Record<Categoria, …>`: si el
@@ -7,7 +8,8 @@ import type { Categoria, SubEspacio } from '../api/esquemas'
  */
 export const ETIQUETAS_CATEGORIA: Readonly<Record<Categoria, string>> = {
   PODCAST: 'Podcast / Vodcast',
-  VIDEO: 'Producción y dirección audiovisual',
+  // Fase 8 · requisito 5: solo cambia el nombre visible; el valor guardado sigue siendo VIDEO.
+  VIDEO: 'Dirección audiovisual y producción',
   ESPACIOS: 'Solicitud de espacio físico',
   STREAMING: 'Streaming y eventos híbridos',
   ASESORIAS: 'Asesoría narrativa y formación',
@@ -35,4 +37,22 @@ export const AYUDAS_SUB_ESPACIO: Readonly<Record<SubEspacio, string>> = {
   CABINA_AUDIO: 'El estudio de video y fotografía queda libre para otra reserva en la misma franja.',
   ESTUDIO_GRABACION: 'La cabina de audio queda libre para otra reserva en la misma franja.',
   ESTUDIO_COMPLETO: 'Ocupa los dos sub-espacios: nadie más puede reservar en esa franja.',
+}
+
+/**
+ * Fase 8 · requisitos 1 y 2: alias de PRESENTACIÓN de un estado según quién mira. El valor
+ * guardado y el contrato no cambian ('Validado'); solo el texto visible. Parcial a propósito:
+ * un estado sin alias se muestra con su nombre.
+ */
+export const ALIAS_DE_ESTADO: Readonly<Record<Rol, Readonly<Partial<Record<Estado, string>>>>> = {
+  SOLICITANTE: { Validado: 'Confirmado' },
+  STAFF: { Validado: 'Revisado y aprobado' },
+}
+
+/**
+ * El nombre visible de un estado. La perspectiva es obligatoria (como en lineaDeVida): con un
+ * valor por defecto, una pantalla nueva podría mostrar el alias del otro rol.
+ */
+export function etiquetaEstado(estado: Estado, perspectiva: Rol): string {
+  return ALIAS_DE_ESTADO[perspectiva][estado] ?? estado
 }

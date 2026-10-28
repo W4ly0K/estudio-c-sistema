@@ -2,6 +2,7 @@ import type { SubEspacio } from '../api/esquemas'
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
 import type { AjusteAlValidar } from '../api/solicitudes'
 import type { TextosAccion } from './acciones-solicitante'
+import { etiquetaEstado } from './etiquetas'
 import { franjaCompleta, franjaDesdeCampos, mismaFranja, type ValoresFranja } from './franja'
 import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION, evaluarMotivo, razonMotivoInvalido } from './motivo'
@@ -73,7 +74,7 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
       return {
         boton: 'Validar',
         titulo: 'Validar la solicitud',
-        descripcion: `El radicado ${radicado} pasa a "Validado" y su franja (${franja}) queda confirmada. El solicitante verá el cambio en su panel.`,
+        descripcion: `El radicado ${radicado} pasa a "${etiquetaEstado('Validado', 'STAFF')}" y su franja (${franja}) queda confirmada. El solicitante verá el cambio en su panel.`,
         confirmar: 'Sí, validar',
         irreversible: false,
       }
@@ -135,7 +136,7 @@ export function textosValidarConAjustes(radicado: string, franja: string): Texto
   return {
     boton: 'Validar con ajustes',
     titulo: 'Validar con ajustes',
-    descripcion: `El radicado ${radicado} pasa a "Validado" con la franja, el sub-espacio o ambos que elijas aquí, en lugar de lo pedido (${franja}). El ajuste queda en la auditoría y el solicitante verá la reserva ajustada en su panel.`,
+    descripcion: `El radicado ${radicado} pasa a "${etiquetaEstado('Validado', 'STAFF')}" con la franja, el sub-espacio o ambos que elijas aquí, en lugar de lo pedido (${franja}). El ajuste queda en la auditoría y el solicitante verá la reserva ajustada en su panel.`,
     confirmar: 'Sí, validar con ajustes',
     irreversible: false,
   }
@@ -219,7 +220,8 @@ export function ajusteAlValidar(franja: ValoresFranja, subEspacio: SubEspacio, v
 
 /** Aviso tras el éxito (DA2): lo escribe el cliente con el destino, que es lo que se aplicó. */
 export function textoExito(destino: DestinoDelStaff): string {
-  return `La solicitud pasó a "${destino}".`
+  // Fase 8: el destino se nombra como lo ve el Staff ("Revisado y aprobado" en lugar de "Validado").
+  return `La solicitud pasó a "${etiquetaEstado(destino, 'STAFF')}".`
 }
 
 /**

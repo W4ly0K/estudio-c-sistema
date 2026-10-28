@@ -140,7 +140,7 @@ describe('textosDelStaff: textos honestos', () => {
   })
 
   it('el aviso de éxito nombra el destino aplicado, también el de T5', () => {
-    expect(textoExito('Validado')).toBe('La solicitud pasó a "Validado".')
+    expect(textoExito('Validado')).toBe('La solicitud pasó a "Revisado y aprobado".')
     expect(textoExito('Pendiente de Reprogramación')).toBe('La solicitud pasó a "Pendiente de Reprogramación".')
   })
 })
@@ -193,7 +193,7 @@ describe('Validar con ajustes (Fase 7 · 7B.3 · PRD v2.2 §5.6)', () => {
     const textos = textosValidarConAjustes('EC-7', 'FRANJA')
     expect(textos).toMatchObject({ boton: 'Validar con ajustes', confirmar: 'Sí, validar con ajustes', irreversible: false })
     expect(textos.descripcion).toContain('EC-7')
-    expect(textos.descripcion).toContain('"Validado"')
+    expect(textos.descripcion).toContain('"Revisado y aprobado"')
     expect(textos.descripcion).toContain('FRANJA')
     expect(textos.descripcion).not.toMatch(/notific|correo|avisar|avisará/i)
   })

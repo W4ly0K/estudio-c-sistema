@@ -57,7 +57,7 @@ describe('TableroStaff (6.5.1)', () => {
     expect(tablero).toHaveBeenCalledWith()
     expect(radicadosEn(recibido)).toEqual(['EC-2', 'EC-1'])
     expect(within(recibido).getByText('2 solicitudes')).toBeInTheDocument()
-    expect(radicadosEn(screen.getByRole('region', { name: 'Validado' }))).toEqual(['EC-3'])
+    expect(radicadosEn(screen.getByRole('region', { name: 'Revisado y aprobado' }))).toEqual(['EC-3'])
     expect(within(screen.getByRole('region', { name: 'En Producción' })).getByText(TEXTO_COLUMNA_VACIA)).toBeInTheDocument()
   })
 
@@ -134,7 +134,7 @@ describe('TableroStaff (6.5.1)', () => {
   it('DT2: sin urgentes en Recibido no hay aviso (una urgente ya validada no cuenta)', async () => {
     mostrar(responde(solicitud({ radicado: 'EC-1', estado: 'Validado', es_urgencia: true })))
 
-    await screen.findByRole('region', { name: 'Validado' })
+    await screen.findByRole('region', { name: 'Revisado y aprobado' })
     expect(screen.queryByText(/esperan? revisión/)).not.toBeInTheDocument()
   })
 

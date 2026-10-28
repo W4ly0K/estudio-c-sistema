@@ -14,6 +14,10 @@ export default mergeConfig(
       include: ['src/**/*.test.{ts,tsx}'],
       setupFiles: ['./src/test/setup.ts'],
       restoreMocks: true,
+      // Fase 8 · tema.test.ts lee el tema real con ?raw. Vitest reemplaza todo CSS por '' salvo lo
+      // que liste css.include: se habilita SOLO la lectura cruda de index.css (Tailwind ignora las
+      // consultas ?raw, así que llega el texto sin compilar), no la hoja que importa la aplicación.
+      css: { include: [/\/src\/index\.css\?raw$/] },
       // Valores ficticios y fijos: las pruebas no dependen del .env.local de nadie
       // y el CI no necesita uno. entorno.ts los valida al importar App.
       env: {

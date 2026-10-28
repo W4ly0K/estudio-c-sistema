@@ -58,7 +58,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {esUrgencia && <InsigniaUrgencia />}
-          <InsigniaEstado estado={estado} />
+          <InsigniaEstado estado={estado} perspectiva="SOLICITANTE" />
         </div>
       </div>
 

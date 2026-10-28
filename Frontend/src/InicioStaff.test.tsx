@@ -119,4 +119,17 @@ describe('InicioStaff (Fase 7 · C4)', () => {
     expect(tablero).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('Fase 8 · requisito 6: el atajo de urgentes se pinta en rojo; el de vencidas sigue en el azul del Estudio', async () => {
+    mostrar(responde(...MEZCLA))
+
+    const atajos = await screen.findByRole('navigation', { name: 'Atajos del Staff' })
+    const [urgentes, vencidas] = within(atajos).getAllByRole('listitem').map((li) => li.firstElementChild)
+    expect(urgentes).toHaveAttribute('data-urgencia', 'true')
+    expect(urgentes).toHaveClass('border-urgencia')
+    expect(within(atajos).getByRole('link', { name: /Urgentes por revisar/ })).toHaveClass('text-urgencia')
+    expect(vencidas).toHaveAttribute('data-urgencia', 'false')
+    expect(vencidas).toHaveClass('border-primary')
+    expect(within(atajos).getByRole('link', { name: /Recibidas con la franja vencida/ })).toHaveClass('text-primary')
+  })
 })

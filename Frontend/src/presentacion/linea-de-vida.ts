@@ -68,6 +68,8 @@ export interface EventoLinea {
 }
 
 export interface LineaDeVida {
+  /** Fase 8: quién mira; la vista nombra cada estado con su alias (etiquetaEstado). */
+  readonly perspectiva: Perspectiva
   readonly pasos: readonly PasoLinea[]
   /** Estado actual cuando NO está en el camino principal (Pendiente, Rechazado, Cancelado). */
   readonly desvio: Estado | null
@@ -142,6 +144,7 @@ export function lineaDeVida(
   }
 
   return {
+    perspectiva,
     pasos: CAMINO_PRINCIPAL.map((paso, indice) => ({ estado: paso, situacion: situacionDe(indice), fecha: fechaDe(paso) })),
     desvio: enElCamino(estado) ? null : estado,
     eventos: ordenados.map((log) => ({

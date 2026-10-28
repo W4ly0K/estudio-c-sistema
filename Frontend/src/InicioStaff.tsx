@@ -109,12 +109,14 @@ function TarjetaAtajo({ atajo }: { atajo: AtajoInicio }) {
   const id = useId()
   const idAyuda = `${id}-ayuda`
   const resaltado = atajo.requiereAtencion
+  // Fase 8 · requisito 6: el aviso de urgencia va en rojo; lo demás resaltado sigue en el azul del
+  // Estudio. Clases completas (no armadas con plantillas): Tailwind solo genera las que lee enteras.
+  const urgente = resaltado && atajo.clave === 'urgentes'
+  const borde = resaltado ? (urgente ? 'border-2 border-urgencia' : 'border-2 border-primary') : 'border border-outline'
+  const texto = urgente ? 'text-urgencia' : 'text-primary'
   return (
-    <div
-      data-atencion={resaltado}
-      className={`h-full rounded-lg bg-surface p-4 ${resaltado ? 'border-2 border-primary' : 'border border-outline'}`}
-    >
-      <Link to={RUTA_TABLERO} aria-describedby={idAyuda} className="block text-primary hover:underline">
+    <div data-atencion={resaltado} data-urgencia={urgente} className={`h-full rounded-lg bg-surface p-4 ${borde}`}>
+      <Link to={RUTA_TABLERO} aria-describedby={idAyuda} className={`block ${texto} hover:underline`}>
         <span className="block text-3xl font-black">
           {resaltado && <span aria-hidden="true">⚠ </span>}
           {atajo.cantidad}

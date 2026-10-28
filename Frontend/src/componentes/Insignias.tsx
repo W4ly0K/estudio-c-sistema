@@ -1,6 +1,6 @@
 import type { SubEspacio } from '../api/esquemas'
-import type { Estado } from '../api/maquina-estados'
-import { ETIQUETAS_CORTAS_SUB_ESPACIO } from '../presentacion/etiquetas'
+import type { Estado, Rol } from '../api/maquina-estados'
+import { ETIQUETAS_CORTAS_SUB_ESPACIO, etiquetaEstado } from '../presentacion/etiquetas'
 
 /**
  * Insignias de estado del wireframe (Sección D): se distinguen por la FORMA del borde
@@ -20,7 +20,11 @@ const ESTILO: Readonly<Record<Estado, { readonly clases: string; readonly simbol
   'No atendida': { clases: 'bg-gray-100 border-2 border-dashed border-gray-400 text-gray-600', simbolo: '○' },
 }
 
-export function InsigniaEstado({ estado }: { estado: Estado }) {
+/**
+ * Fase 8 (requisitos 1 y 2): el TEXTO es el alias del estado según quién mira; `data-estado` y el
+ * estilo siguen el valor guardado. La perspectiva es obligatoria a propósito.
+ */
+export function InsigniaEstado({ estado, perspectiva }: { estado: Estado; perspectiva: Rol }) {
   const { clases, simbolo } = ESTILO[estado]
   return (
     <span
@@ -29,15 +33,19 @@ export function InsigniaEstado({ estado }: { estado: Estado }) {
     >
       {/* El símbolo es decorativo: el lector de pantalla lee el nombre del estado. */}
       {simbolo !== '' && <span aria-hidden="true">{simbolo}</span>}
-      {estado}
+      {etiquetaEstado(estado, perspectiva)}
     </span>
   )
 }
 
-/** Urgencia (README del backend §9): reserva antes del 6.º día hábil. Borde discontinuo grueso. */
+/**
+ * Urgencia (README del backend §9): reserva antes del 6.º día hábil. Borde discontinuo grueso.
+ * Fase 8 · requisito 6: en el rojo institucional (token `urgencia`, contraste AA medido en
+ * tema.test.ts). La forma sigue distinguiéndola de un error, que tiene borde continuo (DV6).
+ */
 export function InsigniaUrgencia() {
   return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-primary text-primary bg-surface">
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-urgencia text-urgencia bg-surface">
       <span aria-hidden="true">⚠</span>
       Urgencia
     </span>

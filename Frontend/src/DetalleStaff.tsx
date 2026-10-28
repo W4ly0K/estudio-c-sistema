@@ -213,7 +213,7 @@ function Contenido({
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             {detalle.es_urgencia && <InsigniaUrgencia />}
-            <InsigniaEstado estado={detalle.estado} />
+            <InsigniaEstado estado={detalle.estado} perspectiva="STAFF" />
           </div>
         </div>
         <dl className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">

@@ -377,7 +377,7 @@ describe('Dashboard con la api inyectada', () => {
       )
 
       expect(await screen.findByText('Podcast / Vodcast')).toBeInTheDocument()
-      expect(document.querySelector('[data-estado="Validado"]')).toHaveTextContent('Validado')
+      expect(document.querySelector('[data-estado="Validado"]')).toHaveTextContent('Confirmado')
     })
 
     it('el formulario es un diálogo con nombre accesible', async () => {

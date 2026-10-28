@@ -5,6 +5,7 @@ import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
 import { Encabezado } from './componentes/Encabezado'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
+import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
 
 export const TEXTO_TITULO_TABLERO = 'Tablero de solicitudes'
@@ -103,7 +104,7 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
           <>
             {/* DT2 · wireframe C2, "atención requerida": solo si hay urgentes por revisar. */}
             {avisoUrgentes !== null && (
-              <p className="p-3 border-2 border-dashed border-primary rounded-sm bg-surface text-sm font-bold text-primary">
+              <p className="p-3 border-2 border-dashed border-urgencia rounded-sm bg-surface text-sm font-bold text-urgencia">
                 <span aria-hidden="true">⚠ </span>
                 {avisoUrgentes}
               </p>
@@ -137,7 +138,7 @@ function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTabler
     <section aria-labelledby={id} className="rounded-lg border border-outline bg-gray-50 p-3">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h3 id={id} className="font-bold text-primary">
-          {estado}
+          {etiquetaEstado(estado, 'STAFF')}
         </h3>
         <p className="text-xs font-bold text-gray-600">{contarSolicitudes(solicitudes.length)}</p>
       </div>
