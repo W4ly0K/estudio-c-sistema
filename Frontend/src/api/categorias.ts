@@ -14,6 +14,15 @@ export const PASA_POR_EDICION: Readonly<Record<Categoria, boolean>> = {
   ASESORIAS: false,
 }
 
+/** Fase 8 · requisito 4: la entrega exige el enlace del producto final (enlaceAlEntregar). */
+export const REQUIERE_ENLACE: Readonly<Record<Categoria, boolean>> = {
+  PODCAST: true,
+  VIDEO: true,
+  ESPACIOS: false,
+  STREAMING: true,
+  ASESORIAS: false,
+}
+
 export const TRANSICIONES_SIN_EDICION: readonly IdTransicion[] = ['T9']
 export const TRANSICIONES_CON_EDICION: readonly IdTransicion[] = ['T11', 'T12']
 

@@ -9,6 +9,7 @@ import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
+import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
@@ -216,6 +217,15 @@ function Contenido({
               <dt className="text-gray-500">Recursos</dt>
               <dd className="font-medium text-primary">
                 {detalle.recursos.map((r) => `${r.cantidad_solicitada} × ${r.recurso.nombre}`).join(' · ')}
+              </dd>
+            </div>
+          )}
+          {/* Fase 8 · requisito 4: el producto final, abierto de forma segura en una pestaña nueva. */}
+          {detalle.enlace_entrega !== null && (
+            <div className="sm:col-span-2">
+              <dt className="text-gray-500">{TEXTO_PRODUCTO_FINAL}</dt>
+              <dd>
+                <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
               </dd>
             </div>
           )}

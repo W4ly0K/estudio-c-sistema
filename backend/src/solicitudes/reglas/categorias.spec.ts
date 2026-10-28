@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { CategoriaSolicitud } from '@prisma/client';
+import { ENLACE_ENTREGA_MAXIMO } from '../dto/update-solicitude.dto';
 import {
   CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
   CATEGORIAS_CON_EDICION,
@@ -56,6 +59,31 @@ describe('Política por categoría (Fase 8 · 8.1)', () => {
     }
     expect(Object.isFrozen(CATEGORIAS_CON_EDICION)).toBe(true);
     expect(Object.isFrozen(CATEGORIAS_CON_ENLACE)).toBe(true);
+  });
+});
+
+describe('Enlace del producto final: la migración coincide con el código (Fase 8 · requisito 4)', () => {
+  const sql = readFileSync(
+    join(__dirname, '../../../prisma/migrations/20261028130000_enlace_entrega/migration.sql'),
+    'utf8',
+  ).replace(/--.*$/gm, '');
+  const literales = (lista: string): string[] => [...lista.matchAll(/'([^']*)'/g)].map((m) => m[1]).sort();
+
+  it('las dos restricciones que nombran categorías usan exactamente CATEGORIAS_CON_ENLACE', () => {
+    const listas = [...sql.matchAll(/categoria (?:NOT )?IN \(([^)]*)\)/g)].map((m) => literales(m[1]));
+    expect(listas).toHaveLength(2);
+    for (const lista of listas) {
+      expect(lista).toEqual([...CATEGORIAS_CON_ENLACE].sort());
+    }
+  });
+
+  it('el límite del CHECK de formato es ENLACE_ENTREGA_MAXIMO del DTO', () => {
+    expect(sql).toContain(`char_length(enlace_entrega) <= ${ENLACE_ENTREGA_MAXIMO}`);
+  });
+
+  it('solo la regla de "Entregado exige enlace" va NOT VALID (DT-3); las demás se validan', () => {
+    expect([...sql.matchAll(/NOT VALID/g)]).toHaveLength(1);
+    expect(sql).toMatch(/"Solicitud_entrega_con_enlace_check"[^;]*NOT VALID;/);
   });
 });
 

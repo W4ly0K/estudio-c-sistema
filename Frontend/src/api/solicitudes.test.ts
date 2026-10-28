@@ -161,6 +161,8 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.actualizarTablero('EC-1', { estado: 'Validado', fecha_inicio: 'x' })
       // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
       void api.actualizarTablero('EC-1', { estado: 'Validado', sub_espacio: 'SALA_3' })
+      // @ts-expect-error Fase 8: el enlace del producto final solo acompaña la entrega.
+      void api.actualizarTablero('EC-1', { estado: 'Edición y postproducción', enlace_entrega: 'https://youtu.be/abc123' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).
       void api.proponerReprogramacion('EC-1', { fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
       // @ts-expect-error Fase 7 · SE6: proponer exige el sub-espacio (franja y lugar).

@@ -21,6 +21,8 @@ import {
 import { formatearFranja } from './fechas/bogota'
 import { TEXTO_FRANJA_INICIADA, TEXTO_RAZON_AJUSTE_SIN_CAMBIOS } from './presentacion/acciones-staff'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
+import { TEXTO_ETIQUETA_ENLACE } from './componentes/CampoEnlace'
+import { TEXTO_RAZON_ENLACE_INVALIDO, TEXTO_RAZON_ENLACE_VACIO } from './presentacion/enlace'
 import { MENSAJE_NO_ATENDIDA } from './presentacion/linea-de-vida'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
@@ -135,7 +137,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     ['En Producción', 'ESPACIOS', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
     // Fase 8 · requisito 3: T11 y T12 por el mismo PATCH, solo con el destino.
     ['En Producción', 'VIDEO', 'Pasar a edición', 'Sí, pasar a edición', 'Edición y postproducción'],
-    ['Edición y postproducción', 'PODCAST', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
+    // La entrega de PODCAST, VIDEO y STREAMING exige enlace: la cubre 'Fase 8 · enlace del producto final al entregar'.
   ])('desde "%s" (%s), "%s" envía su destino', async (estado, categoria, boton, confirmar, destino) => {
     const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
     mostrar({
@@ -721,6 +723,67 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(within(otraVez).getByLabelText('Fecha')).toHaveValue('')
       expect(within(otraVez).getByLabelText('Hora de inicio')).toHaveValue('')
       expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION)).toHaveValue('')
+    })
+  })
+
+  describe('Fase 8 · enlace del producto final al entregar (requisito 4)', () => {
+    const ENLACE = 'https://youtu.be/abc123'
+    const confirmarEntrega = (dialogo: HTMLElement) => within(dialogo).getByRole('button', { name: 'Sí, marcar como entregada' })
+
+    it('VIDEO en edición: "Confirmar" bloqueado y explicado hasta un https válido; luego envía el destino y el enlace recortado', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('Edición y postproducción'), categoria: 'VIDEO' })),
+        actualizarTablero,
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(confirmarEntrega(dialogo)).toBeDisabled()
+      expect(confirmarEntrega(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_ENLACE_VACIO)
+
+      const campo = within(dialogo).getByLabelText(TEXTO_ETIQUETA_ENLACE)
+      fireEvent.change(campo, { target: { value: 'javascript:alert(1)' } })
+      expect(confirmarEntrega(dialogo)).toBeDisabled()
+      expect(confirmarEntrega(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_ENLACE_INVALIDO)
+      expect(campo).toHaveAttribute('aria-invalid', 'true')
+
+      fireEvent.change(campo, { target: { value: `  ${ENLACE}  ` } })
+      expect(confirmarEntrega(dialogo)).toBeEnabled()
+      fireEvent.click(confirmarEntrega(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Entregado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Entregado', enlace_entrega: ENLACE })
+    })
+
+    it('ESPACIOS en producción: no pide enlace y entrega solo con el destino', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('En Producción'), categoria: 'ESPACIOS' })),
+        actualizarTablero,
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(within(dialogo).queryByLabelText(TEXTO_ETIQUETA_ENLACE)).not.toBeInTheDocument()
+      fireEvent.click(confirmarEntrega(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Entregado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Entregado' })
+    })
+
+    it('reabrir la entrega empieza sin enlace: un borrador no se envía por accidente', async () => {
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('Edición y postproducción'), categoria: 'PODCAST' })),
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      fireEvent.change(within(dialogo).getByLabelText(TEXTO_ETIQUETA_ENLACE), { target: { value: ENLACE } })
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+
+      const otraVez = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_ENLACE)).toHaveValue('')
     })
   })
 })

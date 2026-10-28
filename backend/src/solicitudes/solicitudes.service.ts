@@ -65,6 +65,18 @@ export const MENSAJE_EDICION_OBLIGATORIA =
 export const MENSAJE_EDICION_NO_APLICA =
   'Esta categoría no pasa por "Edición y postproducción": la entrega se registra directamente desde "En Producción".';
 
+/** Fase 8 · requisito 4: el enlace del producto final solo acompaña una entrega (como E5). */
+export const MENSAJE_ENLACE_SOLO_AL_ENTREGAR =
+  'El enlace del producto final solo se envía al marcar la solicitud como "Entregado".';
+
+/** Fase 8 · requisito 4: PODCAST, VIDEO y STREAMING se entregan con su enlace. */
+export const MENSAJE_ENLACE_OBLIGATORIO =
+  'Para entregar esta solicitud se requiere el enlace del producto final (https://).';
+
+/** Fase 8 · requisito 4 (coherente con SE10): ESPACIOS y ASESORIAS no tienen producto en línea. */
+export const MENSAJE_ENLACE_NO_APLICA =
+  'Esta categoría no tiene un producto final en línea: la entrega se registra sin enlace.';
+
 /** E1: proponer una nueva franja necesita su propio endpoint (CA-10), no el tablero. */
 export const MENSAJE_USAR_REPROGRAMACION =
   'Para proponer una nueva fecha use la reprogramación: POST /solicitudes/:radicado/reprogramacion.';
@@ -455,9 +467,30 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
     }
 
+    // --- 1b. Fase 8 · requisito 4: el enlace solo acompaña una entrega real (como E5). `null`
+    // cuenta como ausente: así nunca llega al motor un "Entregado" sin enlace por esa vía.
+    const enlace = updateSolicitudeDto.enlace_entrega ?? undefined;
+    const entrega = cambiaEstado && estadoFinal === 'Entregado';
+    if (enlace !== undefined && !entrega) {
+      throw new BadRequestException(MENSAJE_ENLACE_SOLO_AL_ENTREGAR);
+    }
+
     // --- 2. Máquina de estados (Fase 5): solo transiciones legales del STAFF y solo
     // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
     const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal, existente.categoria) : undefined;
+
+    // --- 2c. Fase 8 · requisito 4: si la entrega exige o prohíbe el enlace lo decide la categoría
+    // GUARDADA. Va después de la máquina: un PODCAST que intenta T9 recibe primero el 409 de la
+    // edición obligatoria, que es lo que de verdad le falta.
+    if (entrega) {
+      const regla = POLITICA_POR_CATEGORIA[existente.categoria].enlaceAlEntregar;
+      if (regla === 'OBLIGATORIO' && enlace === undefined) {
+        throw new BadRequestException(MENSAJE_ENLACE_OBLIGATORIO);
+      }
+      if (regla === 'PROHIBIDO' && enlace !== undefined) {
+        throw new BadRequestException(MENSAJE_ENLACE_NO_APLICA);
+      }
+    }
 
     // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
     // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
@@ -528,6 +561,8 @@ export class SolicitudesService {
       ...cambiosDeFranja,
       ...(cambiaSubEspacio ? { sub_espacio: subEspacioFinal } : {}),
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
+      // Fase 8 · requisito 4: el enlace se escribe con su entrega, en el mismo compare-and-set.
+      ...(entrega && enlace !== undefined ? { enlace_entrega: enlace } : {}),
     };
 
     // Nada que escribir (por ejemplo, pedir el estado actual): sin transacción ni bloqueos.

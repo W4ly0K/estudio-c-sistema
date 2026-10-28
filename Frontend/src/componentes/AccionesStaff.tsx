@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import type { ErrorApi, Resultado } from '../api/cliente'
+import { REQUIERE_ENLACE } from '../api/categorias'
 import { useApi } from '../api/contexto-api'
 import { textoDeError } from '../api/errores'
 import type { DetalleStaff, SubEspacio } from '../api/esquemas'
@@ -20,6 +21,7 @@ import {
   type TransicionDelTableroStaff,
   type VigenteDelAjuste,
 } from '../presentacion/acciones-staff'
+import { enlaceParaEnviar, esEnlaceSeguro, razonBloqueoDelEnlace } from '../presentacion/enlace'
 import { ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { FRANJA_VACIA, camposDeLaFranja, franjaDesdeCampos, type ValoresFranja } from '../presentacion/franja'
 import {
@@ -29,6 +31,7 @@ import {
   TEXTO_AYUDA_MOTIVO_REPROGRAMACION,
   motivoParaEnviar,
 } from '../presentacion/motivo'
+import { CampoEnlace } from './CampoEnlace'
 import { CampoMotivo } from './CampoMotivo'
 import { CampoSubEspacio } from './CampoSubEspacio'
 import { CamposFranja } from './CamposFranja'
@@ -61,11 +64,17 @@ export const TEXTO_AYUDA_CONFLICTO =
  * El cuerpo del PATCH. CambiosTablero hace imposible en compilación un motivo sin
  * "Rechazado" o un rechazo sin motivo (E5), y una franja o un lugar fuera de T1 (D-4): aquí
  * solo se elige la rama. T1 directo no lleva ajuste (el ajuste sale de "Validar con ajustes").
+ * Fase 8 · requisito 4: `enlace` es null cuando la categoría no lo pide; así ESPACIOS y
+ * ASESORIAS entregan solo con el destino, como siempre.
  */
-function cambiosDe(transicion: TransicionDelTableroStaff, motivo: string): CambiosTablero {
+function cambiosDe(transicion: TransicionDelTableroStaff, motivo: string, enlace: string | null): CambiosTablero {
   switch (transicion.accion) {
     case 'RECHAZAR':
       return { estado: transicion.destino, motivo_rechazo: motivoParaEnviar(motivo) }
+    case 'FINALIZAR':
+      return enlace === null
+        ? { estado: transicion.destino }
+        : { estado: transicion.destino, enlace_entrega: enlaceParaEnviar(enlace) }
     case 'APROBAR':
       return { estado: transicion.destino }
     default:
@@ -94,6 +103,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const id = useId()
   const [seleccionada, setSeleccionada] = useState<OpcionDelStaff | null>(null)
   const [motivo, setMotivo] = useState('')
+  // Fase 8 · requisito 4: el enlace del producto final, solo en la entrega que lo exige.
+  const [enlace, setEnlace] = useState('')
   const [franja, setFranja] = useState<ValoresFranja>(FRANJA_VACIA)
   // Fase 7 · T5 y 7B.3: arranca en el lugar VIGENTE (lo más común es cambiar solo la fecha).
   const [subEspacio, setSubEspacio] = useState<SubEspacio>(detalle.sub_espacio)
@@ -118,6 +129,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     subEspacio: detalle.sub_espacio,
   }
 
+  const pideEnlace = accion === 'FINALIZAR' && REQUIERE_ENLACE[detalle.categoria]
+
   // DR5 · "Confirmar" se bloquea mientras el formulario de la acción no esté completo.
   // Fase 7 · B3: una sola fuente: se habilita exactamente cuando no hay una razón para
   // bloquearlo, y esa misma razón es la que el diálogo muestra (H-B2).
@@ -126,7 +139,9 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
       ? undefined
       : ajustando
         ? razonBloqueoDelAjuste(franja, subEspacio, vigente)
-        : razonBloqueoDelStaff(accion, motivo, franja)
+        : pideEnlace
+          ? razonBloqueoDelEnlace(enlace)
+          : razonBloqueoDelStaff(accion, motivo, franja)
   const puedeConfirmar = razonBloqueo === undefined
 
   const abrir = (opcion: OpcionDelStaff) => {
@@ -135,6 +150,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     // Cada apertura empieza de cero: un borrador viejo no se envía por accidente. T5 abre la
     // franja vacía (DR5); el ajuste, con lo pedido, porque suele corregir una sola cosa.
     setMotivo('')
+    setEnlace('')
     setFranja(opcion.ajustar ? vigente.franja : FRANJA_VACIA)
     setSubEspacio(detalle.sub_espacio)
     setSeleccionada(opcion)
@@ -159,7 +175,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
       return api.actualizarTablero(detalle.radicado, { estado: opcion.transicion.destino, ...resultado.ajuste })
     }
     const { transicion } = opcion
-    if (porElTablero(transicion)) return api.actualizarTablero(detalle.radicado, cambiosDe(transicion, motivo))
+    if (porElTablero(transicion)) return api.actualizarTablero(detalle.radicado, cambiosDe(transicion, motivo, pideEnlace ? enlace : null))
     // T5 (DR5): las mismas dos reglas locales de B2; el resto lo decide el servidor.
     const propuesta = franjaDesdeCampos(franja)
     if (!propuesta.ok) {
@@ -260,6 +276,14 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
             valor={motivo}
             onCambio={setMotivo}
             limites={LIMITES_MOTIVO_RECHAZO}
+            soloLectura={enCurso}
+          />
+        )}
+        {pideEnlace && (
+          <CampoEnlace
+            valor={enlace}
+            onCambio={setEnlace}
+            invalido={enlaceParaEnviar(enlace) !== '' && !esEnlaceSeguro(enlaceParaEnviar(enlace))}
             soloLectura={enCurso}
           />
         )}

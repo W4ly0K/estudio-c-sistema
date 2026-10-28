@@ -8,6 +8,7 @@ import type { DetalleStaff as DatosDetalleStaff, UsuarioSesion } from './api/esq
 import { AccionesStaff } from './componentes/AccionesStaff'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
+import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { textoExito, type DestinoDelStaff } from './presentacion/acciones-staff'
@@ -250,6 +251,15 @@ function Contenido({
             <dt className="text-gray-500">Propósito</dt>
             <dd className="font-medium text-primary whitespace-pre-line">{detalle.proposito}</dd>
           </div>
+          {/* Fase 8 · requisito 4: el producto final, abierto de forma segura en una pestaña nueva. */}
+          {detalle.enlace_entrega !== null && (
+            <div className="sm:col-span-2">
+              <dt className="text-gray-500">{TEXTO_PRODUCTO_FINAL}</dt>
+              <dd>
+                <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
+              </dd>
+            </div>
+          )}
         </dl>
       </section>
 

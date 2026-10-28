@@ -168,6 +168,18 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       fecha_fin,
     });
 
+    it.each([
+      ['javascript:', 'javascript:alert(1)'],
+      ['HTTPS en mayúsculas', 'HTTPS://youtu.be/abc123'],
+      ['http', 'http://youtu.be/abc123'],
+    ])('29b. Fase 8 · un enlace %s → 400 del pipe, sin leer ni escribir', async (_caso, enlace) => {
+      const respuesta = await editar({ estado: 'Entregado', enlace_entrega: enlace }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain('El enlace del producto final debe empezar por https://');
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('26. mover la reserva a un sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
       const respuesta = await editar(
         franjaNueva('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'),

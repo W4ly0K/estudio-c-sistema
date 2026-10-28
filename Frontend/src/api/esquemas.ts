@@ -76,6 +76,11 @@ export const esquemaSolicitud = z.object({
   sub_espacio: esquemaSubEspacio,
   /** Solo con una propuesta de reprogramación (CA-10); puede faltar en una anterior a la Fase 7. */
   sub_espacio_propuesto: esquemaSubEspacio.nullable(),
+  /**
+   * Fase 8 · requisito 4: el enlace del producto final. Texto o null, sin validarlo aquí: un dato
+   * malo no debe tumbar toda la respuesta. La seguridad se aplica al pintarlo (esEnlaceSeguro).
+   */
+  enlace_entrega: z.string().nullable(),
 });
 export type Solicitud = z.infer<typeof esquemaSolicitud>;
 

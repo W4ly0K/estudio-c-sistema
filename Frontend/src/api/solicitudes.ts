@@ -66,7 +66,7 @@ export type AjusteAlValidar =
   | { readonly fecha_inicio?: never; readonly fecha_fin?: never; readonly sub_espacio?: SubEspacio }
 
 /** T1: el destino y, si los hay, sus ajustes. */
-type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never } & AjusteAlValidar
+type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never; readonly enlace_entrega?: never } & AjusteAlValidar
 
 /**
  * PATCH /solicitudes/:radicado (solo STAFF). Siempre con un destino: el tablero no edita
@@ -78,7 +78,18 @@ type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?:
 export type CambiosTablero =
   | ValidarConAjuste
   | {
-      readonly estado: Exclude<DestinoDelTablero, 'Rechazado' | 'Validado'>
+      readonly estado: Exclude<DestinoDelTablero, 'Rechazado' | 'Validado' | 'Entregado'>
+      readonly motivo_rechazo?: never
+      readonly fecha_inicio?: never
+      readonly fecha_fin?: never
+      readonly sub_espacio?: never
+      readonly enlace_entrega?: never
+    }
+  | {
+      // Fase 8 · requisito 4: el enlace del producto final solo acompaña la entrega (T9 y T12).
+      // Si la categoría lo exige o lo prohíbe lo decide el servidor (400).
+      readonly estado: 'Entregado'
+      readonly enlace_entrega?: string
       readonly motivo_rechazo?: never
       readonly fecha_inicio?: never
       readonly fecha_fin?: never
@@ -90,6 +101,7 @@ export type CambiosTablero =
       readonly fecha_inicio?: never
       readonly fecha_fin?: never
       readonly sub_espacio?: never
+      readonly enlace_entrega?: never
     }
 
 /** POST /solicitudes/:radicado/reprogramacion (T5 · README §12.2). */

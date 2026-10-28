@@ -7,6 +7,7 @@ import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleSolicitante } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { formatearFranja } from './fechas/bogota'
+import { TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RUTA_DETALLE, RUTA_MIS_SOLICITUDES } from './rutas'
 import { DETALLE_SOLICITANTE, LOG, apiFalsa } from './test/fixtures-api'
@@ -142,6 +143,16 @@ describe('DetalleSolicitud (B3)', () => {
     expect(within(propuesta).getByText('(el mismo sub-espacio)')).toBeInTheDocument()
     const lugares = within(propuesta).getAllByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO, { exact: false })
     expect(lugares[0]).not.toHaveClass('line-through')
+  })
+
+  it('Fase 8 · requisito 4: la ficha de una entrega muestra el producto final con apertura segura', async () => {
+    mostrar(responde({ ...DETALLE_SOLICITANTE, estado: 'Entregado', categoria: 'PODCAST', enlace_entrega: 'https://youtu.be/abc123' }))
+
+    await screen.findByRole('heading', { name: 'EC-2026-0142' })
+    expect(screen.getByText(TEXTO_PRODUCTO_FINAL)).toBeInTheDocument()
+    const enlace = screen.getByRole('link', { name: 'Abrir el producto final de EC-2026-0142 (se abre en una pestaña nueva)' })
+    expect(enlace).toHaveAttribute('target', '_blank')
+    expect(enlace).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('404 (ajena o inexistente, idénticas): "No encontramos esa solicitud", sin decir cuál de las dos', async () => {

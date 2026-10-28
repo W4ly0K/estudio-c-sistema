@@ -63,6 +63,7 @@ export const SOLICITUD_E2E: Solicitud = {
   // Fase 7 · 7A.3: lo que la base guarda hoy por el DEFAULT temporal (ADR-007 SE1).
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
+  enlace_entrega: null,
 };
 
 /** Solicitud de OTRO usuario: la que el solicitante de prueba jamás debe poder leer. */

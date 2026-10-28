@@ -6,7 +6,8 @@ import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
 import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO, CATEGORIAS, SUB_ESPACIOS } from './esquemas'
-import { PASA_POR_EDICION, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
+import { PASA_POR_EDICION, REQUIERE_ENLACE, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
+import { ENLACE_MAXIMO } from '../presentacion/enlace'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
@@ -109,6 +110,18 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
       nombre,
     )
     expect([...cuerpo.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '')).toEqual([...copia])
+  })
+
+  it('Fase 8 · las categorías que exigen enlace son las OBLIGATORIO de POLITICA_POR_CATEGORIA del backend', () => {
+    const filas = [
+      ...lf(fuenteCategorias).matchAll(/^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (?:true|false), enlaceAlEntregar: '(OBLIGATORIO|PROHIBIDO)' \}\),/gm),
+    ]
+    expect(filas).toHaveLength(CATEGORIAS.length)
+    expect(Object.fromEntries(filas.map(([, categoria, regla]) => [categoria ?? '', regla === 'OBLIGATORIO']))).toEqual(REQUIERE_ENLACE)
+  })
+
+  it('Fase 8 · el límite del enlace es ENLACE_ENTREGA_MAXIMO del DTO (y del CHECK)', () => {
+    expect(ENLACE_MAXIMO).toBe(numeroDelBackend(fuenteDtoRechazo, 'ENLACE_ENTREGA_MAXIMO'))
   })
 
   it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {

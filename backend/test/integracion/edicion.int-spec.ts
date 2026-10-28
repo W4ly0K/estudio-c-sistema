@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { CategoriaSolicitud, Prisma, PrismaClient, SubEspacio } from '@prisma/client';
 import { esViolacionDeTraslapeCa06 } from '../../src/solicitudes/errores/traslape-ca06';
 import { MENSAJE_EDICION_OBLIGATORIA, SolicitudesService } from '../../src/solicitudes/solicitudes.service';
+import { CATEGORIAS_CON_ENLACE } from '../../src/solicitudes/reglas/categorias';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import { RelojFijo } from '../utils/reloj-fijo';
 import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
@@ -20,6 +21,9 @@ const AHORA = new Date('2026-10-26T08:00:00-05:00');
 const bogota = (hhmm: string): Date => new Date(`2026-10-27T${hhmm}:00-05:00`);
 const { CABINA_AUDIO, ESTUDIO_COMPLETO } = SubEspacio;
 const { PODCAST, VIDEO, ESPACIOS, STREAMING, ASESORIAS } = CategoriaSolicitud;
+/** Fase 8 · 8.6: desde la migración del enlace, una entrega de PODCAST, VIDEO o STREAMING lo exige. */
+const ENLACE = 'https://youtu.be/abc123';
+const enlaceDe = (categoria: CategoriaSolicitud): string | null => (CATEGORIAS_CON_ENLACE.includes(categoria) ? ENLACE : null);
 
 describe('Edición y postproducción contra PostgreSQL real (integración · Fase 8 · 8.5)', () => {
   let prisma: PrismaClient;
@@ -84,14 +88,14 @@ describe('Edición y postproducción contra PostgreSQL real (integración · Fas
   });
 
   it.each([PODCAST, VIDEO])('I-36b · un "Entregado" de %s no ocupa la franja (ya la liberó en T11)', async (categoria) => {
-    await insertar('EC-INT-ENT', { categoria, estado: 'Entregado' });
+    await insertar('EC-INT-ENT', { categoria, estado: 'Entregado', enlace_entrega: enlaceDe(categoria) });
     await otraEnLaCabina();
 
     expect(await prisma.solicitud.count()).toBe(2);
   });
 
   it.each([ESPACIOS, STREAMING, ASESORIAS])('I-36b · un "Entregado" de %s SIGUE ocupando la franja (23P01)', async (categoria) => {
-    await insertar('EC-INT-ENT', { categoria, estado: 'Entregado' });
+    await insertar('EC-INT-ENT', { categoria, estado: 'Entregado', enlace_entrega: enlaceDe(categoria) });
 
     expect(esViolacionDeTraslapeCa06(await capturar(otraEnLaCabina()))).toBe(true);
     expect(await prisma.solicitud.count()).toBe(1);
@@ -102,10 +106,11 @@ describe('Edición y postproducción contra PostgreSQL real (integración · Fas
 
     await service.update('EC-INT-VIDEO', { estado: 'Edición y postproducción' }, USUARIO);
     await otraEnLaCabina();
-    await service.update('EC-INT-VIDEO', { estado: 'Entregado' }, USUARIO);
+    await service.update('EC-INT-VIDEO', { estado: 'Entregado', enlace_entrega: ENLACE }, USUARIO);
 
     expect(await prisma.solicitud.findUniqueOrThrow({ where: { radicado: 'EC-INT-VIDEO' } })).toMatchObject({
       estado: 'Entregado',
+      enlace_entrega: ENLACE,
     });
     // Lección 4 de la Fase 7: dos logs en el mismo milisegundo no tienen un orden garantizado.
     const logs = await prisma.log_Auditoria.findMany({
