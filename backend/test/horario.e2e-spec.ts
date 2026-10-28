@@ -160,9 +160,17 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
         .set('Authorization', `Bearer ${tokenStaff}`)
         .send(body);
 
+    // Fase 8 · H2: el PATCH no admite la categoría (no cambia después de radicar). Para mover la
+    // franja se envían la franja y, como hasta ahora, el propósito; nunca el cuerpo de radicar.
+    const franjaNueva = (fecha_inicio: string, fecha_fin: string) => ({
+      proposito: 'Grabación de clase magistral',
+      fecha_inicio,
+      fecha_fin,
+    });
+
     it('26. mover la reserva a un sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
       const respuesta = await editar(
-        cuerpo('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'),
+        franjaNueva('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'),
       ).expect(400);
 
       expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
@@ -174,7 +182,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
 
       const respuesta = await editar(
-        cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+        franjaNueva('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
       ).expect(409);
 
       expect(respuesta.body.message).toBe(MENSAJE_CA06);
@@ -189,7 +197,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
 
         const respuesta = await editar({
           estado: 'Validado',
-          ...cuerpo('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+          ...franjaNueva('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
         }).expect(409);
 
         expect(respuesta.body.message).toBe(MENSAJE_CA06);
@@ -234,7 +242,7 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
 
       const respuesta = await editar(
-        cuerpo('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+        franjaNueva('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
       ).expect(409);
 
       expect(respuesta.body.message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);

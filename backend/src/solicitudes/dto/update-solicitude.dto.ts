@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
 import { IsOptional, IsIn, ValidateIf } from 'class-validator';
 import { TextoConLongitudReal } from '../../common/validadores/texto-con-longitud-real.decorator';
@@ -19,7 +19,13 @@ export const MENSAJE_MOTIVO_RECHAZO =
   `El motivo del rechazo es obligatorio y debe tener entre ${MOTIVO_RECHAZO_MINIMO} ` +
   `y ${MOTIVO_RECHAZO_MAXIMO} caracteres (sin contar los espacios de los extremos).`;
 
-export class UpdateSolicitudeDto extends PartialType(CreateSolicitudeDto) {
+/**
+ * Fase 8 · H2: la categoría NO se hereda al PATCH. Gobierna el lugar (SE10), el camino de
+ * estados (T9, o T11 y T12) y la entrega (enlace): cambiarla a mitad del flujo dejaría estados
+ * imposibles. Al no declararse, el pipe global (forbidNonWhitelisted) responde 400
+ * "property categoria should not exist", el mismo mecanismo que protege modificado_por.
+ */
+export class UpdateSolicitudeDto extends PartialType(OmitType(CreateSolicitudeDto, ['categoria'] as const)) {
   @IsOptional()
   @IsIn(ESTADOS, { message: 'Estado no válido según la máquina de estados' })
   estado?: string;

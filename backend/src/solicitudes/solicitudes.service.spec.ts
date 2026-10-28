@@ -462,6 +462,18 @@ describe('SolicitudesService', () => {
         'uuid-atacante',
       );
     });
+
+    it('Fase 8 · H2 · defensa en profundidad: una categoría que se saltó el pipe nunca se escribe', async () => {
+      const dtoContaminado = {
+        estado: 'Validado',
+        categoria: CategoriaSolicitud.PODCAST,
+      } as unknown as UpdateSolicitudeDto;
+
+      await service.update('EC-2099-0001', dtoContaminado, 'uuid-staff');
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(prismaMock.solicitud.updateMany.mock.calls)).not.toContain('PODCAST');
+    });
   });
 
   describe('update() — horario y CA-06 (Fase 4.5)', () => {

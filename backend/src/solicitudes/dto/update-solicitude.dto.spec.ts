@@ -113,8 +113,13 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(MENSAJE_SUBESPACIO_DE_CREACION);
     });
 
-    it('SE10 no se hereda al PATCH: categoría "espacio físico" sin sub-espacio pasa el pipe (PartialType)', async () => {
-      expect(await erroresDe({ categoria: CategoriaSolicitud.ESPACIOS }, UpdateSolicitudeDto)).toEqual([]);
+    it('Fase 8 · H2: la categoría no se admite en el PATCH → 400 (no cambia después de radicar)', async () => {
+      expect(await erroresDe({ categoria: CategoriaSolicitud.ESPACIOS }, UpdateSolicitudeDto)).toContain(
+        'property categoria should not exist',
+      );
+      expect(
+        await erroresDe({ estado: 'Validado', categoria: CategoriaSolicitud.VIDEO }, UpdateSolicitudeDto),
+      ).toContain('property categoria should not exist');
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {

@@ -511,7 +511,6 @@ export class SolicitudesService {
     // --- 7. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
     const { recursos } = updateSolicitudeDto;
     const data: Prisma.SolicitudUpdateManyMutationInput = {
-      ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
       ...(cambiaSubEspacio ? { sub_espacio: subEspacioFinal } : {}),
