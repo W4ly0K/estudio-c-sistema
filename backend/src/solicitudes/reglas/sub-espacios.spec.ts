@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { RESTRICCIONES_CA06_POR_SUBESPACIO } from '../errores/traslape-ca06';
+import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO } from './categorias';
 import {
-  CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
   OCUPA,
   RESTRICCION_DEL_SUBESPACIO,
   SUB_ESPACIO_DE_SERVICIOS,

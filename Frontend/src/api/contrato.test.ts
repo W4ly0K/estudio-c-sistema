@@ -12,7 +12,7 @@ import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes
 import fuenteDtoRechazo from '../../../backend/src/solicitudes/dto/update-solicitude.dto.ts?raw'
 import fuenteDtoReprogramacion from '../../../backend/src/solicitudes/dto/proponer-reprogramacion.dto.ts?raw'
 import fuenteDecorador from '../../../backend/src/common/validadores/texto-con-longitud-real.decorator.ts?raw'
-import fuenteSubEspacios from '../../../backend/src/solicitudes/reglas/sub-espacios.ts?raw'
+import fuenteCategorias from '../../../backend/src/solicitudes/reglas/categorias.ts?raw'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
@@ -83,7 +83,7 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('la categoría que elige el sub-espacio es la del backend (Fase 7 · 7B.4 · SE10)', () => {
     const delBackend = capturar(
-      fuenteSubEspacios,
+      fuenteCategorias,
       /export const CATEGORIA_QUE_ELIGE_SUB_ESPACIO = CategoriaSolicitud\.(\w+);/,
       'CATEGORIA_QUE_ELIGE_SUB_ESPACIO',
     )
