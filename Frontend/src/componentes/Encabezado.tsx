@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router'
 import type { UsuarioSesion } from '../api/esquemas'
-import logoEstudioC from '../assets/Logo_Estudio_C_3-01.png'
+import logoEstudioC from '../assets/logo-estudio-c-horizontal.png'
 import { navegacionDelRol } from '../presentacion/navegacion'
 
 interface EncabezadoProps {
@@ -37,7 +37,7 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
     <header className="w-full bg-surface border-b border-outline px-4 py-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
         <div data-parte="marca" className="flex min-w-0 items-center gap-4">
-          <img src={logoEstudioC} alt="Logo Estudio C" className="h-8 shrink-0" />
+          <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
           <span className="font-bold text-primary border-l border-outline pl-4 tracking-wide">{titulo}</span>
         </div>
         <nav aria-label="Navegación principal" className="md:border-l md:border-outline md:pl-4">
