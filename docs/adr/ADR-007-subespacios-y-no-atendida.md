@@ -6,6 +6,7 @@
 | **Fecha** | 2026-10-22 |
 | **Actualización** | 2026-10-23 · Implementación completa del *expand*: P-1 aprobada, `DEFAULT` temporal, M4 diferida al *contract*, D-4, K4 ampliada, «Validar con ajustes» y migración aplicada en producción con precheck y postcheck (§2, §3, §4 y §7) |
 | **Actualización** | 2026-10-26 · *Contract* cerrado (M4, `DROP DEFAULT`, detector sin la restricción global y T7 *fail-closed*, §2.1, §2.3, §2.6 y §2.10) y nueva decisión SE10: el sub-espacio solo se elige en una solicitud de espacio físico (§2.13). DA-3 resuelta (§3) |
+| **Actualización** | 2026-10-28 · Fase 8: el `WHERE` de las dos exclusiones de SE2 lo recrea la migración `20261028120000_ca06_edicion_postproduccion` ([ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) §2.4, ED4); los nombres no cambian |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-7-subespacios` (desde `develop` @ `db87225`) |
 | **Reemplaza** | La **Decisión Y** de [ADR-004](ADR-004-concurrencia-ca06.md) **en su forma** (un solo calendario global, una sola restricción). Se conservan su principio (el motor es el garante de CA-06), la Decisión Z y las Decisiones AA a AF. |

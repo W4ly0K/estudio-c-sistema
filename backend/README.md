@@ -39,9 +39,11 @@ Crea un archivo `backend/.env` con estas variables. **Nunca subas este archivo a
 
 Desde la Fase 4.1 el esquema se versiona con **Prisma Migrate** en `prisma/migrations/`. La migración `0_init` es el *baseline*: describe la base de datos que ya existía en Supabase y quedó registrada como aplicada con `prisma migrate resolve --applied 0_init` (su SQL nunca se ejecutó en Supabase). Cualquier cambio posterior, incluidas las restricciones que `schema.prisma` no puede expresar (por ejemplo, la restricción de exclusión de CA-06), llega como una migración nueva en SQL.
 
-Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261023120000_ca06_subespacios` (*expand* de la Fase 7: sub-espacios, CA-06 por sub-espacio físico, estado «No atendida» y auditoría del ajuste) y `20261027120000_ca06_subespacios_contract` (*contract*: poblado de propuestas, `CHECK` M4 y `DROP DEFAULT`), las dos en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md).
+Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` (CA-06, [ADR-004](../docs/adr/ADR-004-concurrencia-ca06.md)) `20261008120000_k9_propuesta_coherente` (invariante K9 de la reprogramación, [ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261009200000_motivo_reprogramacion` (motivo obligatorio en el log de T5, Fase 6.1b, [ADR-005 §2.9](../docs/adr/ADR-005-maquina-de-estados-ca10.md)) `20261013120000_motivo_rechazo` (motivo del rechazo en el log de T2, Fase 6.5b, [ADR-005 §2.10](../docs/adr/ADR-005-maquina-de-estados-ca10.md)), `20261023120000_ca06_subespacios` (*expand* de la Fase 7: sub-espacios, CA-06 por sub-espacio físico, estado «No atendida» y auditoría del ajuste) y `20261027120000_ca06_subespacios_contract` (*contract*: poblado de propuestas, `CHECK` M4 y `DROP DEFAULT`), las dos en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md). De la Fase 8, en [ADR-008](../docs/adr/ADR-008-edicion-postproduccion-y-enlace-de-entrega.md): `20261028120000_ca06_edicion_postproduccion` (CA-06 libera «Edición y postproducción» y el «Entregado» de PODCAST y VIDEO; recrea las dos exclusiones con los mismos nombres) y `20261028130000_enlace_entrega` (columna `enlace_entrega` y cuatro `CHECK`, uno de ellos `NOT VALID`).
 
 **Fase 7 · *expand/contract* (cerrado el 2026-10-26).** Desde el *contract*, `sub_espacio` es `NOT NULL` **sin valor por defecto** y una propuesta tiene franja y lugar juntos o ninguno (M4): una solicitud se escribe siempre con su lugar. ⚠️ **No se levanta contra esta base código anterior a la Fase 7** (por ejemplo, la rama `main`): sus inserciones fallan por el `NOT NULL` sin `DEFAULT` (500), y su detector no reconoce los nombres de las restricciones por sub-espacio.
+
+**Fase 8 · orden de despliegue (migraciones aplicadas en producción el 2026-10-28).** Primero la migración, después **este** backend y por último el frontend. El backend anterior a la Fase 8, contra la base migrada, ofrece T9 a PODCAST y VIDEO, y su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500: en esa ventana no se registran entregas. El frontend de la Fase 8 exige `enlace_entrega` en su esquema, así que tampoco funciona contra un backend anterior (ADR-008 §2.6).
 
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
@@ -138,7 +140,8 @@ Petición HTTP
 | `@TextoConLongitudReal(min, max, mensaje)` | `src/common/validadores/texto-con-longitud-real.decorator.ts` | Texto obligatorio, recortado y medido en caracteres **reales** (como `char_length` de PostgreSQL: un emoji vale 1). Úsalo cuando un `CHECK` del motor limite la longitud: con `.length` el DTO aceptaría textos que el motor rechaza con 500 |
 | `evaluarHorario(...)` | `src/solicitudes/reglas/horario.validator.ts` | Reglas puras de CA-04, fechas pasadas, mismo día, día hábil y urgencia por 5 días hábiles. Devuelve un resultado; no lanza excepciones de HTTP |
 | `calendarioLaboralColombia` | `src/solicitudes/reglas/calendario-colombia.ts` | Días hábiles: lunes a viernes sin los festivos de la Ley 51 de 1983, calculados con el algoritmo de Meeus |
-| `evaluarTransicion` / `evaluarAccion` | `src/solicitudes/reglas/maquina-estados.ts` | Máquina de estados pura (T1–T9): dice **si** una transición es legal y **quién** puede ejecutarla. Devuelve un resultado con su motivo; no lanza excepciones de HTTP |
+| `evaluarTransicion` / `evaluarAccion` | `src/solicitudes/reglas/maquina-estados.ts` | Máquina de estados pura (T1–T12): dice **si** una transición es legal y **quién** puede ejecutarla. Devuelve un resultado con su motivo; no lanza excepciones de HTTP |
+| `POLITICA_POR_CATEGORIA` / `transicionAplicaALaCategoria` | `src/solicitudes/reglas/categorias.ts` | Fase 8: fuente única de lo que depende de la categoría (pasa por edición, enlace al entregar). La máquina dice si un paso existe; la categoría, si le aplica. Una categoría nueva **no compila** hasta decidir su política |
 | `escribirConCompareAndSet` | `src/solicitudes/solicitudes.service.ts` (privado) | Único camino de escritura sobre una solicitud existente: transacción interactiva con *compare-and-set*, recursos, log de auditoría y relectura |
 | `leerPropiaYAutorizar` | `src/solicitudes/solicitudes.service.ts` (privado) | Lectura común de los comandos del solicitante: primero la propiedad (404 uniforme) y después la máquina |
 
@@ -169,7 +172,7 @@ Petición HTTP
 | `GET /solicitudes/mis-solicitudes` | 🔐 Autenticado. Solo ve sus propias solicitudes |
 | `GET /solicitudes` | 🛡️ STAFF |
 | `GET /solicitudes/:radicado` | 🔐 Autenticado. SOLICITANTE: solo los **propios**, con proyección mínima; ajeno o inexistente → **404 idéntico**. STAFF: todos, con proyección completa |
-| `PATCH /solicitudes/:radicado` | 🛡️ STAFF. Tablero: solo las transiciones T1, T2, T4 y T9. El autor del log de auditoría sale del token |
+| `PATCH /solicitudes/:radicado` | 🛡️ STAFF. Tablero: solo las transiciones T1, T2, T4, T9, T10, T11 y T12. El autor del log de auditoría sale del token |
 | `POST /solicitudes/:radicado/cancelar` | 🙋 SOLICITANTE **dueño** (T3, T6). Ajeno o inexistente → **404 idéntico** |
 | `POST /solicitudes/:radicado/reprogramacion` | 🛡️ STAFF (T5, CA-10). El autor del log sale del token |
 | `POST /solicitudes/:radicado/reprogramacion/aceptar` | 🙋 SOLICITANTE **dueño** (T7). Ajeno o inexistente → **404 idéntico** |
@@ -199,7 +202,7 @@ src/
 ├── solicitudes/
 │   ├── politicas/       filtroDeAcceso (autorización por fila)
 │   ├── proyecciones/    SELECT_DETALLE_STAFF / SELECT_DETALLE_SOLICITANTE
-│   └── reglas/          Código puro: fecha civil, zona horaria, calendario laboral, urgencia, HorarioValidator y la máquina de estados (T1–T9)
+│   └── reglas/          Código puro: fecha civil, zona horaria, calendario laboral, urgencia, HorarioValidator, la máquina de estados (T1–T12) y la política por categoría (categorias.ts)
 ├── usuarios/  recursos/  prisma/
 prisma/
 ├── schema.prisma
@@ -223,6 +226,7 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-005 — Máquina de estados y reprogramación por mutuo acuerdo (CA-10)](../docs/adr/ADR-005-maquina-de-estados-ca10.md)
 - [ADR-006 — Bases del frontend y contrato tipado con la API](../docs/adr/ADR-006-frontend-contrato-tipado.md) (el consumidor de este contrato; ver también el [README del frontend](../Frontend/README.md))
 - [ADR-007 — Sub-espacios del Estudio C y cierre de solicitudes no atendidas](../docs/adr/ADR-007-subespacios-y-no-atendida.md) (Fase 7: CA-06 por sub-espacio, T10 y el ajuste al validar)
+- [ADR-008 — Reglas por categoría: «Edición y postproducción», enlace del producto final y categoría inmutable](../docs/adr/ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) (Fase 8: directrices del tutor)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -242,6 +246,7 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
   "es_urgencia": true,
   "sub_espacio": "CABINA_AUDIO",
   "sub_espacio_propuesto": null,
+  "enlace_entrega": null,
   "recursos": [{ "cantidad_solicitada": 2, "recurso": { "nombre": "Micrófono de solapa" } }],
   "logs": [
     { "estado_anterior": "Recibido", "estado_nuevo": "Validado",
@@ -254,6 +259,7 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
 - `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
 - `sub_espacio` (Fase 7) es `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`; lo anterior a la Fase 7 vale `ESTUDIO_COMPLETO`. `sub_espacio_propuesto` es el lugar de una propuesta de reprogramación: con una propuesta pendiente **siempre tiene valor** y sin ella siempre es `null` (M4, desde el *contract*). Las columnas del ajuste que guarda el log (`sub_espacio_anterior`, `sub_espacio_nuevo`, `fecha_*_anterior`) **todavía no** se exponen (ADR-007, DA-2).
+- `enlace_entrega` (Fase 8) es el enlace `https://` del producto final. Solo tiene valor en un `Entregado` de PODCAST, VIDEO o STREAMING registrado desde la Fase 8; las entregas anteriores y las demás categorías valen `null` (ADR-008, EN4). La UI lo abre en una pestaña nueva con `rel="noopener noreferrer"`.
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
@@ -303,10 +309,12 @@ Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franj
 
 ## 10. Contrato de `PATCH /solicitudes/:radicado` (solo STAFF)
 
-Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T2, T4, T9 y T10 de la máquina de estados (§11). Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
+Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T2, T4, T9, T10, T11 y T12 de la máquina de estados (§11). Todos los campos son opcionales. Lo que se envía se combina con lo guardado **antes** de validar: enviar solo `fecha_inicio` se evalúa junto con la `fecha_fin` existente.
 
-- `estado` debe ser uno de los 8 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
+- `estado` debe ser uno de los 9 estados, escrito exactamente igual (mayúsculas, tildes y espacios incluidos). Si no, el pipe responde **400** con `Estado no válido según la máquina de estados`.
 - Enviar el estado actual no es un cambio de estado: **200** sin log.
+- `categoria` **no** se acepta (Fase 8): la categoría no cambia después de radicar. El pipe responde **400** con `property categoria should not exist` (ADR-008, IN1).
+- `enlace_entrega` (Fase 8) es opcional y solo acompaña una entrega. Si no empieza por `https://`, tiene espacios, usuario y contraseña o más de 2048 caracteres, el pipe responde **400** con `message` = `["El enlace del producto final debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta 2048 caracteres."]`. `null` cuenta como ausente.
 - **Rechazar (T2)** exige `motivo_rechazo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo del rechazo es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
 - Con otro `estado`, el pipe no valida el motivo: lo rechaza la fila 2 de la tabla, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
 - El pipe valida el cuerpo **antes** que la tabla: el orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
@@ -317,11 +325,16 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 |---|---|---|---|
 | 1 | El radicado no existe | 404 | `Solicitud no encontrada.` |
 | 2 | `motivo_rechazo` sin un cambio real a `Rechazado` | 400 | `El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".` |
+| 2b | `enlace_entrega` sin un cambio real a `Entregado` (Fase 8) | 400 | `El enlace del producto final solo se envía al marcar la solicitud como "Entregado".` |
 | 3 | La transición le corresponde al solicitante (por ejemplo, pasar a `Cancelado por el Usuario`) | 403 | `Esta transición le corresponde al solicitante.` |
 | 3 | La solicitud está en un estado final | 409 | `La solicitud está en un estado final y no admite cambios de estado.` |
 | 3 | La máquina no define esa transición (por ejemplo, `Validado` → `Rechazado`) | 409 | `Transición de estado no permitida desde el estado actual.` |
 | 3 | El estado guardado está fuera del diagrama | 409 | `El estado registrado de la solicitud no es válido; no se aplican cambios.` |
 | 3 | Se pide `Pendiente de Reprogramación` (T5 tiene su propia ruta, §12.2) | 409 | `Para proponer una nueva fecha use la reprogramación: POST /solicitudes/:radicado/reprogramacion.` |
+| 3 | PODCAST o VIDEO piden T9 (Fase 8) | 409 | `Esta categoría pasa por "Edición y postproducción" antes de la entrega: mueva primero la solicitud a esa etapa.` |
+| 3 | Otra categoría pide T11 o T12 (Fase 8) | 409 | `Esta categoría no pasa por "Edición y postproducción": la entrega se registra directamente desde "En Producción".` |
+| 3a | Entrega de PODCAST, VIDEO o STREAMING sin `enlace_entrega` (Fase 8) | 400 | `Para entregar esta solicitud se requiere el enlace del producto final (https://).` |
+| 3a | Entrega de ESPACIOS o ASESORIAS con `enlace_entrega` (Fase 8) | 400 | `Esta categoría no tiene un producto final en línea: la entrega se registra sin enlace.` |
 | 3b | Se cierra como `No atendida` (T10) enviando fechas | 400 | `Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.` |
 | 4 | Cambian las fechas y la solicitud no está en `Recibido` | 409 | `Las fechas solo se editan mientras la solicitud está en "Recibido". Para una solicitud validada, proponga una reprogramación.` |
 | 4b | Llega `sub_espacio` y la solicitud no está en `Recibido` | 409 | `El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.` |
@@ -334,7 +347,7 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 
 - **Rescate atómico y «Validar con ajustes» (Fase 7, Q-B2):** mientras la solicitud está en `Recibido`, un mismo `PATCH` puede traer `"estado": "Validado"` con fechas nuevas, un `sub_espacio` nuevo o ambos. Se valida contra la franja y el lugar nuevos y se registra **un solo log**, que guarda lo que de verdad cambió: `sub_espacio_anterior`/`sub_espacio_nuevo` y `fecha_inicio_anterior`/`fecha_fin_anterior` (ADR-007 §2.7). Enviar las mismas fechas no se audita como ajuste, pero sí vuelve a pasar por las reglas de horario: el frontend envía solo lo que cambió.
 - **`es_urgencia`:** al cambiar las fechas se **recalcula** con la anticipación real en el momento del cambio.
-- **Sin reactivación:** `Rechazado`, `Cancelado por el Usuario` y `No atendida` son finales. Un cambio de estado por sí solo nunca vuelve a ocupar una franja, así que no pasa por CA-06.
+- **Sin reactivación:** `Rechazado`, `Cancelado por el Usuario` y `No atendida` son finales. Un cambio de estado por sí solo nunca vuelve a ocupar una franja, así que no pasa por CA-06. Desde la Fase 8, **liberar es irreversible**: `Edición y postproducción` libera la franja y el `Entregado` de PODCAST y VIDEO tampoco vuelve a ocuparla (ADR-008, ED3).
 - Estado y fechas se aplican **juntos**, en una sola transacción con *compare-and-set*. Si cambia el estado, el log de auditoría registra al STAFF del token (CA-09).
 - El 409 de la fila 8 **no es un error del usuario**: la UI debe recargar la solicitud y permitir repetir la acción sobre el estado actual.
 - **200:** `{ mensaje, solicitud }`. `mensaje` es `Estado actualizado y auditado correctamente en la bitácora` si cambió el estado, o `Solicitud actualizada correctamente (sin cambio de estado)` si no.
@@ -351,17 +364,20 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 | T6 | Validado | Cancelado por el Usuario | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/cancelar` |
 | T7 | Pendiente de Reprogramación | Validado | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/reprogramacion/aceptar` |
 | T8 | Pendiente de Reprogramación | Cancelado por el Usuario | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/reprogramacion/rechazar` |
-| T9 | En Producción | Entregado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Entregado" }` |
+| T9 | En Producción | Entregado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Entregado" }`, solo STREAMING, ESPACIOS y ASESORIAS (Fase 8); STREAMING agrega `enlace_entrega` |
 | T10 | Recibido | No atendida | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "No atendida" }`, solo con la franja ya iniciada (Fase 7) |
+| T11 | En Producción | Edición y postproducción | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Edición y postproducción" }`, solo PODCAST y VIDEO (Fase 8) |
+| T12 | Edición y postproducción | Entregado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Entregado", "enlace_entrega": "https://…" }`, solo PODCAST y VIDEO (Fase 8) |
 
 - Estado inicial: `Recibido`. **Estados finales:** `Entregado`, `Rechazado`, `Cancelado por el Usuario` y `No atendida`; no admiten ningún cambio de estado. `No atendida` no lleva motivo: el solicitante ve un texto fijo del frontend.
 - Cualquier par que no está en la tabla está prohibido. Ninguna transición es compartida entre roles: si la pide el otro rol, la respuesta es 403.
 - Toda transición queda en `Log_Auditoria`, en la misma transacción que el cambio, con el autor tomado del token.
-- **Franjas:** todos los estados ocupan su franja oficial **en su sub-espacio** salvo `Rechazado`, `Cancelado por el Usuario` y `No atendida`. En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
+- **Franjas:** todos los estados ocupan su franja oficial **en su sub-espacio** salvo `Rechazado`, `Cancelado por el Usuario`, `No atendida` y `Edición y postproducción`; el `Entregado` de PODCAST y VIDEO tampoco ocupa (Fase 8: ya la liberó en T11). En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
 - La base de datos garantiza que hay propuesta (`fecha_propuesta_inicio` y `fecha_propuesta_fin`) **si y solo si** la solicitud está en `Pendiente de Reprogramación`, y que la propuesta termina después de empezar (invariante K9).
 - La base de datos también garantiza que todo log de T5, y solo ese, lleva `motivo_reprogramacion`, con 10 a 500 caracteres sin contar los espacios de los extremos (Fase 6.1b).
 - Y que todo log de T2, y solo ese, lleva `motivo_rechazo`, con la misma regla de longitud (Fase 6.5b).
 - Y que el ajuste de lugar o de franja solo aparece, completo y como un cambio real, en un log que termina en `Validado` (T1 o T7; seis `CHECK`, Fase 7).
+- Y que un enlace del producto final solo existe en un `Entregado` de PODCAST, VIDEO o STREAMING, con `https://`, sin espacios y hasta 2048 caracteres (tres `CHECK`); las entregas nuevas de esas categorías lo exigen (un `CHECK` `NOT VALID`, que tolera las entregas anteriores a la Fase 8).
 
 ## 12. Contratos de cancelación y reprogramación (CA-10)
 

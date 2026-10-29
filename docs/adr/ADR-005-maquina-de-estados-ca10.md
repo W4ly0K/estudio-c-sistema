@@ -8,6 +8,7 @@
 | **Actualización** | 2026-10-14 · Fase 6.5b: motivo del rechazo (T2) con longitud real y E5 garantizado por el motor (§2.10) |
 | **Actualización** | 2026-10-15 · Cierre de la Fase 6: historial de implementación completo (§7) |
 | **Actualización** | 2026-10-23 · Fase 7: nota en §3. El id **T10** es desde ahora «No atendida» ([ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.9); el retiro de la propuesta sigue pendiente, sin id. T1, T5 y T7 llevan sub-espacio (ADR-007 §2.5 y §2.6) |
+| **Actualización** | 2026-10-28 · Fase 8: T11 y T12 (edición y postproducción) y T9 solo para las categorías sin edición ([ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) §2.4) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-5-maquina-de-estados` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (404 uniforme y proyecciones por rol en los comandos del solicitante) · [ADR-003](ADR-003-reglas-de-horario.md) (la franja propuesta pasa por las mismas reglas de horario) · [ADR-004](ADR-004-concurrencia-ca06.md) (el motor como garante; este ADR **reemplaza** la reactivación de su Decisión AG) |
