@@ -1,4 +1,5 @@
-import type { LogSolicitante } from '../api/esquemas'
+import { PASA_POR_EDICION } from '../api/categorias'
+import type { Categoria, LogSolicitante } from '../api/esquemas'
 import { TRANSICIONES, esEstadoFinal, type Estado, type Rol } from '../api/maquina-estados'
 
 /**
@@ -6,9 +7,23 @@ import { TRANSICIONES, esEstadoFinal, type Estado, type Rol } from '../api/maqui
  * el estado actual y los logs (README del backend §8). Función pura: se prueba sin React ni red.
  */
 
-/** El camino feliz que dibuja el stepper del wireframe (4 nodos). */
+/**
+ * El camino feliz que dibuja el stepper del wireframe: 4 pasos para las categorías sin edición
+ * y 5 para PODCAST y VIDEO (Fase 8 · requisito 3).
+ */
 export const CAMINO_PRINCIPAL = ['Recibido', 'Validado', 'En Producción', 'Entregado'] as const satisfies readonly Estado[]
-export type EstadoDelCamino = (typeof CAMINO_PRINCIPAL)[number]
+export const CAMINO_CON_EDICION = [
+  'Recibido',
+  'Validado',
+  'En Producción',
+  'Edición y postproducción',
+  'Entregado',
+] as const satisfies readonly Estado[]
+export type EstadoDelCamino = (typeof CAMINO_CON_EDICION)[number]
+
+export function caminoDe(categoria: Categoria): readonly EstadoDelCamino[] {
+  return PASA_POR_EDICION[categoria] ? CAMINO_CON_EDICION : CAMINO_PRINCIPAL
+}
 
 /** `omitido`: el flujo terminó fuera del camino (Rechazado, Cancelado) y ese paso ya no llegará. */
 export type SituacionPaso = 'completado' | 'actual' | 'pendiente' | 'omitido'
@@ -68,6 +83,8 @@ export interface EventoLinea {
 }
 
 export interface LineaDeVida {
+  /** Fase 8: quién mira; la vista nombra cada estado con su alias (etiquetaEstado). */
+  readonly perspectiva: Perspectiva
   readonly pasos: readonly PasoLinea[]
   /** Estado actual cuando NO está en el camino principal (Pendiente, Rechazado, Cancelado). */
   readonly desvio: Estado | null
@@ -75,8 +92,8 @@ export interface LineaDeVida {
   readonly eventos: readonly EventoLinea[]
 }
 
-function enElCamino(estado: Estado): estado is EstadoDelCamino {
-  return CAMINO_PRINCIPAL.some((paso) => paso === estado)
+function enElCamino(camino: readonly EstadoDelCamino[], estado: Estado): estado is EstadoDelCamino {
+  return camino.some((paso) => paso === estado)
 }
 
 /**
@@ -116,23 +133,25 @@ function ultimoLog(ordenados: readonly LogSolicitante[], condicion: (log: LogSol
 }
 
 export function lineaDeVida(
-  { estado, logs }: { estado: Estado; logs: readonly LogSolicitante[] },
+  { estado, logs, categoria }: { estado: Estado; logs: readonly LogSolicitante[]; categoria: Categoria },
   perspectiva: Perspectiva,
 ): LineaDeVida {
   const ordenados = ordenarPorFecha(logs)
+  // Fase 8: el camino depende de la categoría (con o sin edición).
+  const camino = caminoDe(categoria)
 
   const fechaDe = (paso: EstadoDelCamino): string | null =>
     ultimoLog(ordenados, (log) => log.estado_nuevo === paso)?.fecha_modificacion ?? null
 
   // Hasta dónde llegó por el camino principal (para un estado fuera de él).
-  const alcanzado = CAMINO_PRINCIPAL.reduce(
+  const alcanzado = camino.reduce(
     (maximo, paso, indice) => (ordenados.some((log) => log.estado_nuevo === paso) ? indice : maximo),
     0,
   )
 
   const situacionDe = (indice: number): SituacionPaso => {
-    if (enElCamino(estado)) {
-      const actual = CAMINO_PRINCIPAL.indexOf(estado)
+    if (enElCamino(camino, estado)) {
+      const actual = camino.indexOf(estado)
       if (indice < actual) return 'completado'
       if (indice === actual) return esEstadoFinal(estado) ? 'completado' : 'actual'
       return 'pendiente'
@@ -142,8 +161,9 @@ export function lineaDeVida(
   }
 
   return {
-    pasos: CAMINO_PRINCIPAL.map((paso, indice) => ({ estado: paso, situacion: situacionDe(indice), fecha: fechaDe(paso) })),
-    desvio: enElCamino(estado) ? null : estado,
+    perspectiva,
+    pasos: camino.map((paso, indice) => ({ estado: paso, situacion: situacionDe(indice), fecha: fechaDe(paso) })),
+    desvio: enElCamino(camino, estado) ? null : estado,
     eventos: ordenados.map((log) => ({
       desde: log.estado_anterior,
       hacia: log.estado_nuevo,

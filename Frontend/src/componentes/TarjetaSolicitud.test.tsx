@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { SolicitudPropia } from '../api/esquemas'
 import { ETIQUETAS_CORTAS_SUB_ESPACIO, ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { RECURSOS_RESUMEN, SOLICITUD } from '../test/fixtures-api'
+import { TEXTO_PRODUCTO_FINAL } from './EnlaceProductoFinal'
 import { TEXTO_PROPUESTA_EN_ESPERA, TEXTO_PROPUESTA_STAFF, TarjetaSolicitud } from './TarjetaSolicitud'
 
 const BASE: SolicitudPropia = { ...SOLICITUD, recursos: [] }
@@ -37,6 +38,21 @@ describe('TarjetaSolicitud (B1)', () => {
     const tarjeta = screen.getByRole('article', { name: SOLICITUD.radicado })
     expect(within(tarjeta).getByText('Urgencia')).toBeInTheDocument()
     expect(tarjeta).toHaveClass('border-2')
+  })
+
+  it('Fase 8 · requisito 4: entregada con enlace, abre el producto final en una pestaña nueva y segura', () => {
+    mostrar({ estado: 'Entregado', categoria: 'VIDEO', enlace_entrega: 'https://youtu.be/abc123' })
+
+    expect(screen.getByText(TEXTO_PRODUCTO_FINAL)).toBeInTheDocument()
+    const enlace = screen.getByRole('link', { name: `Abrir el producto final de ${SOLICITUD.radicado} (se abre en una pestaña nueva)` })
+    expect(enlace).toHaveAttribute('href', 'https://youtu.be/abc123')
+    expect(enlace).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('Fase 8 · requisito 4: sin enlace no muestra el bloque del producto final', () => {
+    mostrar()
+
+    expect(screen.queryByText(TEXTO_PRODUCTO_FINAL)).not.toBeInTheDocument()
   })
 
   it('sin urgencia: no hay insignia', () => {

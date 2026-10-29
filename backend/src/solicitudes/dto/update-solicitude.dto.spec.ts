@@ -2,7 +2,7 @@ import { BadRequestException, Type } from '@nestjs/common';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
 import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './create-solicitude.dto';
-import { MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
+import { ENLACE_ENTREGA_MAXIMO, MENSAJE_ENLACE_ENTREGA, MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
 import {
   MENSAJE_MOTIVO_REPROGRAMACION,
   MENSAJE_SUBESPACIO_PROPUESTO,
@@ -103,6 +103,42 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     });
   });
 
+  describe('UpdateSolicitudeDto · enlace del producto final (Fase 8 · requisito 4)', () => {
+    const conEnlace = (enlace: unknown) => erroresDe({ estado: 'Entregado', enlace_entrega: enlace }, UpdateSolicitudeDto);
+
+    it.each([
+      'https://youtu.be/abc123',
+      'https://drive.google.com/file/d/xyz/view?usp=sharing',
+      'https://repositorio.unicesmag.edu.co/handle/123/456',
+    ])('acepta %s', async (enlace) => {
+      expect(await conEnlace(enlace)).toEqual([]);
+    });
+
+    it.each([
+      ['http (sin cifrar)', 'http://youtu.be/abc123'],
+      ['javascript:', 'javascript:alert(1)'],
+      ['data:', 'data:text/html,<script>alert(1)</script>'],
+      ['HTTPS en mayúsculas (el CHECK del motor es exacto)', 'HTTPS://youtu.be/abc123'],
+      ['https:// sin destino', 'https://'],
+      ['con espacios', 'https://youtu.be/abc 123'],
+      ['con usuario y contraseña', 'https://usuario:clave@ejemplo.com/video'],
+      ['sin dominio de primer nivel', 'https://intranet/video'],
+      ['ftp', 'ftp://ejemplo.com/video.mp4'],
+      ['un número', 12345],
+    ])('rechaza %s', async (_caso, enlace) => {
+      expect(await conEnlace(enlace)).toContain(MENSAJE_ENLACE_ENTREGA);
+    });
+
+    it(`rechaza un enlace de más de ${ENLACE_ENTREGA_MAXIMO} caracteres`, async () => {
+      const largo = `https://ejemplo.com/${'a'.repeat(ENLACE_ENTREGA_MAXIMO)}`;
+      expect(await conEnlace(largo)).toContain(MENSAJE_ENLACE_ENTREGA);
+    });
+
+    it('sin enlace el pipe no exige nada: si hace falta lo decide el servicio con la categoría', async () => {
+      expect(await erroresDe({ estado: 'Entregado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+  });
+
   describe('UpdateSolicitudeDto', () => {
     it('acepta un cambio de estado válido', async () => {
       expect(await erroresDe({ estado: 'Validado' }, UpdateSolicitudeDto)).toEqual([]);
@@ -113,8 +149,13 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(await erroresDe({ sub_espacio: 'SALA_3' }, UpdateSolicitudeDto)).toContain(MENSAJE_SUBESPACIO_DE_CREACION);
     });
 
-    it('SE10 no se hereda al PATCH: categoría "espacio físico" sin sub-espacio pasa el pipe (PartialType)', async () => {
-      expect(await erroresDe({ categoria: CategoriaSolicitud.ESPACIOS }, UpdateSolicitudeDto)).toEqual([]);
+    it('Fase 8 · H2: la categoría no se admite en el PATCH → 400 (no cambia después de radicar)', async () => {
+      expect(await erroresDe({ categoria: CategoriaSolicitud.ESPACIOS }, UpdateSolicitudeDto)).toContain(
+        'property categoria should not exist',
+      );
+      expect(
+        await erroresDe({ estado: 'Validado', categoria: CategoriaSolicitud.VIDEO }, UpdateSolicitudeDto),
+      ).toContain('property categoria should not exist');
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {

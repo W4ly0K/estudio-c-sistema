@@ -50,7 +50,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         </h4>
         <div className="flex flex-wrap gap-1">
           {esUrgencia && <InsigniaUrgencia />}
-          {mostrarEstado && <InsigniaEstado estado={estado} />}
+          {mostrarEstado && <InsigniaEstado estado={estado} perspectiva="STAFF" />}
         </div>
       </div>
 

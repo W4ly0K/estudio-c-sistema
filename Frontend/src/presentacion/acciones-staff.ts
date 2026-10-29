@@ -1,7 +1,9 @@
-import type { SubEspacio } from '../api/esquemas'
+import { transicionAplicaALaCategoria } from '../api/categorias'
+import type { Categoria, SubEspacio } from '../api/esquemas'
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
 import type { AjusteAlValidar } from '../api/solicitudes'
 import type { TextosAccion } from './acciones-solicitante'
+import { etiquetaEstado } from './etiquetas'
 import { franjaCompleta, franjaDesdeCampos, mismaFranja, type ValoresFranja } from './franja'
 import { MENSAJE_NO_ATENDIDA } from './linea-de-vida'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION, evaluarMotivo, razonMotivoInvalido } from './motivo'
@@ -19,8 +21,15 @@ export type DestinoDelStaff = TransicionStaff['destino']
 /** Los destinos del canal PATCH: deben ser exactamente los que acepta CambiosTablero. */
 export type DestinoDelTableroStaff = TransicionDelTableroStaff['destino']
 
-export function accionesDelStaff(estado: Estado): readonly TransicionStaff[] {
-  return TRANSICIONES.filter((t): t is TransicionStaff => t.rol === 'STAFF' && t.origen === estado)
+/**
+ * Fase 8 · requisito 3: solo las transiciones que la máquina tiene Y que aplican a la categoría.
+ * La categoría es obligatoria (como la perspectiva): con un valor por defecto, una pantalla
+ * nueva podría ofrecer a un PODCAST la entrega directa que el servidor rechaza.
+ */
+export function accionesDelStaff(estado: Estado, categoria: Categoria): readonly TransicionStaff[] {
+  return TRANSICIONES.filter(
+    (t): t is TransicionStaff => t.rol === 'STAFF' && t.origen === estado && transicionAplicaALaCategoria(t.id, categoria),
+  )
 }
 
 /**
@@ -29,8 +38,13 @@ export function accionesDelStaff(estado: Estado): readonly TransicionStaff[] {
  * con la franja por delante el servidor siempre la rechaza (409), así que ofrecerla sería
  * invitar a un error. Si el reloj del cliente difiere del servidor, decide el servidor.
  */
-export function accionesVisiblesDelStaff(estado: Estado, inicioIso: string, ahora: Date): readonly TransicionStaff[] {
-  return accionesDelStaff(estado).filter(
+export function accionesVisiblesDelStaff(
+  estado: Estado,
+  categoria: Categoria,
+  inicioIso: string,
+  ahora: Date,
+): readonly TransicionStaff[] {
+  return accionesDelStaff(estado, categoria).filter(
     (t) => t.accion !== 'CERRAR_NO_ATENDIDA' || franjaYaInicio(inicioIso, ahora),
   )
 }
@@ -73,7 +87,7 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
       return {
         boton: 'Validar',
         titulo: 'Validar la solicitud',
-        descripcion: `El radicado ${radicado} pasa a "Validado" y su franja (${franja}) queda confirmada. El solicitante verá el cambio en su panel.`,
+        descripcion: `El radicado ${radicado} pasa a "${etiquetaEstado('Validado', 'STAFF')}" y su franja (${franja}) queda confirmada. El solicitante verá el cambio en su panel.`,
         confirmar: 'Sí, validar',
         irreversible: false,
       }
@@ -100,6 +114,15 @@ export function textosDelStaff(accion: AccionDelStaff, radicado: string, franja:
         descripcion: `El radicado ${radicado} pasa a "Entregado", un estado final: no admite más cambios.`,
         confirmar: 'Sí, marcar como entregada',
         irreversible: true,
+      }
+    case 'INICIAR_EDICION':
+      // Fase 8 · requisito 3: la grabación terminó; la franja se libera al entrar (Opción A de H1).
+      return {
+        boton: 'Pasar a edición',
+        titulo: 'Pasar a edición y postproducción',
+        descripcion: `El radicado ${radicado} pasa a "Edición y postproducción": la grabación terminó y su franja (${franja}) queda libre para otras reservas mientras se prepara el producto final.`,
+        confirmar: 'Sí, pasar a edición',
+        irreversible: false,
       }
     case 'CERRAR_NO_ATENDIDA':
       // Fase 7 · T10: en este paso la franja todavía no se libera (llega con la migración
@@ -135,7 +158,7 @@ export function textosValidarConAjustes(radicado: string, franja: string): Texto
   return {
     boton: 'Validar con ajustes',
     titulo: 'Validar con ajustes',
-    descripcion: `El radicado ${radicado} pasa a "Validado" con la franja, el sub-espacio o ambos que elijas aquí, en lugar de lo pedido (${franja}). El ajuste queda en la auditoría y el solicitante verá la reserva ajustada en su panel.`,
+    descripcion: `El radicado ${radicado} pasa a "${etiquetaEstado('Validado', 'STAFF')}" con la franja, el sub-espacio o ambos que elijas aquí, en lugar de lo pedido (${franja}). El ajuste queda en la auditoría y el solicitante verá la reserva ajustada en su panel.`,
     confirmar: 'Sí, validar con ajustes',
     irreversible: false,
   }
@@ -164,6 +187,7 @@ export function razonBloqueoDelStaff(accion: AccionDelStaff, motivo: string, fra
       return razonMotivoInvalido(evaluarMotivo(motivo, LIMITES_MOTIVO_REPROGRAMACION), LIMITES_MOTIVO_REPROGRAMACION)
     case 'APROBAR':
     case 'INICIAR_PRODUCCION':
+    case 'INICIAR_EDICION':
     case 'FINALIZAR':
     case 'CERRAR_NO_ATENDIDA':
       return undefined
@@ -219,7 +243,8 @@ export function ajusteAlValidar(franja: ValoresFranja, subEspacio: SubEspacio, v
 
 /** Aviso tras el éxito (DA2): lo escribe el cliente con el destino, que es lo que se aplicó. */
 export function textoExito(destino: DestinoDelStaff): string {
-  return `La solicitud pasó a "${destino}".`
+  // Fase 8: el destino se nombra como lo ve el Staff ("Revisado y aprobado" en lugar de "Validado").
+  return `La solicitud pasó a "${etiquetaEstado(destino, 'STAFF')}".`
 }
 
 /**

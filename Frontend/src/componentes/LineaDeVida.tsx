@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import { formatearMomento } from '../fechas/bogota'
+import { etiquetaEstado } from '../presentacion/etiquetas'
 import type { LineaDeVida as DatosLinea, SituacionPaso } from '../presentacion/linea-de-vida'
 import { InsigniaEstado } from './Insignias'
 
@@ -22,7 +23,8 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
         <h3 id={`${id}-linea`} className="text-sm font-bold text-primary mb-5">
           Línea de vida
         </h3>
-        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Fase 8: 5 pasos con la edición (PODCAST y VIDEO), 4 sin ella. Clases literales para Tailwind. */}
+        <ol className={`grid gap-4 ${linea.pasos.length === 5 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
           {linea.pasos.map((paso, indice) => {
             const nodo = NODO[paso.situacion]
             return (
@@ -36,7 +38,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
                   {nodo.simbolo === '' ? indice + 1 : nodo.simbolo}
                 </span>
                 <span className={`mt-2 text-xs font-bold ${paso.situacion === 'actual' ? 'text-primary underline' : 'text-gray-700'}`}>
-                  {paso.estado}
+                  {etiquetaEstado(paso.estado, linea.perspectiva)}
                 </span>
                 <span className="sr-only">: {nodo.texto}</span>
                 {/* "Recibido" no tiene registro con hora: el log solo guarda CAMBIOS de estado. */}
@@ -47,7 +49,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
         </ol>
         {linea.desvio !== null && (
           <p className="mt-5 pt-4 border-t border-outline text-sm text-gray-700 flex flex-wrap items-center gap-2">
-            Estado actual, fuera del camino habitual: <InsigniaEstado estado={linea.desvio} />
+            Estado actual, fuera del camino habitual: <InsigniaEstado estado={linea.desvio} perspectiva={linea.perspectiva} />
           </p>
         )}
       </section>
@@ -65,7 +67,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
             <li key={`${evento.fecha}-${evento.hacia}`} className="border-l-2 border-primary pl-3 py-1 text-sm">
               <div className="flex flex-wrap justify-between gap-2">
                 <p className="font-bold text-primary">
-                  {evento.desde} → {evento.hacia}
+                  {etiquetaEstado(evento.desde, linea.perspectiva)} → {etiquetaEstado(evento.hacia, linea.perspectiva)}
                 </p>
                 <p className="text-xs text-gray-500">{formatearMomento(evento.fecha)}</p>
               </div>

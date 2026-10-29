@@ -5,7 +5,7 @@ import DetalleStaff, { TEXTO_RECARGA_FALLIDA } from './DetalleStaff'
 import { ProveedorApi } from './api/ProveedorApi'
 import type { Resultado } from './api/cliente'
 import { TEXTO_SIN_CONEXION } from './api/errores'
-import type { DetalleStaff as DatosDetalleStaff } from './api/esquemas'
+import type { Categoria, DetalleStaff as DatosDetalleStaff } from './api/esquemas'
 import type { Estado } from './api/maquina-estados'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './api/mensajes'
 import type { ApiSolicitudes } from './api/solicitudes'
@@ -21,6 +21,8 @@ import {
 import { formatearFranja } from './fechas/bogota'
 import { TEXTO_FRANJA_INICIADA, TEXTO_RAZON_AJUSTE_SIN_CAMBIOS } from './presentacion/acciones-staff'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
+import { TEXTO_ETIQUETA_ENLACE } from './componentes/CampoEnlace'
+import { TEXTO_RAZON_ENLACE_INVALIDO, TEXTO_RAZON_ENLACE_VACIO } from './presentacion/enlace'
 import { MENSAJE_NO_ATENDIDA } from './presentacion/linea-de-vida'
 import { TEXTO_PROCESANDO, TEXTO_VOLVER_SIN_CAMBIOS } from './presentacion/acciones-solicitante'
 import { RUTA_DETALLE } from './rutas'
@@ -68,12 +70,15 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     vi.useRealTimers()
   })
 
-  it.each<[Estado, string[]]>([
-    ['Recibido', ['Validar', 'Validar con ajustes', 'Rechazar']],
-    ['Validado', ['Iniciar producción', 'Proponer reprogramación']],
-    ['En Producción', ['Marcar como entregada']],
-  ])('en "%s" la resolución ofrece %j', async (estado, botones) => {
-    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))) })
+  it.each<[Estado, Categoria, string[]]>([
+    ['Recibido', 'PODCAST', ['Validar', 'Validar con ajustes', 'Rechazar']],
+    ['Validado', 'PODCAST', ['Iniciar producción', 'Proponer reprogramación']],
+    ['En Producción', 'ESPACIOS', ['Marcar como entregada']],
+    // Fase 8 · requisito 3: PODCAST y VIDEO pasan por edición antes de la entrega.
+    ['En Producción', 'PODCAST', ['Pasar a edición']],
+    ['Edición y postproducción', 'VIDEO', ['Marcar como entregada']],
+  ])('en "%s" (%s) la resolución ofrece %j', async (estado, categoria, botones) => {
+    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en(estado), categoria })) })
 
     const resolucion = await screen.findByRole('region', { name: 'Resolución' })
     expect(within(resolucion).getAllByRole('button').map((b) => b.textContent)).toEqual(botones)
@@ -96,13 +101,13 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     await esperarDetalle()
 
     const dialogo = abrir('Validar', 'Validar la solicitud')
-    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Validado"/)
+    expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Revisado y aprobado"/)
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, validar' }))
 
     expect(await screen.findByRole('button', { name: 'Iniciar producción' })).toBeEnabled()
     expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Validado' })
     expect(detalleStaff).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
     // Cerrado con close(), no arrancado del DOM todavía abierto.
     expect(dialogo).toBeInTheDocument()
     expect(dialogo).not.toHaveAttribute('open')
@@ -127,12 +132,18 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(screen.queryByText('Cargando la solicitud...')).not.toBeInTheDocument()
   })
 
-  it.each<[Estado, string, string, Estado]>([
-    ['Validado', 'Iniciar producción', 'Sí, iniciar la producción', 'En Producción'],
-    ['En Producción', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
-  ])('desde "%s", "%s" envía su destino', async (estado, boton, confirmar, destino) => {
+  it.each<[Estado, Categoria, string, string, Estado]>([
+    ['Validado', 'PODCAST', 'Iniciar producción', 'Sí, iniciar la producción', 'En Producción'],
+    ['En Producción', 'ESPACIOS', 'Marcar como entregada', 'Sí, marcar como entregada', 'Entregado'],
+    // Fase 8 · requisito 3: T11 y T12 por el mismo PATCH, solo con el destino.
+    ['En Producción', 'VIDEO', 'Pasar a edición', 'Sí, pasar a edición', 'Edición y postproducción'],
+    // La entrega de PODCAST, VIDEO y STREAMING exige enlace: la cubre 'Fase 8 · enlace del producto final al entregar'.
+  ])('desde "%s" (%s), "%s" envía su destino', async (estado, categoria, boton, confirmar, destino) => {
     const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
-    mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(en(estado))), actualizarTablero })
+    mostrar({
+      detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en(estado), categoria })),
+      actualizarTablero,
+    })
     await esperarDetalle()
 
     fireEvent.click(screen.getByRole('button', { name: boton }))
@@ -272,13 +283,13 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(TEXTO_RECARGA_FALLIDA)
     expect(alerta).toHaveTextContent(TEXTO_SIN_CONEXION)
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
 
     fireEvent.click(screen.getByRole('button', { name: 'Recargar la solicitud' }))
 
     expect(await screen.findByRole('button', { name: 'Iniciar producción' })).toBeInTheDocument()
     expect(actualizarTablero).toHaveBeenCalledOnce() // recargar NO repite la acción
-    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+    expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
   })
 
   it('DA4: con la franja ya iniciada lo advierte, sin deshabilitar "Validar" (decide el servidor)', async () => {
@@ -382,7 +393,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       await esperarDetalle()
 
       const dialogo = abrirAjuste()
-      expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Validado"/)
+      expect(dialogo).toHaveAccessibleDescription(/EC-2026-0142.*"Revisado y aprobado"/)
       expect(within(dialogo).getByText(formatearFranja(RECIBIDO.fecha_inicio, RECIBIDO.fecha_fin))).toBeInTheDocument()
       expect(within(dialogo).getByLabelText('Fecha')).toHaveValue('2026-10-15')
       expect(within(dialogo).getByLabelText('Hora de inicio')).toHaveValue('09:00')
@@ -420,7 +431,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION))
       fireEvent.click(confirmarAjuste(dialogo))
 
-      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
       expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         estado: 'Validado',
         sub_espacio: 'ESTUDIO_GRABACION',
@@ -462,7 +473,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       fireEvent.click(within(grupoDe(dialogo)).getByLabelText(ETIQUETAS_SUB_ESPACIO.ESTUDIO_COMPLETO))
       fireEvent.click(confirmarAjuste(dialogo))
 
-      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Validado".')
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
       expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         estado: 'Validado',
         fecha_inicio: '2026-10-22T14:00:00-05:00',
@@ -712,6 +723,67 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(within(otraVez).getByLabelText('Fecha')).toHaveValue('')
       expect(within(otraVez).getByLabelText('Hora de inicio')).toHaveValue('')
       expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION)).toHaveValue('')
+    })
+  })
+
+  describe('Fase 8 · enlace del producto final al entregar (requisito 4)', () => {
+    const ENLACE = 'https://youtu.be/abc123'
+    const confirmarEntrega = (dialogo: HTMLElement) => within(dialogo).getByRole('button', { name: 'Sí, marcar como entregada' })
+
+    it('VIDEO en edición: "Confirmar" bloqueado y explicado hasta un https válido; luego envía el destino y el enlace recortado', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('Edición y postproducción'), categoria: 'VIDEO' })),
+        actualizarTablero,
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(confirmarEntrega(dialogo)).toBeDisabled()
+      expect(confirmarEntrega(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_ENLACE_VACIO)
+
+      const campo = within(dialogo).getByLabelText(TEXTO_ETIQUETA_ENLACE)
+      fireEvent.change(campo, { target: { value: 'javascript:alert(1)' } })
+      expect(confirmarEntrega(dialogo)).toBeDisabled()
+      expect(confirmarEntrega(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_ENLACE_INVALIDO)
+      expect(campo).toHaveAttribute('aria-invalid', 'true')
+
+      fireEvent.change(campo, { target: { value: `  ${ENLACE}  ` } })
+      expect(confirmarEntrega(dialogo)).toBeEnabled()
+      fireEvent.click(confirmarEntrega(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Entregado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Entregado', enlace_entrega: ENLACE })
+    })
+
+    it('ESPACIOS en producción: no pide enlace y entrega solo con el destino', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('En Producción'), categoria: 'ESPACIOS' })),
+        actualizarTablero,
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(within(dialogo).queryByLabelText(TEXTO_ETIQUETA_ENLACE)).not.toBeInTheDocument()
+      fireEvent.click(confirmarEntrega(dialogo))
+
+      expect(await screen.findByRole('status')).toHaveTextContent('La solicitud pasó a "Entregado".')
+      expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Entregado' })
+    })
+
+    it('reabrir la entrega empieza sin enlace: un borrador no se envía por accidente', async () => {
+      mostrar({
+        detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok({ ...en('Edición y postproducción'), categoria: 'PODCAST' })),
+      })
+      await esperarDetalle()
+
+      const dialogo = abrir('Marcar como entregada', 'Marcar como entregada')
+      fireEvent.change(within(dialogo).getByLabelText(TEXTO_ETIQUETA_ENLACE), { target: { value: ENLACE } })
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+
+      const otraVez = abrir('Marcar como entregada', 'Marcar como entregada')
+      expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_ENLACE)).toHaveValue('')
     })
   })
 })

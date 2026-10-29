@@ -12,7 +12,7 @@ Interfaz web del sistema de gestión, reservas y seguimiento de solicitudes de e
 | Lint | oxlint (`--deny-warnings`) |
 | Lenguaje | TypeScript en modo `strict`. **El tipo `any` está prohibido** (también las aserciones `as` en el código de la aplicación) |
 
-El *por qué* de este diseño está en [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md); los sub-espacios, «No atendida» y «Validar con ajustes» (Fase 7), en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md). El contrato de la API, en el [README del backend](../backend/README.md) (§8 a §12).
+El *por qué* de este diseño está en [ADR-006](../docs/adr/ADR-006-frontend-contrato-tipado.md); los sub-espacios, «No atendida» y «Validar con ajustes» (Fase 7), en [ADR-007](../docs/adr/ADR-007-subespacios-y-no-atendida.md); las reglas por categoría de la Fase 8 (edición, enlace del producto final y alias de estado por rol), en [ADR-008](../docs/adr/ADR-008-edicion-postproduccion-y-enlace-de-entrega.md). El contrato de la API, en el [README del backend](../backend/README.md) (§8 a §12).
 
 ---
 
@@ -57,7 +57,8 @@ npm run dev                  # http://localhost:5173
 src/
 ├── api/                  Contrato tipado con el backend (ADR-006)
 │   ├── esquemas.ts       Esquemas Zod y tipos derivados (z.infer): login, solicitudes, detalle por rol, errores, SUB_ESPACIOS
-│   ├── maquina-estados.ts Copia de T1–T10 SOLO para la vista; accionesDisponibles(estado, rol)
+│   ├── maquina-estados.ts Copia de T1–T12 SOLO para la vista; accionesDisponibles(estado, rol)
+│   ├── categorias.ts     PASA_POR_EDICION, REQUIERE_ENLACE y transicionAplicaALaCategoria(): copia de vista de la política del backend (Fase 8)
 │   ├── mensajes.ts       Mensajes del backend que la UI reconoce o repite (409 concurrente, primera regla de CA-04)
 │   ├── cliente.ts        crearClienteApi: Resultado<T>, ErrorApi, validación de cada respuesta
 │   ├── solicitudes.ts    Una función tipada por ruta de /solicitudes; CambiosTablero no compila un ajuste fuera de T1
@@ -72,14 +73,17 @@ src/
 │   ├── SoloRol            Guarda de presentación: con otro rol vuelve a "/" en silencio y sin montar la pantalla
 │   ├── DialogoConfirmacion  <dialog> nativo; abre y cierra con useLayoutEffect; puedeConfirmar opcional
 │   ├── TarjetaSolicitud, ExitoRadicado, AccionesSolicitud   Solicitante (B1, B1b, B3 y B4)
-│   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1 (directo o con ajustes), T2, T4, T5, T9 y T10
+│   ├── TarjetaTablero, AccionesStaff          Staff: tarjeta del tablero y resolución T1 (directo o con ajustes), T2, T4, T5, T9, T10, T11 y T12
+│   ├── CampoEnlace        Enlace del producto final al entregar (type="url", aria-invalid), controlado (Fase 8)
+│   ├── EnlaceProductoFinal  Abre el producto final con noopener noreferrer; sin <a> si el enlace no es seguro (Fase 8)
 │   ├── CampoMotivo        Motivo con contador de caracteres reales (T2 y T5), sin maxLength
 │   ├── CampoSubEspacio    Grupo de 3 opciones con su ayuda (B2, T5 y el ajuste de T1), controlado
 │   └── CamposFranja       Fecha y horas en hora de Bogotá (B2, T5 y el ajuste de T1), controlado
 ├── config/entorno.ts     Variables de entorno validadas (fail-fast)
 ├── fechas/bogota.ts      Fechas SIEMPRE en la hora de Bogotá: aIsoBogota y su inverso aCamposBogota, hoyEnBogota y formatear*
 ├── presentacion/         Funciones PURAS de la vista (se prueban sin React)
-│   ├── etiquetas, resumen               Nombres de categoría y de sub-espacio (oficial, corto y ayuda) y resumen del panel B1
+│   ├── etiquetas, resumen               Nombres de categoría y de sub-espacio (oficial, corto y ayuda), alias de estado por rol (etiquetaEstado) y resumen del panel B1
+│   ├── enlace           esEnlaceSeguro(), razonBloqueoDelEnlace() y enlaceParaEnviar(): el enlace del producto final (Fase 8)
 │   ├── linea-de-vida    lineaDeVida(detalle, perspectiva): actores y motivos según quién mira
 │   ├── acciones-solicitante, acciones-staff   Acciones derivadas de la máquina, con sus textos honestos y su canal; opciones del Staff y ajuste mínimo al validar
 │   ├── tablero          agruparTablero(): columnas derivadas de la máquina, orden por urgencia e instante
@@ -193,8 +197,8 @@ Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo 
 |---|---|---|
 | `/` | Inicio: pendientes de su respuesta, próximas reservas, "Nueva solicitud" y las reglas del Estudio C | Inicio: atajos con contador (urgentes, recibidas con la franja vencida, esperando al solicitante, en producción) |
 | `/mis-solicitudes` | Panel (B1): resumen, aviso de decisiones pendientes, tarjetas y el formulario B2 con su confirmación (B1b) | Vuelve a `/` en silencio (`SoloRol`) |
-| `/tablero` | Vuelve a `/` en silencio (`SoloRol`) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación y En Producción; cerradas plegadas; aviso de urgentes |
-| `/solicitudes/:radicado` | Detalle (B3): línea de vida, historial, propuesta (B4) y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, sub-espacio, resolución (validar, validar con ajustes, rechazar, cerrar como no atendida, iniciar producción, entregar, proponer reprogramación) e historial |
+| `/tablero` | Vuelve a `/` en silencio (`SoloRol`) | Tablero: columnas Recibido, Validado, Pendiente de Reprogramación, En Producción y Edición y postproducción; cerradas plegadas; aviso de urgentes |
+| `/solicitudes/:radicado` | Detalle (B3): línea de vida según la categoría, historial, propuesta (B4), producto final y acciones (cancelar, aceptar, rechazar) | Detalle (C3): solicitante, recursos frente al inventario, sub-espacio, producto final, resolución (validar, validar con ajustes, rechazar, cerrar como no atendida, iniciar producción, pasar a edición, entregar con enlace si la categoría lo exige, proponer reprogramación) e historial |
 | cualquier otra | Vuelve a `/` | Vuelve a `/` |
 
 - **Despliegue en producción:** el servidor debe responder `index.html` en **cualquier** ruta (*SPA fallback*). `npm run dev` ya lo hace; un hosting estático, no por defecto. Sin eso, recargar o abrir un enlace directo a `/solicitudes/EC-…` responde 404.
@@ -207,6 +211,8 @@ Una URL por pantalla: la vista depende del rol que trae el token (DE2). Es solo 
 - ✅ **6.6 · Cierre de la Fase 6** (bitácora, ADR y PR).
 - ✅ **Fase 7 · Frente A (sub-espacios):** el sub-espacio en el contrato, B1, B1b, B2, el tablero y los detalles; T5 con lugar; «Cerrar como no atendida» (T10) y «Validar con ajustes» (ADR-007).
 - ✅ **Fase 7 · *contract* y SE10 (PRD v2.3):** B2 muestra el selector de sub-espacio **solo** para «Espacio físico»; en los demás servicios explica que se reserva el Estudio C completo. `CuerpoCrearSolicitud` es una unión discriminada por `categoria`, así que un servicio con `sub_espacio` no compila, y cambiar de categoría borra la elección. El backend lo exige igual (400) y la base de datos ya no tiene valor por defecto (ADR-007 §2.13).
+- ✅ **Fase 8 · directrices del tutor (PRD v2.4):** alias «Confirmado» (solicitante) y «Revisado y aprobado» (Staff), «Dirección audiovisual y producción», urgencia en rojo con contraste AA, «Edición y postproducción» por categoría y enlace del producto final (ADR-008).
+- **Fase 8 · pendiente (ADR-008 §3):** corregir un enlace después de la entrega (DA-4).
 - **Fase 7 · pendiente (ADR-007 §6):**
   - el historial (línea de vida) todavía no muestra los ajustes de lugar y de franja que el log ya guarda (DA-2);
   - el diálogo de T10 puede decir que la franja queda libre (el motor ya la libera);

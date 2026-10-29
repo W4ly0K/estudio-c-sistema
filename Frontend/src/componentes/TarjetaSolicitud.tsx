@@ -4,6 +4,7 @@ import type { SolicitudPropia } from '../api/esquemas'
 import { formatearFranja } from '../fechas/bogota'
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from '../presentacion/etiquetas'
 import { rutaDetalle } from '../rutas'
+import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './EnlaceProductoFinal'
 import { InsigniaEstado, InsigniaSubEspacio, InsigniaUrgencia } from './Insignias'
 
 export const TEXTO_PROPUESTA_STAFF = 'El Staff del Estudio C propone una nueva franja para esta solicitud.'
@@ -30,6 +31,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
     recursos,
     sub_espacio: subEspacio,
     sub_espacio_propuesto: subEspacioPropuesto,
+    enlace_entrega: enlace,
   } = solicitud
   // Fase 7 · Q-A6: la misma regla que el tablero: el lugar propuesto solo se anuncia si cambia.
   const lugarPropuesto =
@@ -58,7 +60,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {esUrgencia && <InsigniaUrgencia />}
-          <InsigniaEstado estado={estado} />
+          <InsigniaEstado estado={estado} perspectiva="SOLICITANTE" />
         </div>
       </div>
 
@@ -100,6 +102,14 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
             </p>
           )}
           <p className="mt-1 text-gray-600">{TEXTO_PROPUESTA_EN_ESPERA}</p>
+        </div>
+      )}
+
+      {/* Fase 8 · requisito 4: el producto final se abre desde el panel, sin entrar al detalle. */}
+      {enlace !== null && (
+        <div className="mt-4 pt-3 border-t border-outline text-sm">
+          <p className="text-gray-500 mb-0.5">{TEXTO_PRODUCTO_FINAL}</p>
+          <EnlaceProductoFinal enlace={enlace} radicado={radicado} />
         </div>
       )}
 

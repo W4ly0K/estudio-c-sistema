@@ -6,13 +6,15 @@ import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
 import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO, CATEGORIAS, SUB_ESPACIOS } from './esquemas'
+import { PASA_POR_EDICION, REQUIERE_ENLACE, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
+import { ENLACE_MAXIMO } from '../presentacion/enlace'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
 import { MENSAJE_CAMBIO_CONCURRENTE, MENSAJE_FIN_NO_POSTERIOR } from './mensajes'
 import fuenteDtoRechazo from '../../../backend/src/solicitudes/dto/update-solicitude.dto.ts?raw'
 import fuenteDtoReprogramacion from '../../../backend/src/solicitudes/dto/proponer-reprogramacion.dto.ts?raw'
 import fuenteDecorador from '../../../backend/src/common/validadores/texto-con-longitud-real.decorator.ts?raw'
-import fuenteSubEspacios from '../../../backend/src/solicitudes/reglas/sub-espacios.ts?raw'
+import fuenteCategorias from '../../../backend/src/solicitudes/reglas/categorias.ts?raw'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
@@ -44,15 +46,15 @@ const FILA_TRANSICION =
   /\{ id: '(T\d+)', accion: '([A-Z_]+)', origen: '([^']+)', destino: '([^']+)', rol: (STAFF|SOLICITANTE) \}/g
 
 describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', () => {
-  it('los 8 estados, en el mismo orden', () => {
+  it('los 9 estados, en el mismo orden (Fase 8: "Edición y postproducción")', () => {
     const delBackend = listaDelBackend('ESTADOS')
-    expect(delBackend).toHaveLength(8)
+    expect(delBackend).toHaveLength(9)
     expect([...ESTADOS]).toEqual(delBackend)
   })
 
-  it('las 9 acciones, en el mismo orden', () => {
+  it('las 10 acciones, en el mismo orden (Fase 8: INICIAR_EDICION)', () => {
     const delBackend = listaDelBackend('ACCIONES')
-    expect(delBackend).toHaveLength(9)
+    expect(delBackend).toHaveLength(10)
     expect([...ACCIONES]).toEqual(delBackend)
   })
 
@@ -65,7 +67,7 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
       rol,
     }))
     // Sin este piso, un cambio de formato dejaría la lista vacía y la prueba no compararía nada.
-    expect(delBackend).toHaveLength(10)
+    expect(delBackend).toHaveLength(12)
     expect(TRANSICIONES.map((t) => ({ ...t }))).toEqual(delBackend)
   })
 
@@ -83,12 +85,43 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('la categoría que elige el sub-espacio es la del backend (Fase 7 · 7B.4 · SE10)', () => {
     const delBackend = capturar(
-      fuenteSubEspacios,
+      fuenteCategorias,
       /export const CATEGORIA_QUE_ELIGE_SUB_ESPACIO = CategoriaSolicitud\.(\w+);/,
       'CATEGORIA_QUE_ELIGE_SUB_ESPACIO',
     )
     expect(CATEGORIA_QUE_ELIGE_SUB_ESPACIO).toBe(delBackend)
     expect(CATEGORIAS).toContain(delBackend)
+  })
+
+  it('Fase 8 · las categorías que pasan por edición son las de POLITICA_POR_CATEGORIA del backend', () => {
+    const filas = [...lf(fuenteCategorias).matchAll(/^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (true|false),/gm)]
+    // Piso: sin él, un cambio de formato dejaría la tabla vacía y la prueba no compararía nada.
+    expect(filas).toHaveLength(CATEGORIAS.length)
+    expect(Object.fromEntries(filas.map(([, categoria, valor]) => [categoria ?? '', valor === 'true']))).toEqual(PASA_POR_EDICION)
+  })
+
+  it.each([
+    ['TRANSICIONES_SIN_EDICION', TRANSICIONES_SIN_EDICION],
+    ['TRANSICIONES_CON_EDICION', TRANSICIONES_CON_EDICION],
+  ] as const)('Fase 8 · %s coincide con categorias.ts del backend', (nombre, copia) => {
+    const cuerpo = capturar(
+      fuenteCategorias,
+      new RegExp(`export const ${nombre}: readonly IdTransicion\\[\\] = Object\\.freeze\\(\\[([^\\]]*)\\]\\)`),
+      nombre,
+    )
+    expect([...cuerpo.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '')).toEqual([...copia])
+  })
+
+  it('Fase 8 · las categorías que exigen enlace son las OBLIGATORIO de POLITICA_POR_CATEGORIA del backend', () => {
+    const filas = [
+      ...lf(fuenteCategorias).matchAll(/^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (?:true|false), enlaceAlEntregar: '(OBLIGATORIO|PROHIBIDO)' \}\),/gm),
+    ]
+    expect(filas).toHaveLength(CATEGORIAS.length)
+    expect(Object.fromEntries(filas.map(([, categoria, regla]) => [categoria ?? '', regla === 'OBLIGATORIO']))).toEqual(REQUIERE_ENLACE)
+  })
+
+  it('Fase 8 · el límite del enlace es ENLACE_ENTREGA_MAXIMO del DTO (y del CHECK)', () => {
+    expect(ENLACE_MAXIMO).toBe(numeroDelBackend(fuenteDtoRechazo, 'ENLACE_ENTREGA_MAXIMO'))
   })
 
   it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {

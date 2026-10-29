@@ -13,13 +13,15 @@ import {
 
 /**
  * Oráculo escrito a mano a partir del diagrama (ADR-005 §2.1): qué botones ve cada
- * rol en cada estado. Cubre las 16 combinaciones de estado y rol.
+ * rol en cada estado. Cubre las 18 combinaciones de estado y rol. Es la tabla de la máquina, sin
+ * categoría: qué transición aplica a cada una lo decide api/categorias.ts (Fase 8).
  */
 const ESPERADO: Record<Estado, Record<Rol, readonly IdTransicion[]>> = {
   Recibido: { STAFF: ['T1', 'T2', 'T10'], SOLICITANTE: ['T3'] },
   Validado: { STAFF: ['T4', 'T5'], SOLICITANTE: ['T6'] },
   'Pendiente de Reprogramación': { STAFF: [], SOLICITANTE: ['T7', 'T8'] },
-  'En Producción': { STAFF: ['T9'], SOLICITANTE: [] },
+  'En Producción': { STAFF: ['T9', 'T11'], SOLICITANTE: [] },
+  'Edición y postproducción': { STAFF: ['T12'], SOLICITANTE: [] },
   Entregado: { STAFF: [], SOLICITANTE: [] },
   Rechazado: { STAFF: [], SOLICITANTE: [] },
   'Cancelado por el Usuario': { STAFF: [], SOLICITANTE: [] },

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { LogSolicitante } from '../api/esquemas'
+import { transicionAplicaALaCategoria } from '../api/categorias'
+import { CATEGORIAS, type Categoria, type LogSolicitante } from '../api/esquemas'
 import { ROLES, TRANSICIONES, type Estado } from '../api/maquina-estados'
-import { ACTORES, MENSAJE_NO_ATENDIDA, actorDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
+import { ACTORES, MENSAJE_NO_ATENDIDA, actorDe, caminoDe, lineaDeVida, motivoDeLaPropuesta } from './linea-de-vida'
 
 /** Un log del contrato; `dia` arma la fecha (octubre de 2026, 15:00 UTC = 10:00 Bogotá). */
 function log(desde: Estado, hacia: Estado, dia: number, motivos: Partial<LogSolicitante> = {}): LogSolicitante {
@@ -19,7 +20,7 @@ const situaciones = (linea: ReturnType<typeof lineaDeVida>) => linea.pasos.map((
 
 describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
   it('recién radicada: Recibido es el paso actual, sin fecha (no hay log de la radicación)', () => {
-    const linea = lineaDeVida({ estado: 'Recibido', logs: [] }, 'SOLICITANTE')
+    const linea = lineaDeVida({ categoria: 'ESPACIOS', estado: 'Recibido', logs: [] }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['actual', 'pendiente', 'pendiente', 'pendiente'])
     expect(linea.pasos.map((p) => p.fecha)).toEqual([null, null, null, null])
@@ -29,6 +30,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('en producción: los pasos anteriores completados, con la fecha de su cambio', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'En Producción',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'En Producción', 14)],
     }, 'SOLICITANTE')
@@ -40,6 +42,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('entregada: todo completado (el final del camino no queda "actual")', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'Entregado',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'En Producción', 14), log('En Producción', 'Entregado', 15)],
     }, 'SOLICITANTE')
@@ -49,6 +52,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('rechazada (T2): el resto del camino queda omitido y el motivo viaja en el evento', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'Rechazado',
       logs: [log('Recibido', 'Rechazado', 12, { motivo_rechazo: 'La cabina está en mantenimiento.' })],
     }, 'SOLICITANTE')
@@ -59,7 +63,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
   })
 
   it('Fase 7 · no atendida (T10): final fuera del camino, actor el Staff y el mensaje fijo del Estudio C', () => {
-    const linea = lineaDeVida({ estado: 'No atendida', logs: [log('Recibido', 'No atendida', 16)] }, 'SOLICITANTE')
+    const linea = lineaDeVida({ categoria: 'ESPACIOS', estado: 'No atendida', logs: [log('Recibido', 'No atendida', 16)] }, 'SOLICITANTE')
 
     expect(situaciones(linea)).toEqual(['completado', 'omitido', 'omitido', 'omitido'])
     expect(linea.desvio).toBe('No atendida')
@@ -70,6 +74,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('cancelada desde Validado (T6): llegó hasta Validado y el actor es el solicitante', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'Cancelado por el Usuario',
       logs: [log('Recibido', 'Validado', 12), log('Validado', 'Cancelado por el Usuario', 13)],
     }, 'SOLICITANTE')
@@ -80,6 +85,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('pendiente de reprogramación (T5): no es final, así que el camino sigue pendiente', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'Pendiente de Reprogramación',
       logs: [
         log('Recibido', 'Validado', 12),
@@ -94,6 +100,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('aceptada la propuesta (T7): Validado muestra la fecha del cambio MÁS reciente', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'Validado',
       logs: [
         log('Recibido', 'Validado', 12),
@@ -108,6 +115,7 @@ describe('lineaDeVida (B3 · perspectiva del solicitante)', () => {
 
   it('ordena por fecha aunque los logs lleguen desordenados', () => {
     const linea = lineaDeVida({
+      categoria: 'ESPACIOS',
       estado: 'En Producción',
       logs: [log('Validado', 'En Producción', 14), log('Recibido', 'Validado', 12)],
     }, 'SOLICITANTE')
@@ -135,13 +143,14 @@ describe('actorDe', () => {
 
 describe('lineaDeVida · perspectiva del Staff (6.5.2 · DD2)', () => {
   const historia = {
+    categoria: 'ESPACIOS',
     estado: 'Cancelado por el Usuario',
     logs: [
       log('Recibido', 'Validado', 12),
       log('Validado', 'Pendiente de Reprogramación', 13, { motivo_reprogramacion: 'Mantenimiento de la cabina.' }),
       log('Pendiente de Reprogramación', 'Cancelado por el Usuario', 14),
     ],
-  } as const satisfies { estado: Estado; logs: readonly LogSolicitante[] }
+  } as const satisfies { categoria: Categoria; estado: Estado; logs: readonly LogSolicitante[] }
 
   it('el Staff ve "Staff" y "Solicitante"; nunca "Tú"', () => {
     const linea = lineaDeVida(historia, 'STAFF')
@@ -162,7 +171,7 @@ describe('lineaDeVida · perspectiva del Staff (6.5.2 · DD2)', () => {
   })
 
   it('Fase 7 · T10: el Staff ve el mismo mensaje, rotulado como lo que verá el solicitante', () => {
-    const cierre = { estado: 'No atendida' as const, logs: [log('Recibido', 'No atendida', 16)] }
+    const cierre = { categoria: 'ESPACIOS' as const, estado: 'No atendida' as const, logs: [log('Recibido', 'No atendida', 16)] }
 
     expect(lineaDeVida(cierre, 'STAFF').eventos[0]).toMatchObject({
       actor: 'Staff',
@@ -176,11 +185,54 @@ describe('lineaDeVida · perspectiva del Staff (6.5.2 · DD2)', () => {
       texto: 'Mantenimiento de la cabina.',
     })
     const rechazo = {
+      categoria: 'ESPACIOS',
       estado: 'Rechazado',
       logs: [log('Recibido', 'Rechazado', 12, { motivo_rechazo: 'La cabina está en mantenimiento.' })],
-    } as const satisfies { estado: Estado; logs: readonly LogSolicitante[] }
+    } as const satisfies { categoria: Categoria; estado: Estado; logs: readonly LogSolicitante[] }
     expect(lineaDeVida(rechazo, 'STAFF').eventos[0]?.motivo?.etiqueta).toBe('Motivo del rechazo')
     expect(lineaDeVida(rechazo, 'SOLICITANTE').eventos[0]?.motivo?.etiqueta).toBe('Motivo del rechazo')
+  })
+})
+
+describe('lineaDeVida · camino por categoría (Fase 8 · requisito 3)', () => {
+  it.each<Categoria>(['PODCAST', 'VIDEO'])('%s: 5 pasos, con la edición entre la producción y la entrega', (categoria) => {
+    expect(lineaDeVida({ categoria, estado: 'Recibido', logs: [] }, 'SOLICITANTE').pasos.map((p) => p.estado)).toEqual([
+      'Recibido',
+      'Validado',
+      'En Producción',
+      'Edición y postproducción',
+      'Entregado',
+    ])
+  })
+
+  it.each<Categoria>(['ESPACIOS', 'STREAMING', 'ASESORIAS'])('%s: 4 pasos, sin la edición', (categoria) => {
+    expect(lineaDeVida({ categoria, estado: 'Recibido', logs: [] }, 'SOLICITANTE').pasos.map((p) => p.estado)).toEqual([
+      'Recibido',
+      'Validado',
+      'En Producción',
+      'Entregado',
+    ])
+  })
+
+  it('en edición: los tres primeros pasos completados, la edición en curso y la entrega pendiente', () => {
+    const linea = lineaDeVida({
+      categoria: 'VIDEO',
+      estado: 'Edición y postproducción',
+      logs: [log('Recibido', 'Validado', 12), log('Validado', 'En Producción', 14), log('En Producción', 'Edición y postproducción', 15)],
+    }, 'SOLICITANTE')
+
+    expect(situaciones(linea)).toEqual(['completado', 'completado', 'completado', 'actual', 'pendiente'])
+    expect(linea.desvio).toBeNull()
+    expect(linea.eventos.map((e) => e.actor)).toEqual(['Staff Estudio C', 'Staff Estudio C', 'Staff Estudio C'])
+  })
+
+  it.each(CATEGORIAS)('%s: cada par consecutivo del camino es una transición que aplica a la categoría', (categoria) => {
+    const camino = caminoDe(categoria)
+    for (let i = 1; i < camino.length; i += 1) {
+      const desde = camino[i - 1]
+      const hacia = camino[i]
+      expect(TRANSICIONES.some((t) => t.origen === desde && t.destino === hacia && transicionAplicaALaCategoria(t.id, categoria))).toBe(true)
+    }
   })
 })
 

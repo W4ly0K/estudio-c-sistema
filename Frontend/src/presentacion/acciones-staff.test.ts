@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import type { Categoria } from '../api/esquemas'
 import { ESTADOS, type Estado } from '../api/maquina-estados'
 import type { DestinoDelTablero } from '../api/solicitudes'
 import { MENSAJE_FIN_NO_POSTERIOR } from '../api/mensajes'
@@ -33,6 +34,7 @@ const ACCIONES_STAFF: readonly AccionDelStaff[] = [
   'FINALIZAR',
   'PROPONER_REPROGRAMACION',
   'CERRAR_NO_ATENDIDA',
+  'INICIAR_EDICION',
 ]
 
 describe('accionesDelStaff (6.5.3 · DA1)', () => {
@@ -45,12 +47,13 @@ describe('accionesDelStaff (6.5.3 · DA1)', () => {
     ['Rechazado', []],
     ['Cancelado por el Usuario', []],
     ['No atendida', []],
-  ])('en "%s" ofrece %j', (estado, esperadas) => {
-    expect(accionesDelStaff(estado).map((t) => t.accion)).toEqual(esperadas)
+    ['Edición y postproducción', []],
+  ])('(ESPACIOS) en "%s" ofrece %j', (estado, esperadas) => {
+    expect(accionesDelStaff(estado, 'ESPACIOS').map((t) => t.accion)).toEqual(esperadas)
   })
 
   it('ofrece las seis del Staff y ninguna del solicitante; solo T5 sale del canal del PATCH (DR2)', () => {
-    const todas = ESTADOS.flatMap((estado) => accionesDelStaff(estado))
+    const todas = ESTADOS.flatMap((estado) => accionesDelStaff(estado, 'ESPACIOS'))
     expect(todas.every((t) => t.rol === 'STAFF')).toBe(true)
     expect(new Set(todas.map((t) => t.id))).toEqual(new Set(['T1', 'T2', 'T4', 'T5', 'T9', 'T10']))
     expect(todas.filter((t) => !porElTablero(t)).map((t) => t.id)).toEqual(['T5'])
@@ -61,10 +64,37 @@ describe('accionesDelStaff (6.5.3 · DA1)', () => {
   })
 })
 
+describe('accionesDelStaff por categoría (Fase 8 · requisito 3)', () => {
+  it.each<Categoria>(['PODCAST', 'VIDEO'])('%s: en producción solo "Pasar a edición" (T11); en edición, la entrega (T12)', (categoria) => {
+    expect(accionesDelStaff('En Producción', categoria).map((t) => t.id)).toEqual(['T11'])
+    expect(accionesDelStaff('Edición y postproducción', categoria).map((t) => t.id)).toEqual(['T12'])
+  })
+
+  it.each<Categoria>(['ESPACIOS', 'STREAMING', 'ASESORIAS'])('%s: en producción, la entrega directa (T9); nunca la edición', (categoria) => {
+    expect(accionesDelStaff('En Producción', categoria).map((t) => t.id)).toEqual(['T9'])
+    expect(accionesDelStaff('Edición y postproducción', categoria)).toEqual([])
+  })
+
+  it('T11 y T12 viajan por el PATCH del tablero, como T4 y T9', () => {
+    const conEdicion = [...accionesDelStaff('En Producción', 'PODCAST'), ...accionesDelStaff('Edición y postproducción', 'PODCAST')]
+    expect(conEdicion.map((t) => t.id)).toEqual(['T11', 'T12'])
+    expect(conEdicion.every((t) => porElTablero(t))).toBe(true)
+  })
+
+  it('"Pasar a edición": nombra el radicado y la franja, avisa que queda libre y no promete avisos', () => {
+    const textos = textosDelStaff('INICIAR_EDICION', 'EC-7', 'FRANJA')
+    expect(textos).toMatchObject({ boton: 'Pasar a edición', confirmar: 'Sí, pasar a edición', irreversible: false })
+    expect(textos.descripcion).toContain('EC-7')
+    expect(textos.descripcion).toContain('FRANJA')
+    expect(textos.descripcion).toMatch(/queda libre/)
+    expect(textos.descripcion).not.toMatch(/notific|correo|avisar|avisará/i)
+  })
+})
+
 describe('accionesVisiblesDelStaff (Fase 7 · T10)', () => {
   const ahora = new Date('2026-10-20T14:00:00.000Z')
   const visibles = (estado: Estado, inicioIso: string) =>
-    accionesVisiblesDelStaff(estado, inicioIso, ahora).map((t) => t.accion)
+    accionesVisiblesDelStaff(estado, 'ESPACIOS', inicioIso, ahora).map((t) => t.accion)
 
   it('con la franja por delante no ofrece "Cerrar como no atendida" (el servidor la rechazaría)', () => {
     expect(visibles('Recibido', '2026-10-20T14:00:01.000Z')).toEqual(['APROBAR', 'RECHAZAR'])
@@ -81,7 +111,7 @@ describe('accionesVisiblesDelStaff (Fase 7 · T10)', () => {
 
   it('solo filtra T10: en los demás estados es idéntica a accionesDelStaff', () => {
     for (const estado of ESTADOS.filter((e) => e !== 'Recibido')) {
-      expect(visibles(estado, '2026-10-01T09:00:00-05:00')).toEqual(accionesDelStaff(estado).map((t) => t.accion))
+      expect(visibles(estado, '2026-10-01T09:00:00-05:00')).toEqual(accionesDelStaff(estado, 'ESPACIOS').map((t) => t.accion))
     }
   })
 
@@ -140,7 +170,7 @@ describe('textosDelStaff: textos honestos', () => {
   })
 
   it('el aviso de éxito nombra el destino aplicado, también el de T5', () => {
-    expect(textoExito('Validado')).toBe('La solicitud pasó a "Validado".')
+    expect(textoExito('Validado')).toBe('La solicitud pasó a "Revisado y aprobado".')
     expect(textoExito('Pendiente de Reprogramación')).toBe('La solicitud pasó a "Pendiente de Reprogramación".')
   })
 })
@@ -175,17 +205,17 @@ describe('razonBloqueoDelStaff (Fase 7 · B3)', () => {
 
 describe('Validar con ajustes (Fase 7 · 7B.3 · PRD v2.2 §5.6)', () => {
   const opciones = (estado: Estado) =>
-    opcionesDelStaff(accionesDelStaff(estado)).map((o) => `${o.transicion.id}${o.ajustar ? '+ajustes' : ''}`)
+    opcionesDelStaff(accionesDelStaff(estado, 'ESPACIOS')).map((o) => `${o.transicion.id}${o.ajustar ? '+ajustes' : ''}`)
 
   it('es una variante de T1, justo después de "Validar"; no es una transición nueva', () => {
     expect(opciones('Recibido')).toEqual(['T1', 'T1+ajustes', 'T2', 'T10'])
-    const conAjustes = opcionesDelStaff(accionesDelStaff('Recibido')).filter((o) => o.ajustar)
+    const conAjustes = opcionesDelStaff(accionesDelStaff('Recibido', 'ESPACIOS')).filter((o) => o.ajustar)
     expect(conAjustes.map((o) => [o.transicion.accion, o.transicion.destino])).toEqual([['APROBAR', 'Validado']])
   })
 
   it('fuera de "Recibido" no aparece: las opciones son las transiciones, sin más', () => {
     for (const estado of ESTADOS.filter((e) => e !== 'Recibido')) {
-      expect(opciones(estado)).toEqual(accionesDelStaff(estado).map((t) => t.id))
+      expect(opciones(estado)).toEqual(accionesDelStaff(estado, 'ESPACIOS').map((t) => t.id))
     }
   })
 
@@ -193,13 +223,13 @@ describe('Validar con ajustes (Fase 7 · 7B.3 · PRD v2.2 §5.6)', () => {
     const textos = textosValidarConAjustes('EC-7', 'FRANJA')
     expect(textos).toMatchObject({ boton: 'Validar con ajustes', confirmar: 'Sí, validar con ajustes', irreversible: false })
     expect(textos.descripcion).toContain('EC-7')
-    expect(textos.descripcion).toContain('"Validado"')
+    expect(textos.descripcion).toContain('"Revisado y aprobado"')
     expect(textos.descripcion).toContain('FRANJA')
     expect(textos.descripcion).not.toMatch(/notific|correo|avisar|avisará/i)
   })
 
   it('textosDeLaOpcion elige entre los de la transición y los del ajuste', () => {
-    const [directa, ajuste] = opcionesDelStaff(accionesDelStaff('Recibido'))
+    const [directa, ajuste] = opcionesDelStaff(accionesDelStaff('Recibido', 'ESPACIOS'))
     expect(directa && textosDeLaOpcion(directa, 'EC-7', 'F').boton).toBe('Validar')
     expect(ajuste && textosDeLaOpcion(ajuste, 'EC-7', 'F').boton).toBe('Validar con ajustes')
   })

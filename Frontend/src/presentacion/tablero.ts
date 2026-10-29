@@ -14,6 +14,8 @@ export const COLUMNAS_ACTIVAS = [
   'Validado',
   'Pendiente de Reprogramación',
   'En Producción',
+  // Fase 8: la edición sigue a la producción en el flujo de lectura del Staff.
+  'Edición y postproducción',
 ] as const satisfies readonly Estado[]
 
 /** Lo mínimo que se necesita para agrupar y ordenar (genérica: se prueba sin el esquema completo). */
@@ -30,7 +32,7 @@ export interface ColumnaTablero<T> {
 }
 
 export interface Tablero<T> {
-  /** Siempre las 4 columnas, en orden, aunque estén vacías: el tablero no "salta". */
+  /** Siempre las 5 columnas, en orden, aunque estén vacías: el tablero no "salta". */
   readonly activas: readonly ColumnaTablero<T>[]
   /** Una columna por estado final, para la sección plegada. */
   readonly cerradas: readonly ColumnaTablero<T>[]

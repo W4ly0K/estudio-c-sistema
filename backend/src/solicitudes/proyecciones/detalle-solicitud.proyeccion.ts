@@ -22,6 +22,8 @@ export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
   // Fase 7 · PRD v2.2 §5.1: dónde ocurre la reserva y, en una propuesta (CA-10), dónde ocurriría.
   sub_espacio: true,
   sub_espacio_propuesto: true,
+  // Fase 8 · requisito 4: el Staff ve lo que entregó.
+  enlace_entrega: true,
   usuario: { select: { id_usuario: true, nombre: true, correo: true, rol: true } },
   recursos: {
     select: {
@@ -59,6 +61,8 @@ export const SELECT_DETALLE_SOLICITANTE = Prisma.validator<Prisma.SolicitudSelec
   // Fase 7 · B3/B4: el solicitante ve su sub-espacio y, para decidir T7/T8, el propuesto.
   sub_espacio: true,
   sub_espacio_propuesto: true,
+  // Fase 8 · requisito 4: el solicitante abre su producto final (la vista lo pinta de forma segura).
+  enlace_entrega: true,
   recursos: {
     select: { cantidad_solicitada: true, recurso: { select: { nombre: true } } },
   },

@@ -7,6 +7,7 @@ import { TEXTO_SIN_CONEXION } from './api/errores'
 import type { DetalleSolicitante } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
 import { formatearFranja } from './fechas/bogota'
+import { TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RUTA_DETALLE, RUTA_MIS_SOLICITUDES } from './rutas'
 import { DETALLE_SOLICITANTE, LOG, apiFalsa } from './test/fixtures-api'
@@ -59,7 +60,7 @@ describe('DetalleSolicitud (B3)', () => {
     const camino = within(linea)
       .getAllByRole('listitem')
       .filter((li) => li.hasAttribute('data-situacion'))
-    expect(camino.map((li) => li.getAttribute('data-situacion'))).toEqual(['completado', 'actual', 'pendiente', 'pendiente'])
+    expect(camino.map((li) => li.getAttribute('data-situacion'))).toEqual(['completado', 'actual', 'pendiente', 'pendiente', 'pendiente'])
     expect(camino[1]).toHaveAttribute('aria-current', 'step')
     expect(camino[1]).toHaveTextContent('en curso')
   })
@@ -69,7 +70,7 @@ describe('DetalleSolicitud (B3)', () => {
 
     const historial = await screen.findByRole('region', { name: 'Historial de cambios' })
     expect(within(historial).getByText('Solicitud radicada')).toBeInTheDocument()
-    expect(within(historial).getByText('Recibido → Validado')).toBeInTheDocument()
+    expect(within(historial).getByText('Recibido → Confirmado')).toBeInTheDocument()
     expect(within(historial).getByText('Por: Staff Estudio C')).toBeInTheDocument()
     expect(within(historial).getByText('sábado, 10 de octubre de 2026 · 10:20')).toBeInTheDocument()
   })
@@ -142,6 +143,16 @@ describe('DetalleSolicitud (B3)', () => {
     expect(within(propuesta).getByText('(el mismo sub-espacio)')).toBeInTheDocument()
     const lugares = within(propuesta).getAllByText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO, { exact: false })
     expect(lugares[0]).not.toHaveClass('line-through')
+  })
+
+  it('Fase 8 · requisito 4: la ficha de una entrega muestra el producto final con apertura segura', async () => {
+    mostrar(responde({ ...DETALLE_SOLICITANTE, estado: 'Entregado', categoria: 'PODCAST', enlace_entrega: 'https://youtu.be/abc123' }))
+
+    await screen.findByRole('heading', { name: 'EC-2026-0142' })
+    expect(screen.getByText(TEXTO_PRODUCTO_FINAL)).toBeInTheDocument()
+    const enlace = screen.getByRole('link', { name: 'Abrir el producto final de EC-2026-0142 (se abre en una pestaña nueva)' })
+    expect(enlace).toHaveAttribute('target', '_blank')
+    expect(enlace).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('404 (ajena o inexistente, idénticas): "No encontramos esa solicitud", sin decir cuál de las dos', async () => {

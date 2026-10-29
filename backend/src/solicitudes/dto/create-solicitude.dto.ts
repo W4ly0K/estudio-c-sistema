@@ -2,6 +2,7 @@ import { IsString, IsNotEmpty, IsArray, ValidateNested, IsInt, Min, IsOptional, 
 import { Type } from 'class-transformer';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client'; // <-- 1. Importamos los Enums de Prisma
 import { FechaConZonaHoraria } from '../../common/validadores/fecha-con-zona-horaria.decorator';
+import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO } from '../reglas/categorias';
 
 /**
  * Fase 7 · 7B.4 (ADR-007 SE10): un solo mensaje para las dos fallas del pipe (falta en una
@@ -53,7 +54,7 @@ export class CreateSolicitudeDto {
   // UpdateSolicitudeDto lo hereda: PartialType le suma su @IsOptional y class-validator exige
   // que TODAS las condiciones se cumplan, así que en el PATCH solo se valida si viene (D-4).
   @ValidateIf(
-    (dto: CreateSolicitudeDto) => dto.categoria === CategoriaSolicitud.ESPACIOS || dto.sub_espacio !== undefined,
+    (dto: CreateSolicitudeDto) => dto.categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO || dto.sub_espacio !== undefined,
   )
   @IsEnum(SubEspacio, { message: MENSAJE_SUBESPACIO_DE_CREACION })
   sub_espacio?: SubEspacio;

@@ -32,6 +32,7 @@ const DETALLE_SOLICITANTE = {
   es_urgencia: true,
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
+  enlace_entrega: null,
   recursos: [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }],
   logs: [LOG],
 }
@@ -51,6 +52,11 @@ describe('Esquemas del contrato (DC1)', () => {
   describe('detalle del solicitante (README §8)', () => {
     it('acepta el ejemplo del contrato', () => {
       expect(acepta(esquemaDetalleSolicitante, DETALLE_SOLICITANTE)).toBe(true)
+    })
+
+    it('Fase 8 · acepta una entrega con el enlace del producto final', () => {
+      const entregada = { ...DETALLE_SOLICITANTE, estado: 'Entregado', enlace_entrega: 'https://youtu.be/abc123' }
+      expect(acepta(esquemaDetalleSolicitante, entregada)).toBe(true)
     })
 
     it('acepta una propuesta pendiente con fechas en hora de Bogotá y el motivo del Staff', () => {

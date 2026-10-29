@@ -1,4 +1,5 @@
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
+import { etiquetaEstado } from './etiquetas'
 
 /**
  * Acciones del solicitante en B3/B4 (T3, T6, T7 y T8). Se DERIVAN de la tabla de la
@@ -55,7 +56,7 @@ export function textosDe(accion: AccionSolicitante, radicado: string, franjaProp
       return {
         boton: 'Aceptar la nueva franja',
         titulo: 'Aceptar la propuesta',
-        descripcion: `El radicado ${radicado} vuelve a "Validado" con la franja propuesta${franjaPropuesta === null ? '' : ` (${franjaPropuesta})`} y la franja original se libera. El Estudio C confirma que la nueva franja siga disponible en el momento de aceptar.`,
+        descripcion: `El radicado ${radicado} vuelve a "${etiquetaEstado('Validado', 'SOLICITANTE')}" con la franja propuesta${franjaPropuesta === null ? '' : ` (${franjaPropuesta})`} y la franja original se libera. El Estudio C confirma que la nueva franja siga disponible en el momento de aceptar.`,
         confirmar: 'Sí, aceptar la propuesta',
         irreversible: false,
       }

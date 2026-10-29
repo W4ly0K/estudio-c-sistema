@@ -21,7 +21,8 @@ import {
   type FranjaSolicitada,
   MENSAJES_ERROR_HORARIO,
 } from './reglas/horario.validator';
-import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './reglas/estados';
+import { FILTRO_OCUPA_FRANJA, ocupaFranja } from './reglas/estados';
+import { POLITICA_POR_CATEGORIA, transicionAplicaALaCategoria } from './reglas/categorias';
 import { type ErrorSubEspacioAlRadicar, subEspacioAlRadicar, subEspaciosEnConflicto } from './reglas/sub-espacios';
 import {
   ESTADO_INICIAL,
@@ -55,6 +56,26 @@ export const MENSAJES_TRANSICION_INVALIDA: Record<MotivoTransicionInvalida, stri
   TRANSICION_NO_DEFINIDA: 'Transición de estado no permitida desde el estado actual.',
   ROL_NO_AUTORIZADO: 'Esta transición le corresponde al solicitante.',
 };
+
+/** Fase 8 · requisito 3: PODCAST y VIDEO no pueden saltar la edición (T9 prohibido). */
+export const MENSAJE_EDICION_OBLIGATORIA =
+  'Esta categoría pasa por "Edición y postproducción" antes de la entrega: mueva primero la solicitud a esa etapa.';
+
+/** Fase 8 · requisito 3: las demás categorías no pasan por edición (T11 y T12 no les aplican). */
+export const MENSAJE_EDICION_NO_APLICA =
+  'Esta categoría no pasa por "Edición y postproducción": la entrega se registra directamente desde "En Producción".';
+
+/** Fase 8 · requisito 4: el enlace del producto final solo acompaña una entrega (como E5). */
+export const MENSAJE_ENLACE_SOLO_AL_ENTREGAR =
+  'El enlace del producto final solo se envía al marcar la solicitud como "Entregado".';
+
+/** Fase 8 · requisito 4: PODCAST, VIDEO y STREAMING se entregan con su enlace. */
+export const MENSAJE_ENLACE_OBLIGATORIO =
+  'Para entregar esta solicitud se requiere el enlace del producto final (https://).';
+
+/** Fase 8 · requisito 4 (coherente con SE10): ESPACIOS y ASESORIAS no tienen producto en línea. */
+export const MENSAJE_ENLACE_NO_APLICA =
+  'Esta categoría no tiene un producto final en línea: la entrega se registra sin enlace.';
 
 /** E1: proponer una nueva franja necesita su propio endpoint (CA-10), no el tablero. */
 export const MENSAJE_USAR_REPROGRAMACION =
@@ -211,6 +232,8 @@ const ACCIONES_DEL_TABLERO: ReadonlySet<Accion> = new Set<Accion>([
   'FINALIZAR',
   // Fase 7 · T10: sin cuerpo propio (solo el destino), por eso viaja por el PATCH como T2 (NA2).
   'CERRAR_NO_ATENDIDA',
+  // Fase 8 · T11: sin cuerpo propio (solo el destino), por el PATCH como T4.
+  'INICIAR_EDICION',
 ]);
 
 @Injectable()
@@ -314,7 +337,8 @@ export class SolicitudesService {
   ): Promise<boolean> {
     const conflicto = await this.prisma.solicitud.findFirst({
       where: {
-        estado: { notIn: [...ESTADOS_QUE_LIBERAN_FRANJA] },
+        // Fase 8: la regla de ocupación por estado Y categoría (estados.ts), espejo del motor.
+        ...FILTRO_OCUPA_FRANJA,
         sub_espacio: { in: [...subEspaciosEnConflicto(subEspacio)] },
         AND: [{ fecha_inicio: { lt: franja.fin } }, { fecha_fin: { gt: franja.inicio } }],
         ...(excluirRadicado !== undefined ? { NOT: { radicado: excluirRadicado } } : {}),
@@ -443,9 +467,30 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
     }
 
+    // --- 1b. Fase 8 · requisito 4: el enlace solo acompaña una entrega real (como E5). `null`
+    // cuenta como ausente: así nunca llega al motor un "Entregado" sin enlace por esa vía.
+    const enlace = updateSolicitudeDto.enlace_entrega ?? undefined;
+    const entrega = cambiaEstado && estadoFinal === 'Entregado';
+    if (enlace !== undefined && !entrega) {
+      throw new BadRequestException(MENSAJE_ENLACE_SOLO_AL_ENTREGAR);
+    }
+
     // --- 2. Máquina de estados (Fase 5): solo transiciones legales del STAFF y solo
     // las del tablero. Pedir el estado actual no es una transición (MISMO_ESTADO = sin cambio).
-    const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal) : undefined;
+    const accion = cambiaEstado ? this.autorizarTransicionDelStaff(existente.estado, estadoFinal, existente.categoria) : undefined;
+
+    // --- 2c. Fase 8 · requisito 4: si la entrega exige o prohíbe el enlace lo decide la categoría
+    // GUARDADA. Va después de la máquina: un PODCAST que intenta T9 recibe primero el 409 de la
+    // edición obligatoria, que es lo que de verdad le falta.
+    if (entrega) {
+      const regla = POLITICA_POR_CATEGORIA[existente.categoria].enlaceAlEntregar;
+      if (regla === 'OBLIGATORIO' && enlace === undefined) {
+        throw new BadRequestException(MENSAJE_ENLACE_OBLIGATORIO);
+      }
+      if (regla === 'PROHIBIDO' && enlace !== undefined) {
+        throw new BadRequestException(MENSAJE_ENLACE_NO_APLICA);
+      }
+    }
 
     // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
     // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
@@ -498,10 +543,11 @@ export class SolicitudesService {
 
     // --- 6. CA-06, capa amable: solo si el resultado ocupa la franja y las fechas o el
     // sub-espacio se movieron (Fase 7: pasar de la cabina al completo puede chocar sin tocar
-    // la hora). D1 eliminó la reactivación: los estados que liberan la franja son finales,
-    // así que un cambio de estado ya no puede volver a ocuparla. Sin auto-colisión.
+    // la hora). D1 eliminó la reactivación, y el único estado no final que libera (Fase 8:
+    // "Edición y postproducción") solo conduce a otro que, para su categoría, tampoco ocupa: un
+    // cambio de estado no puede volver a ocupar una franja. Sin auto-colisión.
     if (
-      ocupaFranja(estadoFinal) &&
+      ocupaFranja(estadoFinal, existente.categoria) &&
       (cambianFechas || cambiaSubEspacio) &&
       (await this.hayTraslape(franja, subEspacioFinal, radicado))
     ) {
@@ -511,11 +557,12 @@ export class SolicitudesService {
     // --- 7. Un único conjunto de cambios: estado y fechas se aplican JUNTOS (U5).
     const { recursos } = updateSolicitudeDto;
     const data: Prisma.SolicitudUpdateManyMutationInput = {
-      ...(updateSolicitudeDto.categoria !== undefined ? { categoria: updateSolicitudeDto.categoria } : {}),
       ...(updateSolicitudeDto.proposito !== undefined ? { proposito: updateSolicitudeDto.proposito } : {}),
       ...cambiosDeFranja,
       ...(cambiaSubEspacio ? { sub_espacio: subEspacioFinal } : {}),
       ...(cambiaEstado ? { estado: estadoFinal } : {}),
+      // Fase 8 · requisito 4: el enlace se escribe con su entrega, en el mismo compare-and-set.
+      ...(entrega && enlace !== undefined ? { enlace_entrega: enlace } : {}),
     };
 
     // Nada que escribir (por ejemplo, pedir el estado actual): sin transacción ni bloqueos.
@@ -923,7 +970,7 @@ export class SolicitudesService {
    * Devuelve la acción autorizada o lanza: 403 si la transición es del solicitante;
    * 409 si el estado no la permite o si debe ir por su endpoint de comando (CA-10).
    */
-  private autorizarTransicionDelStaff(origen: string, destino: string): Accion {
+  private autorizarTransicionDelStaff(origen: string, destino: string, categoria: CategoriaSolicitud): Accion {
     const resultado = evaluarTransicion(origen, destino, RolUsuario.STAFF);
     if (!resultado.permitida) {
       if (resultado.motivo === 'ROL_NO_AUTORIZADO') {
@@ -933,6 +980,12 @@ export class SolicitudesService {
     }
     if (!ACCIONES_DEL_TABLERO.has(resultado.transicion.accion)) {
       throw new ConflictException(MENSAJE_USAR_REPROGRAMACION);
+    }
+    // Fase 8 · requisito 3: la máquina dijo que el paso existe; la categoría decide si le aplica.
+    if (!transicionAplicaALaCategoria(resultado.transicion.id, categoria)) {
+      throw new ConflictException(
+        POLITICA_POR_CATEGORIA[categoria].pasaPorEdicion ? MENSAJE_EDICION_OBLIGATORIA : MENSAJE_EDICION_NO_APLICA,
+      );
     }
     return resultado.transicion.accion;
   }

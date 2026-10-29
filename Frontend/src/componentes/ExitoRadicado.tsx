@@ -50,7 +50,7 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
       </div>
 
       {solicitud.es_urgencia && (
-        <div data-aviso="urgencia" className="mb-5 p-3 border-2 border-dashed border-primary rounded-sm text-left text-primary">
+        <div data-aviso="urgencia" className="mb-5 p-3 border-2 border-dashed border-urgencia rounded-sm text-left text-urgencia">
           <strong>
             <span aria-hidden="true">⚠ </span>Urgencia:
           </strong>{' '}
@@ -79,7 +79,7 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
         <div className="flex justify-between items-center gap-3">
           <dt className="text-gray-500">Estado inicial</dt>
           <dd>
-            <InsigniaEstado estado={solicitud.estado} />
+            <InsigniaEstado estado={solicitud.estado} perspectiva="SOLICITANTE" />
           </dd>
         </div>
       </dl>

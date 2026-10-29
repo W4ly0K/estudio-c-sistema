@@ -1,4 +1,6 @@
-import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
+import { SubEspacio, type CategoriaSolicitud } from '@prisma/client';
+// Fase 8 · 8.1: la regla de SE10 vive en la fuente única de las reglas por categoría.
+import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO } from './categorias';
 
 /**
  * Sub-espacios del Estudio C (PRD v2.2 §5.1, ADR-007 SE1, SE2 y SE4). Módulo puro: no
@@ -17,12 +19,6 @@ export const SUB_ESPACIOS = Object.freeze([
   SubEspacio.ESTUDIO_GRABACION,
   SubEspacio.ESTUDIO_COMPLETO,
 ] as const);
-
-/**
- * Fase 7 · 7B.4 (ADR-007 SE10, directriz del 26/10/2026): la única categoría en la que el
- * solicitante ELIGE el sub-espacio al radicar es la solicitud de espacio físico.
- */
-export const CATEGORIA_QUE_ELIGE_SUB_ESPACIO = CategoriaSolicitud.ESPACIOS;
 
 /**
  * SE10: lo que reservan las demás categorías (servicios) al radicar. Es una REGLA de negocio,

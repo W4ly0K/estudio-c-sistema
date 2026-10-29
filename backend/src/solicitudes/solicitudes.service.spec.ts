@@ -11,6 +11,11 @@ import {
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
   MENSAJE_CANCELAR_EN_PRODUCCION,
+  MENSAJE_EDICION_NO_APLICA,
+  MENSAJE_EDICION_OBLIGATORIA,
+  MENSAJE_ENLACE_NO_APLICA,
+  MENSAJE_ENLACE_OBLIGATORIO,
+  MENSAJE_ENLACE_SOLO_AL_ENTREGAR,
   MENSAJE_FRANJA_VENCIDA,
   MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
   MENSAJE_NO_ATENDIDA_FRANJA_FUTURA,
@@ -73,6 +78,8 @@ const solicitudBase: Solicitud = {
   // Fase 7: lo histórico quedó en el completo (SE8); en "Recibido" no hay propuesta (M4).
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
+  // Fase 8 · requisito 4: sin enlace salvo en una entrega que lo exige.
+  enlace_entrega: null,
 };
 
 // Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
@@ -462,6 +469,18 @@ describe('SolicitudesService', () => {
         'uuid-atacante',
       );
     });
+
+    it('Fase 8 · H2 · defensa en profundidad: una categoría que se saltó el pipe nunca se escribe', async () => {
+      const dtoContaminado = {
+        estado: 'Validado',
+        categoria: CategoriaSolicitud.PODCAST,
+      } as unknown as UpdateSolicitudeDto;
+
+      await service.update('EC-2099-0001', dtoContaminado, 'uuid-staff');
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(prismaMock.solicitud.updateMany.mock.calls)).not.toContain('PODCAST');
+    });
   });
 
   describe('update() — horario y CA-06 (Fase 4.5)', () => {
@@ -562,6 +581,128 @@ describe('SolicitudesService', () => {
       expect(resultado.mensaje).toBe('Estado actualizado y auditado correctamente en la bitácora');
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
+    });
+
+    // Fase 8 · requisito 3: el camino de entrega depende de la categoría GUARDADA.
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-1 · %s: el salto directo T9 (En Producción → Entregado) → 409 de edición obligatoria, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Entregado' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_OBLIGATORIA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-2 · %s: T11 (En Producción → Edición y postproducción) se escribe y se audita, sin consultar CA-06',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        await actualizar({ estado: 'Edición y postproducción' });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Edición y postproducción' });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ estado_anterior: 'En Producción', estado_nuevo: 'Edición y postproducción' }),
+        });
+      },
+    );
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.STREAMING, CategoriaSolicitud.ASESORIAS])(
+      'E-3 · %s: T11 no le aplica → 409, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Edición y postproducción' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_NO_APLICA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-4 · %s: T12 (Edición y postproducción → Entregado) entrega sin consultar CA-06 (no vuelve a ocupar la franja)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'Edición y postproducción' }));
+
+        await actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Entregado', enlace_entrega: ENLACE });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      },
+    );
+
+    // Fase 8 · requisito 4: el enlace del producto final, según la categoría GUARDADA.
+    const ENLACE = 'https://youtu.be/abc123';
+    /** Desde dónde se entrega cada categoría: con edición, T12; sin ella, T9. */
+    const origenDeLaEntrega = (categoria: CategoriaSolicitud): string =>
+      categoria === CategoriaSolicitud.PODCAST || categoria === CategoriaSolicitud.VIDEO ? 'Edición y postproducción' : 'En Producción';
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'EN-1 · %s: entregar sin enlace → 400 obligatorio, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: origenDeLaEntrega(categoria) }));
+
+        const peticion = actualizar({ estado: 'Entregado' });
+
+        await expect(peticion).rejects.toBeInstanceOf(BadRequestException);
+        await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_OBLIGATORIO);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it('EN-2 · STREAMING: T9 con enlace lo escribe junto con el estado, en el mismo compare-and-set', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.STREAMING, estado: 'En Producción' }));
+
+      await actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+
+      expect(dataDelUpdate()).toEqual({ estado: 'Entregado', enlace_entrega: ENLACE });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])(
+      'EN-3 · %s: entregar con enlace → 400 (no tiene producto en línea); sin enlace, se entrega',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+        await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_NO_APLICA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+
+        await actualizar({ estado: 'Entregado' });
+        expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
+      },
+    );
+
+    it.each([
+      ['T11 (pasar a edición)', CategoriaSolicitud.VIDEO, 'En Producción', 'Edición y postproducción'],
+      ['T4 (iniciar producción)', CategoriaSolicitud.PODCAST, 'Validado', 'En Producción'],
+    ])('EN-4 · un enlace con %s → 400: solo acompaña una entrega', async (_caso, categoria, estado, destino) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado }));
+
+      const peticion = actualizar({ estado: destino, enlace_entrega: ENLACE });
+
+      await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_SOLO_AL_ENTREGAR);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('EN-5 · un enlace `null` cuenta como ausente: en VIDEO responde el 400 de obligatorio, no un 500 del motor', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.VIDEO, estado: 'Edición y postproducción' }));
+      const dto = { estado: 'Entregado', enlace_entrega: null } as unknown as UpdateSolicitudeDto;
+
+      await expect(actualizar(dto)).rejects.toThrow(MENSAJE_ENLACE_OBLIGATORIO);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('EN-6 · un PODCAST que intenta T9 recibe primero el 409 de edición obligatoria (lo que de verdad le falta)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.PODCAST, estado: 'En Producción' }));
+
+      await expect(actualizar({ estado: 'Entregado' })).rejects.toThrow(MENSAJE_EDICION_OBLIGATORIA);
     });
 
     it.each([

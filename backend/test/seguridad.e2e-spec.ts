@@ -172,6 +172,16 @@ describe('Cadena de seguridad Zero Trust (e2e)', () => {
     });
   });
 
+  it('13b. Fase 8 · H2: PATCH con categoria en el body → 400 (la categoría no cambia después de radicar)', async () => {
+    const respuesta = await request(app.getHttpServer())
+      .patch('/solicitudes/EC-2099-0001')
+      .set('Authorization', bearer(firmar('uuid-staff', RolUsuario.STAFF)))
+      .send({ estado: 'Validado', categoria: CategoriaSolicitud.PODCAST })
+      .expect(400);
+
+    expect(JSON.stringify(respuesta.body)).toContain('property categoria should not exist');
+  });
+
   describe('Propiedad del radicado — Fase 2 (ADR-002)', () => {
     interface ArgsFindFirst {
       where: unknown;

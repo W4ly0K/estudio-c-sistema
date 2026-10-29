@@ -1,4 +1,4 @@
-import { RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import {
   ACCIONES,
   ESTADO_INICIAL,
@@ -15,6 +15,7 @@ import {
   type ResultadoTransicion,
 } from './maquina-estados';
 import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './estados';
+import { transicionAplicaALaCategoria } from './categorias';
 
 const { STAFF, SOLICITANTE } = RolUsuario;
 const ROLES = [STAFF, SOLICITANTE] as const;
@@ -36,7 +37,13 @@ const DIAGRAMA: ReadonlyArray<readonly [IdTransicion, Accion, Estado, Estado, Ro
   ['T9', 'FINALIZAR', 'En Producción', 'Entregado', STAFF],
   // Fase 7 · PRD v2.2 §8.3 y ADR-007 NA2 (Q-B1): cierre de una solicitud vencida sin atender.
   ['T10', 'CERRAR_NO_ATENDIDA', 'Recibido', 'No atendida', STAFF],
+  // Fase 8 · requisito 3 (directriz del tutor): la etapa de edición de PODCAST y VIDEO. Qué
+  // categoría puede usar cada una lo decide categorias.ts (transicionAplicaALaCategoria).
+  ['T11', 'INICIAR_EDICION', 'En Producción', 'Edición y postproducción', STAFF],
+  ['T12', 'FINALIZAR', 'Edición y postproducción', 'Entregado', STAFF],
 ];
+
+const CATEGORIAS = Object.values(CategoriaSolicitud);
 
 /** Finales según el diagrama (estados que solo conducen al nodo final). */
 const FINALES_ESPERADOS: readonly Estado[] = ['Entregado', 'Rechazado', 'Cancelado por el Usuario', 'No atendida'];
@@ -78,16 +85,17 @@ const COMBINACIONES_ACCION: Array<[Accion, Estado, RolUsuario]> = ACCIONES.flatM
 );
 
 describe('maquina-estados: la tabla coincide con el diagrama', () => {
-  it('TRANSICIONES es exactamente T1–T10 del diagrama, en orden', () => {
+  it('TRANSICIONES es exactamente T1–T12 del diagrama, en orden', () => {
     expect(TRANSICIONES.map((t) => [t.id, t.accion, t.origen, t.destino, t.rol])).toEqual(DIAGRAMA);
   });
 
-  it('declara los 8 estados del PRD v2.2 y las 9 acciones, sin duplicados', () => {
+  it('declara los 9 estados (PRD v2.2 y Fase 8) y las 10 acciones, sin duplicados', () => {
     expect(new Set(ESTADOS)).toEqual(
       new Set([
         'Recibido',
         'Validado',
         'En Producción',
+        'Edición y postproducción',
         'Entregado',
         'Rechazado',
         'Cancelado por el Usuario',
@@ -95,8 +103,8 @@ describe('maquina-estados: la tabla coincide con el diagrama', () => {
         'No atendida',
       ]),
     );
-    expect(new Set(ESTADOS).size).toBe(8);
-    expect(new Set(ACCIONES).size).toBe(9);
+    expect(new Set(ESTADOS).size).toBe(9);
+    expect(new Set(ACCIONES).size).toBe(10);
   });
 
   it('los estados finales son Entregado, Rechazado, Cancelado por el Usuario y No atendida (D1: sin reactivación)', () => {
@@ -138,8 +146,17 @@ describe('maquina-estados: invariantes estructurales', () => {
     expect(new Set(TRANSICIONES.map((t) => t.accion))).toEqual(new Set(ACCIONES));
   });
 
-  it('reparto de roles: 6 transiciones del STAFF y 4 del SOLICITANTE (PRD §4 y v2.2 §8.3)', () => {
-    expect(TRANSICIONES.filter((t) => t.rol === STAFF).map((t) => t.id)).toEqual(['T1', 'T2', 'T4', 'T5', 'T9', 'T10']);
+  it('reparto de roles: 8 transiciones del STAFF y 4 del SOLICITANTE (PRD §4, v2.2 §8.3 y Fase 8)', () => {
+    expect(TRANSICIONES.filter((t) => t.rol === STAFF).map((t) => t.id)).toEqual([
+      'T1',
+      'T2',
+      'T4',
+      'T5',
+      'T9',
+      'T10',
+      'T11',
+      'T12',
+    ]);
     expect(TRANSICIONES.filter((t) => t.rol === SOLICITANTE).map((t) => t.id)).toEqual(['T3', 'T6', 'T7', 'T8']);
   });
 
@@ -159,32 +176,39 @@ describe('maquina-estados: invariantes estructurales', () => {
   });
 });
 
-describe('maquina-estados: coherencia con CA-06 (estados.ts)', () => {
-  it('todo estado que libera la franja es un estado final y existe en la máquina', () => {
+describe('maquina-estados: coherencia con CA-06 (estados.ts) por categoría', () => {
+  it('todo estado que libera la franja existe en la máquina', () => {
     for (const estado of ESTADOS_QUE_LIBERAN_FRANJA) {
       expect(esEstado(estado)).toBe(true);
-      expect(esEstadoFinal(estado)).toBe(true);
+    }
+  });
+
+  it('Fase 8: "Edición y postproducción" es el único estado NO final que libera la franja', () => {
+    expect(ESTADOS_QUE_LIBERAN_FRANJA.filter((estado) => !esEstadoFinal(estado))).toEqual(['Edición y postproducción']);
+  });
+
+  // Fase 8 · H1: la regla que reemplaza a "solo los finales liberan". Si una transición aplicable
+  // llevara de un estado que no ocupa a uno que ocupa, podría fallar con 23P01 para siempre.
+  it.each(CATEGORIAS)('%s: liberar es irreversible (ninguna transición aplicable vuelve a ocupar la franja)', (categoria) => {
+    for (const t of TRANSICIONES) {
+      if (transicionAplicaALaCategoria(t.id, categoria) && !ocupaFranja(t.origen, categoria)) {
+        expect([t.id, ocupaFranja(t.destino, categoria)]).toEqual([t.id, false]);
+      }
     }
   });
 
   it('D3: "Pendiente de Reprogramación" sigue ocupando su franja original', () => {
-    expect(ocupaFranja('Pendiente de Reprogramación')).toBe(true);
-  });
-
-  // Fase 7 · 7A.3: "No atendida" libera la franja en el código y en el WHERE de las dos
-  // restricciones por sub-espacio (migración 20261023120000), en el mismo commit.
-  it('solo Rechazado, Cancelado por el Usuario y No atendida liberan la franja; los demás la ocupan', () => {
-    expect(new Set(ESTADOS.filter((estado) => !ocupaFranja(estado)))).toEqual(
-      new Set(['Rechazado', 'Cancelado por el Usuario', 'No atendida']),
-    );
+    for (const categoria of CATEGORIAS) {
+      expect(ocupaFranja('Pendiente de Reprogramación', categoria)).toBe(true);
+    }
   });
 });
 
-describe('evaluarTransicion: las 128 combinaciones (8 × 8 × 2 roles)', () => {
-  it('genera exactamente 128 casos y solo 10 permitidos', () => {
-    expect(COMBINACIONES_TRANSICION).toHaveLength(128);
+describe('evaluarTransicion: las 162 combinaciones (9 × 9 × 2 roles)', () => {
+  it('genera exactamente 162 casos y solo 12 permitidos', () => {
+    expect(COMBINACIONES_TRANSICION).toHaveLength(162);
     const permitidas = COMBINACIONES_TRANSICION.filter(([o, d, r]) => evaluarTransicion(o, d, r).permitida);
-    expect(permitidas).toHaveLength(10);
+    expect(permitidas).toHaveLength(12);
   });
 
   it.each(COMBINACIONES_TRANSICION)('%s → %s como %s', (origen, destino, rol) => {
@@ -192,11 +216,11 @@ describe('evaluarTransicion: las 128 combinaciones (8 × 8 × 2 roles)', () => {
   });
 });
 
-describe('evaluarAccion: las 144 combinaciones (9 acciones × 8 estados × 2 roles)', () => {
-  it('genera exactamente 144 casos y solo 10 permitidos', () => {
-    expect(COMBINACIONES_ACCION).toHaveLength(144);
+describe('evaluarAccion: las 180 combinaciones (10 acciones × 9 estados × 2 roles)', () => {
+  it('genera exactamente 180 casos y solo 12 permitidos', () => {
+    expect(COMBINACIONES_ACCION).toHaveLength(180);
     const permitidas = COMBINACIONES_ACCION.filter(([a, o, r]) => evaluarAccion(a, o, r).permitida);
-    expect(permitidas).toHaveLength(10);
+    expect(permitidas).toHaveLength(12);
   });
 
   it.each(COMBINACIONES_ACCION)('%s desde %s como %s', (accion, origen, rol) => {
@@ -243,7 +267,7 @@ describe('fail-closed: estados que no pertenecen a la máquina', () => {
     }
   });
 
-  it('esEstado acepta solo los 8 nombres exactos', () => {
+  it('esEstado acepta solo los 9 nombres exactos', () => {
     expect(ESTADOS.every((estado) => esEstado(estado))).toBe(true);
     expect(DESCONOCIDOS.some((valor) => esEstado(valor))).toBe(false);
   });
@@ -267,9 +291,23 @@ describe('casos de negocio nombrados (lectura humana de la tabla)', () => {
     });
   });
 
-  it('la solicitud heredada en "En Producción" solo puede avanzar a Entregado (T9)', () => {
+  it('desde "En Producción" la máquina conoce dos salidas del STAFF, T11 y T9 (cuál aplica lo decide la categoría)', () => {
     const salidas = ESTADOS.filter((destino) => evaluarTransicion('En Producción', destino, STAFF).permitida);
-    expect(salidas).toEqual(['Entregado']);
+    expect(salidas).toEqual(['Edición y postproducción', 'Entregado']);
+  });
+
+  it('Fase 8 · T12 reutiliza FINALIZAR: "entregar" es la misma acción desde producción o desde edición', () => {
+    expect(resumir(evaluarAccion('FINALIZAR', 'En Producción', STAFF))).toEqual({ permitida: true, id: 'T9' });
+    expect(resumir(evaluarAccion('FINALIZAR', 'Edición y postproducción', STAFF))).toEqual({ permitida: true, id: 'T12' });
+  });
+
+  it('Fase 8 · desde "Edición y postproducción" solo se entrega (T12), y el solicitante ya no puede cancelar', () => {
+    const salidasStaff = ESTADOS.filter((destino) => evaluarTransicion('Edición y postproducción', destino, STAFF).permitida);
+    expect(salidasStaff).toEqual(['Entregado']);
+    expect(evaluarAccion('CANCELAR', 'Edición y postproducción', SOLICITANTE)).toEqual({
+      permitida: false,
+      motivo: 'TRANSICION_NO_DEFINIDA',
+    });
   });
 
   it('CA-10: el SOLICITANTE no puede proponer reprogramaciones ni el STAFF aceptarlas', () => {
