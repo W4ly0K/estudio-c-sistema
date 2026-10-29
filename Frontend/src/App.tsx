@@ -10,7 +10,7 @@ import TableroStaff from './TableroStaff';
 import { SoloRol } from './componentes/SoloRol';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
-import logoEstudioC from './assets/Logo_Estudio_C_3-01.png';
+import logoEstudioC from './assets/logo-estudio-c-horizontal.png';
 import { textoDeError } from './api/errores';
 import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
