@@ -7,11 +7,12 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { RecursosModule } from './recursos/recursos.module';
 import { SolicitudesModule } from './solicitudes/solicitudes.module';
 import { AuthModule } from './auth/auth.module';
+import { SaludModule } from './salud/salud.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
 @Module({
-  imports: [PrismaModule, UsuariosModule, RecursosModule, SolicitudesModule, AuthModule],
+  imports: [PrismaModule, UsuariosModule, RecursosModule, SolicitudesModule, AuthModule, SaludModule],
   controllers: [AppController],
   providers: [
     AppService,
