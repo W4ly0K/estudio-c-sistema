@@ -5,3 +5,7 @@ backend/prisma/migrations/**/*.sql text eol=lf
 # Dockerfile siempre en LF: con core.autocrlf=true, un checkout en Windows lo
 # dejaria en CRLF y las continuaciones de linea (\) de RUN arrastrarian el \r.
 backend/Dockerfile text eol=lf
+
+# .dockerignore en LF: evita depender de que Docker recorte el \r de cada patron
+# (con CRLF, ".env\r" podria no excluir .env del contexto de build).
+backend/.dockerignore text eol=lf

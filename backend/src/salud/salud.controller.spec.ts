@@ -6,6 +6,19 @@ import { SaludController } from './salud.controller';
 
 const reflector = new Reflector();
 
+/**
+ * Handler real, como lo entrega Nest con getHandler(): Reflector solo usa su identidad.
+ * Se lee desde el descriptor de la propiedad para no referenciar el método sin su
+ * instancia (regla unbound-method del lint).
+ */
+function handlerDe(metodo: keyof SaludController) {
+  const valor: unknown = Object.getOwnPropertyDescriptor(SaludController.prototype, metodo)?.value;
+  if (typeof valor !== 'function') {
+    throw new Error(`SaludController no define el método ${metodo}`);
+  }
+  return valor;
+}
+
 describe('SaludController', () => {
   let controller: SaludController;
 
@@ -22,7 +35,7 @@ describe('SaludController', () => {
   });
 
   it('el método es público (@Public)', () => {
-    expect(reflector.get<boolean | undefined>(IS_PUBLIC_KEY, SaludController.prototype.comprobar)).toBe(true);
+    expect(reflector.get<boolean | undefined>(IS_PUBLIC_KEY, handlerDe('comprobar'))).toBe(true);
   });
 
   it('la clase NO es pública: un endpoint nuevo aquí seguiría exigiendo JWT', () => {
@@ -31,7 +44,7 @@ describe('SaludController', () => {
 
   it('no declara @Roles: es una sonda de infraestructura, no una acción de negocio', () => {
     expect(
-      reflector.getAllAndOverride<unknown>(ROLES_KEY, [SaludController.prototype.comprobar, SaludController]),
+      reflector.getAllAndOverride<unknown>(ROLES_KEY, [handlerDe('comprobar'), SaludController]),
     ).toBeUndefined();
   });
 });
