@@ -1,0 +1,11 @@
+# Lo que nunca entra al contexto de build (ni a la imagen)
+node_modules
+dist
+coverage
+test
+scripts
+*.tsbuildinfo
+.env
+.env.*
+.git
+*.md

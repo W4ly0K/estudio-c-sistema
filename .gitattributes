@@ -1,3 +1,7 @@
 # Migraciones de Prisma siempre en LF: el checksum de migration.sql debe ser
 # identico en Windows, en el CI (Linux) y en _prisma_migrations (Fase 4.1).
 backend/prisma/migrations/**/*.sql text eol=lf
+
+# Dockerfile siempre en LF: con core.autocrlf=true, un checkout en Windows lo
+# dejaria en CRLF y las continuaciones de linea (\) de RUN arrastrarian el \r.
+backend/Dockerfile text eol=lf
