@@ -166,12 +166,14 @@ describe('SolicitudesService', () => {
   });
 
   describe('create() — anexo del solicitante (Fase 9 · R9-1)', () => {
-    const dtoServicio: CreateSolicitudeDto = {
+    // Objeto plano verificado con `satisfies` (no anotado con la clase): el spread de cada prueba
+    // no pierde ningún prototipo (typescript/no-misused-spread) y tsc sigue exigiendo la forma del DTO.
+    const dtoServicio = {
       categoria: CategoriaSolicitud.PODCAST,
       proposito: solicitudBase.proposito,
       fecha_inicio: solicitudBase.fecha_inicio,
       fecha_fin: solicitudBase.fecha_fin,
-    };
+    } satisfies CreateSolicitudeDto;
 
     beforeEach(() => {
       prismaMock.solicitud.findFirst.mockResolvedValue(null);
