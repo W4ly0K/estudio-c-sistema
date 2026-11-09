@@ -8,6 +8,7 @@ import { TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './componentes/ExitoRad
 import { TEXTO_LUGAR_DE_SERVICIOS } from './componentes/CampoSubEspacio'
 import type { SubEspacio } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
+import { TEXTO_ANEXO_INVALIDO, TEXTO_AYUDA_ANEXO, TEXTO_ETIQUETA_ANEXO } from './presentacion/anexo'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RECURSOS_RESUMEN, SOLICITUD, apiFalsa } from './test/fixtures-api'
 
@@ -413,6 +414,64 @@ describe('Dashboard con la api inyectada', () => {
       // Si el estado y el <dialog> se desincronizaran, showModal() lanzaría InvalidStateError.
       fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
       expect(screen.getByLabelText('Fecha')).toBeInTheDocument()
+    })
+  })
+
+  describe('anexo del solicitante en B2 (Fase 9 · R9-1)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view'
+
+    const abrirYLlenar = async () => {
+      const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+        ok: true,
+        datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido' },
+      })
+      const resultado = mostrar(apiFalsa({ crear }))
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      llenarFormulario(resultado.container, '08:00', '10:00', 'servicio')
+      return { crear, ...resultado }
+    }
+
+    it('el campo es opcional y su ayuda (cómo compartir en Drive) es su descripción accesible', async () => {
+      await abrirYLlenar()
+
+      const campo = screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)
+      expect(campo).not.toBeRequired()
+      expect(campo).toHaveAccessibleDescription(TEXTO_AYUDA_ANEXO)
+    })
+
+    it('con anexo: viaja recortado (D4) en enlace_anexo', async () => {
+      const { crear } = await abrirYLlenar()
+
+      fireEvent.change(screen.getByLabelText(TEXTO_ETIQUETA_ANEXO), { target: { value: `  ${ANEXO}  ` } })
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(crear).toHaveBeenCalledWith(expect.objectContaining({ categoria: 'VIDEO', enlace_anexo: ANEXO }))
+    })
+
+    it('sin anexo: la clave enlace_anexo no viaja', async () => {
+      const { crear } = await abrirYLlenar()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(crear).toHaveBeenCalledOnce()
+      expect(crear).toHaveBeenCalledWith(expect.not.objectContaining({ enlace_anexo: expect.anything() }))
+    })
+
+    it('un anexo que no es https:// se marca, se explica y no se envía', async () => {
+      const { crear } = await abrirYLlenar()
+
+      // Una URL bien formada (la validación nativa de type="url" la deja pasar) pero sin cifrar.
+      const campo = screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)
+      fireEvent.change(campo, { target: { value: 'http://drive.google.com/file/d/xyz/view' } })
+      expect(campo).toHaveAttribute('aria-invalid', 'true')
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      expect(await screen.findByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
+      expect(crear).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Enviar Radicado' })).toBeInTheDocument()
     })
   })
 })

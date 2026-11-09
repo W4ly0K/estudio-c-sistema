@@ -30,6 +30,8 @@ interface RadicacionComun {
   readonly proposito: string
   readonly fecha_inicio: string
   readonly fecha_fin: string
+  /** Fase 9 · R9-1: anexo opcional; si no hay, la clave no viaja (el servidor rechaza ''). */
+  readonly enlace_anexo?: string
   readonly recursos?: readonly { readonly id_recurso: number; readonly cantidad: number }[]
 }
 

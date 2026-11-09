@@ -9,6 +9,7 @@ import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
+import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
@@ -212,6 +213,15 @@ function Contenido({
             <dt className="text-gray-500">Propósito</dt>
             <dd className="font-medium text-primary">{detalle.proposito}</dd>
           </div>
+          {/* Fase 9 · R9-1: el guion que adjuntó el solicitante, abierto de forma segura. */}
+          {detalle.enlace_anexo !== null && (
+            <div className="sm:col-span-2">
+              <dt className="text-gray-500">{TEXTO_ANEXO}</dt>
+              <dd>
+                <EnlaceAnexo enlace={detalle.enlace_anexo} radicado={detalle.radicado} />
+              </dd>
+            </div>
+          )}
           {detalle.recursos.length > 0 && (
             <div className="sm:col-span-2">
               <dt className="text-gray-500">Recursos</dt>

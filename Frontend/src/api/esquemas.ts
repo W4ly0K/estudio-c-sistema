@@ -81,6 +81,12 @@ export const esquemaSolicitud = z.object({
    * malo no debe tumbar toda la respuesta. La seguridad se aplica al pintarlo (esEnlaceSeguro).
    */
   enlace_entrega: z.string().nullable(),
+  /**
+   * Fase 9 · R9-1: el anexo opcional del solicitante (guion). Obligatorio en el contrato (D1,
+   * fail-closed): si una proyección del backend lo pierde, la respuesta no se acepta en silencio.
+   * Texto o null, sin validarlo aquí: la seguridad se aplica al pintarlo (esEnlaceSeguro).
+   */
+  enlace_anexo: z.string().nullable(),
 });
 export type Solicitud = z.infer<typeof esquemaSolicitud>;
 

@@ -31,7 +31,7 @@ import {
   TEXTO_AYUDA_MOTIVO_REPROGRAMACION,
   motivoParaEnviar,
 } from '../presentacion/motivo'
-import { CampoEnlace } from './CampoEnlace'
+import { CampoEnlace, TEXTO_AYUDA_ENLACE, TEXTO_ETIQUETA_ENLACE } from './CampoEnlace'
 import { CampoMotivo } from './CampoMotivo'
 import { CampoSubEspacio } from './CampoSubEspacio'
 import { CamposFranja } from './CamposFranja'
@@ -281,6 +281,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         )}
         {pideEnlace && (
           <CampoEnlace
+            etiqueta={TEXTO_ETIQUETA_ENLACE}
+            ayuda={TEXTO_AYUDA_ENLACE}
             valor={enlace}
             onCambio={setEnlace}
             invalido={enlaceParaEnviar(enlace) !== '' && !esEnlaceSeguro(enlaceParaEnviar(enlace))}

@@ -20,6 +20,7 @@ export const SOLICITUD = {
   sub_espacio: 'CABINA_AUDIO',
   sub_espacio_propuesto: null,
   enlace_entrega: null,
+  enlace_anexo: null,
 } as const
 
 export const RECURSOS_RESUMEN = [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }]

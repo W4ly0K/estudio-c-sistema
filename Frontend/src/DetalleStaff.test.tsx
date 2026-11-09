@@ -15,6 +15,7 @@ import type { ApiSolicitudes } from './api/solicitudes'
 import { formatearFranja } from './fechas/bogota'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RUTA_DETALLE, RUTA_TABLERO } from './rutas'
+import { TEXTO_ANEXO, TEXTO_ANEXO_NO_DISPONIBLE } from './componentes/EnlaceAnexo'
 import { DETALLE_STAFF, LOG, apiFalsa } from './test/fixtures-api'
 
 const STAFF = { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' } as const
@@ -153,6 +154,25 @@ describe('DetalleStaff (C3 · 6.5.2)', () => {
     expect(within(historial).getByText('Por: Solicitante')).toBeInTheDocument()
     // Sin \b: en JavaScript la ú no es carácter de palabra y \b nunca coincidiría tras ella.
     expect(screen.queryByText(/Tú/)).not.toBeInTheDocument()
+  })
+
+  it('Fase 9 · R9-1: el Staff ve el anexo del solicitante con apertura segura', async () => {
+    mostrar(responde(detalle({ enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })))
+
+    await screen.findByRole('heading', { name: 'EC-2026-0142' })
+    expect(screen.getByText(TEXTO_ANEXO)).toBeInTheDocument()
+    const enlace = screen.getByRole('link', { name: 'Abrir el anexo de EC-2026-0142 (se abre en una pestaña nueva)' })
+    expect(enlace).toHaveAttribute('href', 'https://drive.google.com/file/d/xyz/view')
+    expect(enlace).toHaveAttribute('target', '_blank')
+    expect(enlace).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('Fase 9 · R9-1: un anexo guardado que no es seguro no crea ningún enlace', async () => {
+    mostrar(responde(detalle({ enlace_anexo: 'javascript:alert(1)' })))
+
+    await screen.findByRole('heading', { name: 'EC-2026-0142' })
+    expect(screen.getByText(TEXTO_ANEXO_NO_DISPONIBLE)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Abrir el anexo/ })).not.toBeInTheDocument()
   })
 
   it('404 uniforme: el mismo texto que ve el solicitante, con ayuda que remite al tablero', async () => {

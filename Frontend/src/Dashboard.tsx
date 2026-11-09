@@ -17,10 +17,12 @@ import {
   TEXTO_LEYENDA_SUB_ESPACIO,
   TEXTO_LUGAR_DE_SERVICIOS,
 } from './componentes/CampoSubEspacio';
+import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
 import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
+import { anexoParaEnviar, TEXTO_AYUDA_ANEXO, TEXTO_ETIQUETA_ANEXO } from './presentacion/anexo';
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
@@ -40,6 +42,11 @@ interface FormularioSolicitud {
    * sin valor inicial para no elegir por él. Fuera de esa categoría siempre es null.
    */
   subEspacio: SubEspacio | null;
+  /**
+   * Fase 9 · R9-1: enlace opcional al guion; vacío = sin anexo (la clave no viaja). No depende de
+   * la categoría mientras el Responsable no lo decida (pregunta 5): cambiarla no lo borra.
+   */
+  anexo: string;
 }
 
 const FORMULARIO_VACIO: FormularioSolicitud = {
@@ -47,6 +54,7 @@ const FORMULARIO_VACIO: FormularioSolicitud = {
   categoria: 'ESPACIOS',
   proposito: '',
   subEspacio: null,
+  anexo: '',
 };
 
 /**
@@ -123,7 +131,19 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
       setErrorValidacion(franja.error);
       return;
     }
-    const comun = { proposito: form.proposito, fecha_inicio: franja.inicio, fecha_fin: franja.fin };
+    // Fase 9 · R9-1: el anexo se valida con la misma regla con la que se pinta (esEnlaceSeguro).
+    const anexo = anexoParaEnviar(form.anexo);
+    if (!anexo.ok) {
+      setErrorValidacion(anexo.error);
+      return;
+    }
+    const comun = {
+      proposito: form.proposito,
+      fecha_inicio: franja.inicio,
+      fecha_fin: franja.fin,
+      // Sin anexo, la clave no viaja: el servidor rechaza la cadena vacía (DTO ⊆ CHECK).
+      ...(anexo.enlace === undefined ? {} : { enlace_anexo: anexo.enlace }),
+    };
     let cuerpo: CuerpoCrearSolicitud;
     // Fase 7 · SE10: el lugar solo viaja en una solicitud de espacio físico. La rama decide
     // también el tipo: TypeScript no deja enviar un servicio con lugar ni un espacio sin él.
@@ -280,6 +300,16 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   onChange={e => setForm({...form, proposito: e.target.value})}
                 />
               </div>
+
+              {/* Fase 9 · R9-1: anexo opcional (guion); la ayuda explica cómo compartirlo (D3). */}
+              <CampoEnlace
+                etiqueta={TEXTO_ETIQUETA_ANEXO}
+                ayuda={TEXTO_AYUDA_ANEXO}
+                valor={form.anexo}
+                onCambio={(anexo) => setForm({ ...form, anexo })}
+                invalido={!anexoParaEnviar(form.anexo).ok}
+                soloLectura={false}
+              />
 
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
 

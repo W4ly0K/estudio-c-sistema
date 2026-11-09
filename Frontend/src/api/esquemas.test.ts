@@ -33,6 +33,7 @@ const DETALLE_SOLICITANTE = {
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
   enlace_entrega: null,
+  enlace_anexo: null,
   recursos: [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }],
   logs: [LOG],
 }
@@ -57,6 +58,17 @@ describe('Esquemas del contrato (DC1)', () => {
     it('Fase 8 · acepta una entrega con el enlace del producto final', () => {
       const entregada = { ...DETALLE_SOLICITANTE, estado: 'Entregado', enlace_entrega: 'https://youtu.be/abc123' }
       expect(acepta(esquemaDetalleSolicitante, entregada)).toBe(true)
+    })
+
+    it('Fase 9 · R9-1: acepta el anexo del solicitante', () => {
+      const conAnexo = { ...DETALLE_SOLICITANTE, enlace_anexo: 'https://drive.google.com/file/d/xyz/view' }
+      expect(acepta(esquemaDetalleSolicitante, conAnexo)).toBe(true)
+    })
+
+    it('Fase 9 · R9-1 (D1, fail-closed): una respuesta sin enlace_anexo no se acepta', () => {
+      const sinAnexo: Record<string, unknown> = { ...DETALLE_SOLICITANTE }
+      delete sinAnexo.enlace_anexo
+      expect(acepta(esquemaDetalleSolicitante, sinAnexo)).toBe(false)
     })
 
     it('acepta una propuesta pendiente con fechas en hora de Bogotá y el motivo del Staff', () => {

@@ -5,6 +5,9 @@ export const TEXTO_AYUDA_ENLACE =
   'Pega el enlace https:// donde está el producto final (por ejemplo, YouTube, Drive o el repositorio institucional). El solicitante lo abrirá en una pestaña nueva.'
 
 interface CampoEnlaceProps {
+  /** Fase 9 · R9-1 (D2): el campo sirve a la entrega y al anexo; cada uso trae sus textos. */
+  etiqueta: string
+  ayuda: string
   valor: string
   onCambio: (valor: string) => void
   /** Hay texto y no sirve: se marca, sin repetir la razón (la dice el diálogo, junto a "Confirmar"). */
@@ -15,19 +18,19 @@ interface CampoEnlaceProps {
 
 /**
  * Fase 8 · requisito 4: el enlace del producto final al entregar (T9 o T12) en las categorías
- * que lo exigen. `type="url"` da el teclado adecuado en el móvil; la regla real es
- * esEnlaceSeguro, la misma con la que se pinta el enlace.
+ * que lo exigen; desde la Fase 9 (R9-1), también el anexo opcional al radicar. `type="url"` da el
+ * teclado adecuado en el móvil; la regla real es esEnlaceSeguro, la misma con la que se pinta.
  */
-export function CampoEnlace({ valor, onCambio, invalido, soloLectura }: CampoEnlaceProps) {
+export function CampoEnlace({ etiqueta, ayuda, valor, onCambio, invalido, soloLectura }: CampoEnlaceProps) {
   const id = useId()
   const idAyuda = `${id}-ayuda`
   return (
     <div className="mt-4">
       <label htmlFor={id} className="block font-semibold text-primary">
-        {TEXTO_ETIQUETA_ENLACE}
+        {etiqueta}
       </label>
       <p id={idAyuda} className="text-xs text-gray-600 mb-1">
-        {TEXTO_AYUDA_ENLACE}
+        {ayuda}
       </p>
       <input
         id={id}
