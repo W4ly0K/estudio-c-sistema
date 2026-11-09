@@ -73,6 +73,10 @@ model Solicitud {
   /// PODCAST, VIDEO y STREAMING, donde es obligatorio desde la Fase 8 (CHECK NOT VALID: las
   /// entregas anteriores se conservan sin enlace, DT-3). Ver la migración 20261028130000.
   enlace_entrega         String?            @db.Text
+  /// Fase 9 · R9-1: anexo opcional del solicitante (guion por enlace https://), escrito al
+  /// radicar. Solicitud_enlace_anexo_formato_check repite la forma de enlace_entrega. No se edita
+  /// por PATCH hasta que el Responsable lo decida (pregunta 3). Ver la migración 20261109110000.
+  enlace_anexo           String?            @db.Text
 
   // Relaciones
   usuario  Usuario             @relation(fields: [id_usuario], references: [id_usuario])

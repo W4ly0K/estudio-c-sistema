@@ -24,6 +24,8 @@ export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
   sub_espacio_propuesto: true,
   // Fase 8 · requisito 4: el Staff ve lo que entregó.
   enlace_entrega: true,
+  // Fase 9 · R9-1: el guion que adjuntó el solicitante (la vista lo pinta con esEnlaceSeguro).
+  enlace_anexo: true,
   usuario: { select: { id_usuario: true, nombre: true, correo: true, rol: true } },
   recursos: {
     select: {
@@ -63,6 +65,8 @@ export const SELECT_DETALLE_SOLICITANTE = Prisma.validator<Prisma.SolicitudSelec
   sub_espacio_propuesto: true,
   // Fase 8 · requisito 4: el solicitante abre su producto final (la vista lo pinta de forma segura).
   enlace_entrega: true,
+  // Fase 9 · R9-1: el guion que adjuntó (la vista lo pinta con esEnlaceSeguro).
+  enlace_anexo: true,
   recursos: {
     select: { cantidad_solicitada: true, recurso: { select: { nombre: true } } },
   },

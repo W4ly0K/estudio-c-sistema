@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client'; // <-- 1. Importamos los Enums de Prisma
 import { FechaConZonaHoraria } from '../../common/validadores/fecha-con-zona-horaria.decorator';
 import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO } from '../reglas/categorias';
+import { ENLACE_MAXIMO, EnlaceSeguro } from '../../common/validadores/enlace-seguro.decorator';
 
 /**
  * Fase 7 · 7B.4 (ADR-007 SE10): un solo mensaje para las dos fallas del pipe (falta en una
@@ -11,6 +12,10 @@ import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO } from '../reglas/categorias';
  */
 export const MENSAJE_SUBESPACIO_DE_CREACION =
   'El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO (obligatorio en una solicitud de espacio físico).';
+
+/** Fase 9 · R9-1: un solo mensaje para cualquier falla de forma del anexo. */
+export const MENSAJE_ENLACE_ANEXO =
+  `El enlace del anexo debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta ${ENLACE_MAXIMO} caracteres.`;
 
 // Sub-clase para validar los recursos individuales del arreglo
 class RecursoSolicitadoDto {
@@ -58,6 +63,15 @@ export class CreateSolicitudeDto {
   )
   @IsEnum(SubEspacio, { message: MENSAJE_SUBESPACIO_DE_CREACION })
   sub_espacio?: SubEspacio;
+
+  // Fase 9 · R9-1: anexo opcional (guion por enlace, p. ej. Google Drive) para que el Staff lo
+  // analice. Ausente o null = sin anexo; si llega, la forma la decide la fuente única
+  // EnlaceSeguro (DTO ⊆ CHECK Solicitud_enlace_anexo_formato_check): '' o con espacios → 400.
+  // NO se hereda al PATCH: UpdateSolicitudeDto lo omite hasta que el Responsable decida si se
+  // edita después de radicar (pregunta 3 del cuestionario de la Fase 9).
+  @IsOptional()
+  @EnlaceSeguro(MENSAJE_ENLACE_ANEXO)
+  enlace_anexo?: string;
 
   // Nuevo campo: Un arreglo de recursos opcional
   @IsOptional()

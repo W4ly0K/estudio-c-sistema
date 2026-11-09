@@ -308,6 +308,8 @@ export class SolicitudesService {
           es_urgencia: horario.urgente,
           // Siempre explícito: desde el contract (7A.8) la columna no tiene DEFAULT.
           sub_espacio: subEspacio,
+          // Fase 9 · R9-1: el anexo tal como lo validó el pipe; null = sin anexo (siempre explícito).
+          enlace_anexo: createSolicitudeDto.enlace_anexo ?? null,
         
           recursos: { 
             create: createSolicitudeDto.recursos?.map(recurso => ({

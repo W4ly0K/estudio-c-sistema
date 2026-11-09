@@ -64,6 +64,8 @@ export const SOLICITUD_E2E: Solicitud = {
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
   enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
 };
 
 /** Solicitud de OTRO usuario: la que el solicitante de prueba jamás debe poder leer. */

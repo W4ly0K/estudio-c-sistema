@@ -1,6 +1,7 @@
 import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength, ValidateIf } from 'class-validator';
+import { IsIn, IsOptional, ValidateIf } from 'class-validator';
+import { ENLACE_MAXIMO, EnlaceSeguro } from '../../common/validadores/enlace-seguro.decorator';
 import { TextoConLongitudReal } from '../../common/validadores/texto-con-longitud-real.decorator';
 // Fuente única de los estados: la máquina de estados (Fase 5 · H6). El pipe solo
 // valida que el nombre exista; la legalidad de la transición la decide el servicio.
@@ -19,18 +20,23 @@ export const MENSAJE_MOTIVO_RECHAZO =
   `El motivo del rechazo es obligatorio y debe tener entre ${MOTIVO_RECHAZO_MINIMO} ` +
   `y ${MOTIVO_RECHAZO_MAXIMO} caracteres (sin contar los espacios de los extremos).`;
 
-/** Fase 8 · requisito 4: el mismo límite del CHECK de la migración 20261028130000. */
-export const ENLACE_ENTREGA_MAXIMO = 2048;
+/** Fase 8 · requisito 4. El límite vive en la fuente única del enlace seguro (Fase 9 · 9.1.1). */
 export const MENSAJE_ENLACE_ENTREGA =
-  `El enlace del producto final debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta ${ENLACE_ENTREGA_MAXIMO} caracteres.`;
+  `El enlace del producto final debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta ${ENLACE_MAXIMO} caracteres.`;
 
 /**
  * Fase 8 · H2: la categoría NO se hereda al PATCH. Gobierna el lugar (SE10), el camino de
  * estados (T9, o T11 y T12) y la entrega (enlace): cambiarla a mitad del flujo dejaría estados
  * imposibles. Al no declararse, el pipe global (forbidNonWhitelisted) responde 400
  * "property categoria should not exist", el mismo mecanismo que protege modificado_por.
+ *
+ * Fase 9 · R9-1 (regla de auditoría): el anexo tampoco se hereda. Hasta que el Responsable
+ * decida si se edita después de radicar (pregunta 3), un PATCH con enlace_anexo responde 400
+ * "property enlace_anexo should not exist", con el mismo mecanismo.
  */
-export class UpdateSolicitudeDto extends PartialType(OmitType(CreateSolicitudeDto, ['categoria'] as const)) {
+export class UpdateSolicitudeDto extends PartialType(
+  OmitType(CreateSolicitudeDto, ['categoria', 'enlace_anexo'] as const),
+) {
   @IsOptional()
   @IsIn(ESTADOS, { message: 'Estado no válido según la máquina de estados' })
   estado?: string;
@@ -43,16 +49,10 @@ export class UpdateSolicitudeDto extends PartialType(OmitType(CreateSolicitudeDt
   motivo_rechazo?: string;
 
   // Fase 8 · requisito 4: el pipe valida la FORMA si llega. Si aplica a la categoría y al
-  // destino lo decide el servicio (igual que E5 con el motivo). @Matches repite el CHECK del
-  // motor: @IsUrl aceptaría "HTTPS://", que el CHECK rechazaría con un 500.
+  // destino lo decide el servicio (igual que E5 con el motivo). La forma es la fuente única
+  // EnlaceSeguro (Fase 9 · 9.1.1): repite el CHECK del motor y es más estricta (DTO ⊆ CHECK).
   @IsOptional()
-  @IsString({ message: MENSAJE_ENLACE_ENTREGA })
-  @MaxLength(ENLACE_ENTREGA_MAXIMO, { message: MENSAJE_ENLACE_ENTREGA })
-  @Matches(/^https:\/\/\S+$/, { message: MENSAJE_ENLACE_ENTREGA })
-  @IsUrl(
-    { protocols: ['https'], require_protocol: true, require_tld: true, disallow_auth: true },
-    { message: MENSAJE_ENLACE_ENTREGA },
-  )
+  @EnlaceSeguro(MENSAJE_ENLACE_ENTREGA)
   enlace_entrega?: string;
 
   // modificado_por NO existe aquí por diseño (Zero Trust):

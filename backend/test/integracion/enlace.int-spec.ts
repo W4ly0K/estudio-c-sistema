@@ -70,10 +70,12 @@ describe('Enlace del producto final contra PostgreSQL real (integración · Fase
       WHERE table_schema = 'public' AND table_name = 'Solicitud' AND column_name = 'enlace_entrega'`;
     expect(columna).toEqual([{ tipo: 'text', admite_nulo: 'YES' }]);
 
+    // Fase 9 · R9-1: el filtro es "entrega" y no "enlace": las cuatro restricciones de la Fase 8 lo
+    // contienen, y Solicitud_enlace_anexo_formato_check (I-38a) ya no entra en esta prueba.
     const restricciones = await prisma.$queryRaw<{ conname: string; convalidated: boolean }[]>`
       SELECT conname, convalidated FROM pg_constraint
       WHERE conrelid = '"Solicitud"'::regclass AND contype = 'c'
-        AND (conname LIKE '%enlace%' OR conname LIKE '%entrega%')
+        AND conname LIKE '%entrega%'
       ORDER BY conname`;
     expect(restricciones).toEqual([
       { conname: 'Solicitud_enlace_entrega_formato_check', convalidated: true },

@@ -15,6 +15,7 @@ import fuenteDtoRechazo from '../../../backend/src/solicitudes/dto/update-solici
 import fuenteDtoReprogramacion from '../../../backend/src/solicitudes/dto/proponer-reprogramacion.dto.ts?raw'
 import fuenteDecorador from '../../../backend/src/common/validadores/texto-con-longitud-real.decorator.ts?raw'
 import fuenteCategorias from '../../../backend/src/solicitudes/reglas/categorias.ts?raw'
+import fuenteEnlaceSeguro from '../../../backend/src/common/validadores/enlace-seguro.decorator.ts?raw'
 import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
@@ -120,8 +121,8 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
     expect(Object.fromEntries(filas.map(([, categoria, regla]) => [categoria ?? '', regla === 'OBLIGATORIO']))).toEqual(REQUIERE_ENLACE)
   })
 
-  it('Fase 8 · el límite del enlace es ENLACE_ENTREGA_MAXIMO del DTO (y del CHECK)', () => {
-    expect(ENLACE_MAXIMO).toBe(numeroDelBackend(fuenteDtoRechazo, 'ENLACE_ENTREGA_MAXIMO'))
+  it('Fase 8 · el límite del enlace es ENLACE_MAXIMO de la fuente única del backend (DTO y CHECK)', () => {
+    expect(ENLACE_MAXIMO).toBe(numeroDelBackend(fuenteEnlaceSeguro, 'ENLACE_MAXIMO'))
   })
 
   it('el aviso local de "fin no posterior" es idéntico a la primera regla de CA-04 (DH4)', () => {

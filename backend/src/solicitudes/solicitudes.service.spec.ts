@@ -80,6 +80,8 @@ const solicitudBase: Solicitud = {
   sub_espacio_propuesto: null,
   // Fase 8 · requisito 4: sin enlace salvo en una entrega que lo exige.
   enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
 };
 
 // Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
@@ -161,6 +163,38 @@ describe('SolicitudesService', () => {
         data: expect.objectContaining({ id_usuario: 'uuid-del-token', estado: 'Recibido' }),
       }),
     );
+  });
+
+  describe('create() — anexo del solicitante (Fase 9 · R9-1)', () => {
+    const dtoServicio: CreateSolicitudeDto = {
+      categoria: CategoriaSolicitud.PODCAST,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+    };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+    });
+
+    it('guarda el anexo que validó el pipe, tal cual', async () => {
+      const anexo = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+
+      await service.create({ ...dtoServicio, enlace_anexo: anexo }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: anexo }) }),
+      );
+    });
+
+    it('sin anexo escribe NULL explícito', async () => {
+      await service.create(dtoServicio, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: null }) }),
+      );
+    });
   });
 
   describe('create() — reglas de horario integradas (Fase 3)', () => {
@@ -2212,6 +2246,11 @@ describe('SolicitudesService', () => {
       expect(SELECT_DETALLE_SOLICITANTE.recursos.select.recurso.select).not.toHaveProperty(
         'cantidad_total',
       );
+    });
+
+    it('Fase 9 · R9-1: las dos proyecciones exponen el anexo (Staff y dueño)', () => {
+      expect(SELECT_DETALLE_SOLICITANTE).toHaveProperty('enlace_anexo', true);
+      expect(SELECT_DETALLE_STAFF).toHaveProperty('enlace_anexo', true);
     });
   });
 });
