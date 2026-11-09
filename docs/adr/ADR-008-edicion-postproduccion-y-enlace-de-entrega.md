@@ -110,6 +110,8 @@
   - **DTO:** `@MaxLength(2048)`, `@Matches(/^https:\/\/\S+$/)` e `@IsUrl({ protocols: ['https'], require_tld, disallow_auth })`.
   - **Motor:** `segun_estado`, `segun_categoria` y `formato` (`^https://[^[:space:]]+$` y ≤ 2048), los tres validados al crearse porque la columna nació vacía.
   - El DTO **repite** la regla del `CHECK` para que una entrada como `HTTPS://…` sea un 400 y nunca un 500.
+
+  > **Nota (Fase 9 · R9-1, 2026-11-09):** desde `a64984c` la regla del DTO vive en la fuente única `EnlaceSeguro` (`backend/src/common/validadores/enlace-seguro.decorator.ts`), compartida con `enlace_anexo`. `ENLACE_ENTREGA_MAXIMO` pasó a ser `ENLACE_MAXIMO` en ese archivo, y el contrato del frontend la lee de ahí. El comportamiento no cambió: las pruebas de EN3 siguieron en verde sin tocarse. Ver [ADR-009](ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md).
 - **EN4 · `Solicitud_entrega_con_enlace_check` `NOT VALID` (DT-3):**
   - Exige el enlace en toda entrega nueva o modificada de PODCAST, VIDEO y STREAMING.
   - **No** revisa la entrega histórica de PODCAST sin enlace (fila 19 del postcheck = 1). Esa fila es final y su categoría no cambia (IN1), así que nada la vuelve a escribir.
@@ -150,7 +152,7 @@
 
 | Decisión | Pruebas |
 |---|---|
-| CT1 | `categorias.spec.ts`: la tabla como oráculo, listas derivadas y alineación con el SQL de las dos migraciones (categorías, 2048, exactamente un `NOT VALID`) · frontend `contrato.test.ts`: `PASA_POR_EDICION` y `REQUIERE_ENLACE` contra las filas del backend, y `ENLACE_MAXIMO` contra `ENLACE_ENTREGA_MAXIMO` |
+| CT1 | `categorias.spec.ts`: la tabla como oráculo, listas derivadas y alineación con el SQL de las dos migraciones (categorías, 2048, exactamente un `NOT VALID`) · frontend `contrato.test.ts`: `PASA_POR_EDICION` y `REQUIERE_ENLACE` contra las filas del backend, y `ENLACE_MAXIMO` contra la constante del mismo nombre de la fuente única (antes `ENLACE_ENTREGA_MAXIMO`; ver la nota de EN3) |
 | VI1 a VI3 | `etiquetas.test.ts` · `Insignias.test.tsx` · `linea-de-vida.test.ts` · `tema.test.ts` (contraste medido sobre `index.css`) |
 | IN1 | `update-solicitude.dto.spec.ts` · e2e de `horario.e2e-spec.ts` (`franjaNueva`, sin `categoria`) |
 | ED1 a ED3 | `maquina-estados.spec.ts` (T11, T12 y «liberar es irreversible» por categoría) · `estados.spec.ts` (cada `NOT IN` y la cláusula por categoría) · `solicitudes.service.spec.ts` (E-*) · I-36a a I-36c contra PostgreSQL real (alineación, motor y servicio: la franja liberada en T11 la toma otra reserva y T12 entrega sin `23P01`) |
