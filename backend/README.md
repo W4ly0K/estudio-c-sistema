@@ -76,7 +76,7 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 npm test                 # Pruebas unitarias (705; 1 omitida por diseño)
 npm run test:e2e         # Pruebas end-to-end por HTTP real (64)
 npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias
-npm run test:integracion # CA-06, K9, motivo y concurrencia contra PostgreSQL real, en una base DESECHABLE (41)
+npm run test:integracion # CA-06, K9, motivos, concurrencia, anexo y auditoría de enlaces contra PostgreSQL real, en una base DESECHABLE (11 suites, 182)
 ```
 
 - `npm test`, `test:e2e` y `test:tz` **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
