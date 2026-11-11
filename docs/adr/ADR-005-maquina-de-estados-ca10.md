@@ -9,6 +9,7 @@
 | **Actualización** | 2026-10-15 · Cierre de la Fase 6: historial de implementación completo (§7) |
 | **Actualización** | 2026-10-23 · Fase 7: nota en §3. El id **T10** es desde ahora «No atendida» ([ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.9); el retiro de la propuesta sigue pendiente, sin id. T1, T5 y T7 llevan sub-espacio (ADR-007 §2.5 y §2.6) |
 | **Actualización** | 2026-10-28 · Fase 8: T11 y T12 (edición y postproducción) y T9 solo para las categorías sin edición ([ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) §2.4) |
+| **Actualización** | 2026-11-10 · Fase 9 (propuesto, sin implementar): precondición E7 de T1 en las categorías con anexo (§2.2), nota en §2.3, precisión sobre la conservación del log (§2.9) y deuda D5 (§6). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-5-maquina-de-estados` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (404 uniforme y proyecciones por rol en los comandos del solicitante) · [ADR-003](ADR-003-reglas-de-horario.md) (la franja propuesta pasa por las mismas reglas de horario) · [ADR-004](ADR-004-concurrencia-ca06.md) (el motor como garante; este ADR **reemplaza** la reactivación de su Decisión AG) |
@@ -66,6 +67,14 @@ El diagnóstico de la Fase 5 (solo lectura sobre el código y sobre producción)
 - **E5:** `motivo_rechazo` solo se admite con un cambio real a `Rechazado` (400). Se valida en el servicio: dos `@ValidateIf` sobre la misma propiedad se contradicen.
 - **E6:** las pruebas de la reactivación no se borraron: cambiaron de camino. Por ejemplo, U-7 pasó a "`Rechazado` → `Recibido` responde 409 `ESTADO_FINAL` sin consultar CA-06 ni escribir".
 - **H8:** 404 uniforme (`Solicitud no encontrada.`) en `update()` y en los comandos.
+- **E7 · Precondición de T1 en las categorías con anexo (Fase 9 · D4-B′; propuesto, sin implementar).** Cuando la acción es APROBAR y la categoría **guardada** es PODCAST, VIDEO o STREAMING, el Staff envía `anexo_revisado`: el enlace del anexo que vio en el detalle, o `null` si no había. La categoría sale de la base, nunca del cliente.
+  - **Pipe:** `anexo_revisado?: string | null` con `@ValidateIf(o => o.anexo_revisado !== undefined && o.anexo_revisado !== null)`, `@IsString()` y `@MaxLength(2048)`. Ausente o `null` no se validan en la pipe; cualquier otro tipo → 400. Sin `@Transform` ni `EnlaceSeguro`: es un valor para comparar, no un dato que se guarde.
+  - **Servicio:** distingue los tres casos con igualdad estricta, nunca por verdadero o falso ni con `in`: `=== undefined` (no vino; JSON no puede expresar `undefined`), `=== null` («vi que no había anexo») y texto.
+    - En las tres categorías: si no vino → 400 `MENSAJE_ANEXO_REVISADO_OBLIGATORIO`. Si vino, se compara `=== existente.enlace_anexo`; si difiere → **409** `MENSAJE_ANEXO_CAMBIO_EN_REVISION`, sin aprobar.
+    - En ESPACIOS y ASESORIAS no se exige; si llega, aunque sea `null` → 400 `MENSAJE_ANEXO_REVISADO_NO_APLICA`. Igual en cualquier otra transición o en un `PATCH` sin cambio de estado.
+  - **Compare-and-set:** `esperado` suma `enlace_anexo`. Si el anexo cambia entre la lectura y la escritura → 409 `MENSAJE_CAMBIO_CONCURRENTE`. El frontend ya recarga el detalle ante un 409. Las dos rutas de T1 de `AccionesStaff` (`cambiosDe('APROBAR')` y la aprobación con ajustes) envían el valor del mismo detalle que muestra el anexo.
+  - **Qué garantiza:** que la **referencia** (la URL) que vio el Staff es la vigente al confirmar. **No** demuestra que el Staff abrió o leyó el archivo, ni que su contenido externo siga igual.
+  - **Lo que no cambia:** la tabla de transiciones (orígenes, destinos y roles de T1 a T12), CA-06 y sus exclusiones. La comprobación va después de autorizar la transición y antes de las validaciones de franja y de CA-06: solo cambia el orden de los errores.
 
 ### 2.3 Un solo camino de escritura con *compare-and-set* (paso 5.2b · Decisiones D5, D6 y F1 a F4)
 
@@ -73,6 +82,7 @@ El diagnóstico de la Fase 5 (solo lectura sobre el código y sobre producción)
 - **F1:** en `update()`, el *compare-and-set* compara el estado **y** la franja guardados, porque sobre ellos se calcularon D2, el horario, D7 y CA-06. **F2:** un solo camino, también para ediciones sin cambio de estado. **F4:** las pruebas unitarias simulan `tx` con `$transaction.mockImplementation((fn) => fn(mock))`.
 - **D6:** toda transición, también las del solicitante, deja su log en la **misma** transacción, con `modificado_por` tomado del JWT.
 - **R1:** `updateMany` no admite escrituras anidadas; los recursos se reemplazan con `deleteMany`/`createMany` dentro de la transacción.
+- **Fase 9 (propuesto, sin implementar):** en T1 sobre las categorías con anexo, `esperado` suma `enlace_anexo` (E7); el mecanismo es el mismo. Además, `Log_Auditoria` registrará eventos que no son transiciones (cambios del anexo y correcciones del enlace de entrega), por este mismo camino y con el mismo estado antes y después: no pasan por la máquina. Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md).
 - **Medido antes de escribir el código (5.2b.0):**
   - **I-9:** un `23P01` lanzado dentro de una transacción interactiva conserva su clase y su firma (el detector de ADR-004 sigue sirviendo) y revierte el log ya escrito.
   - **I-10:** en `READ COMMITTED`, un `updateMany` concurrente espera el bloqueo de fila (1043 ms medidos) y reevalúa su `WHERE` sobre la versión confirmada: exactamente uno gana.
@@ -142,7 +152,7 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_propuesta_fechas_validas_check
 
 Resuelve K7. El wireframe C4 exige una "justificación técnica obligatoria" al proponer, y B4 se la muestra al solicitante.
 
-- **DB1 · El motivo vive en el log de T5** (`Log_Auditoria.motivo_reprogramacion`), no en `Solicitud`. El log es inmutable: el motivo sobrevive a T7 y T8, y la línea de vida conserva por qué el Estudio C propuso otra fecha. Guardarlo en `Solicitud` obligaba a borrarlo al responder (L8, L9) y a sumar una cuarta restricción a K9. Ambas proyecciones lo exponen en `logs`.
+- **DB1 · El motivo vive en el log de T5** (`Log_Auditoria.motivo_reprogramacion`), no en `Solicitud`. La aplicación no modifica ni borra registros del log, así que el motivo sobrevive a T7 y T8 (es una garantía de la aplicación, no de PostgreSQL: no hay trigger ni restricción de privilegios que lo impida; ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §4, deuda D5), y la línea de vida conserva por qué el Estudio C propuso otra fecha. Guardarlo en `Solicitud` obligaba a borrarlo al responder (L8, L9) y a sumar una cuarta restricción a K9. Ambas proyecciones lo exponen en `logs`.
 - **DB2 · Obligatorio, recortado y de 10 a 500 caracteres reales.** El DTO usa `@TextoConLongitudReal`, que mide en puntos de código como `char_length`: `'🎬'.length` es 2 en JavaScript y 1 en PostgreSQL. Si el DTO midiera con `.length`, aceptaría textos que el motor rechaza con 500. Un único validador entrega un único mensaje.
 - **DB3 · El campo del cuerpo se llama `motivo`.** El contexto lo da la ruta `/reprogramacion`. Fue un cambio de contrato deliberado (400 sin motivo), sin consumidores todavía.
 - **Garantizado por el motor** (migración `20261009200000_motivo_reprogramacion`, `BEGIN`/`COMMIT`, LF):
@@ -266,6 +276,7 @@ ALTER TABLE "Log_Auditoria" ADD CONSTRAINT "Log_Auditoria_motivo_rechazo_segun_e
 - **Esquema:** `estado` como enum de Prisma (la migración debe convertir los valores y recrear el `EXCLUDE`).
 - **CI:** `test:tz`, `test:integracion` (`postgres:17`) y e2e en el pipeline; acciones fijadas por SHA; protección de ramas.
 - **Frontend:** consumir las rutas nuevas y sus 409 (README §10 a §12).
+- **D5 · `Log_Auditoria` sin protección del motor (Fase 9):** la aplicación no modifica ni borra logs, pero PostgreSQL no lo impide. Queda como deuda de seguridad independiente ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §4).
 
 ## 7. Historial de implementación
 

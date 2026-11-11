@@ -4,6 +4,7 @@
 |---|---|
 | **Estado** | ✅ Aceptado · implementado en `feat/fase-8-ux-estados-entregables` y migraciones aplicadas en producción el 2026-10-28 con precheck y postcheck |
 | **Fecha** | 2026-10-28 |
+| **Actualización** | 2026-11-10 · Fase 9 (propuesto, sin implementar): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-8-ux-estados-entregables` (desde `develop` @ `ee86285`) |
 | **Complementa a** | [ADR-004](ADR-004-concurrencia-ca06.md) (AH: la fuente única de lo que libera la franja ahora depende también de la categoría) · [ADR-005](ADR-005-maquina-de-estados-ca10.md) (T11 y T12) · [ADR-006](ADR-006-frontend-contrato-tipado.md) (contrato Zod, `CambiosTablero`, acciones del Staff) · [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2: el `WHERE` de las dos exclusiones se recrea; SE10: la categoría ya gobernaba el lugar) |
@@ -106,10 +107,11 @@
     - Si es OBLIGATORIO y falta: **400**.
     - Si es PROHIBIDO y llega: **400**.
   - `null` cuenta como ausente: por esa vía nunca llega al motor una entrega sin enlace.
-- **EN3 · Tres capas que dicen lo mismo:**
-  - **DTO:** `@MaxLength(2048)`, `@Matches(/^https:\/\/\S+$/)` e `@IsUrl({ protocols: ['https'], require_tld, disallow_auth })`.
-  - **Motor:** `segun_estado`, `segun_categoria` y `formato` (`^https://[^[:space:]]+$` y ≤ 2048), los tres validados al crearse porque la columna nació vacía.
-  - El DTO **repite** la regla del `CHECK` para que una entrada como `HTTPS://…` sea un 400 y nunca un 500.
+- **EN3 · Dos capas compatibles, no equivalentes:**
+  - **DTO:** `@MaxLength(2048)`, `@Matches(/^https:\/\/\S+$/)` e `@IsUrl({ protocols: ['https'], require_tld, disallow_auth })`. Desde la Fase 9 viven en `EnlaceSeguro` (ver la nota de abajo).
+  - **Motor:** sus propios `CHECK`: `segun_estado`, `segun_categoria` y `formato` (`^https://[^[:space:]]+$` y ≤ 2048), los tres validados al crearse porque la columna nació vacía.
+  - El DTO cubre la regla del `CHECK` para que una entrada como `HTTPS://…` sea un 400 y nunca un 500. **No son equivalentes:** el DTO es más estricto en algunos casos (`MaxLength` cuenta unidades UTF-16; `IsUrl` exige dominio de primer nivel y prohíbe usuario y contraseña), así que el motor acepta valores que el DTO rechaza. Lo obligatorio es que sean compatibles: el DTO nunca acepta lo que el `CHECK` rechazaría (ADR-009 FU2).
+  - **Pendiente de verificar (2026-11-10):** que `\S` de JavaScript sea al menos tan estricto como `[^[:space:]]` de PostgreSQL con todos los espacios Unicode. Depende del `LC_CTYPE` de la base y se comprueba en P0 y en las pruebas de integración ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §2.3 y §6).
 
   > **Nota (Fase 9 · R9-1, 2026-11-09):** desde `a64984c` la regla del DTO vive en la fuente única `EnlaceSeguro` (`backend/src/common/validadores/enlace-seguro.decorator.ts`), compartida con `enlace_anexo`. `ENLACE_ENTREGA_MAXIMO` pasó a ser `ENLACE_MAXIMO` en ese archivo, y el contrato del frontend la lee de ahí. El comportamiento no cambió: las pruebas de EN3 siguieron en verde sin tocarse. Ver [ADR-009](ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md).
 - **EN4 · `Solicitud_entrega_con_enlace_check` `NOT VALID` (DT-3):**
@@ -135,13 +137,32 @@
   - El backend anterior, contra la base migrada, ofrece T9 a PODCAST y VIDEO. Además, su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500. Por eso, en esa ventana no se registran entregas.
   - El frontend nuevo exige `enlace_entrega` en el esquema Zod, así que contra un backend anterior rechazaría las respuestas.
 
+### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesto, sin implementar)
+
+**Origen.** La pregunta 24 del cuestionario firmado por el Responsable del Estudio C (2026-11-10) resuelve DA-4: el Staff corrige desde el sistema un enlace mal registrado, y la corrección queda en el registro de auditoría. Eso es lo institucional. El mecanismo de abajo, incluido el motivo opcional, sale de las decisiones del proyecto del 2026-11-10 (D2, D8, D9 y D10).
+
+- **EN6 · Endpoint:** `PATCH /solicitudes/:radicado/enlace-entrega`, `@Roles(STAFF)`. Solo en `Entregado` y en `CATEGORIAS_CON_ENLACE` (PODCAST, VIDEO y STREAMING). El actor sale del JWT. Cada corrección deja un evento ENTREGA en `Log_Auditoria` ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md)). No pasa por el `PATCH` del tablero.
+- **EN7 · Cuerpo:** `{ enlace_entrega_anterior: string, enlace_entrega: string, motivo_correccion? }`. El enlace nuevo usa `EnlaceSeguro`. El anterior es un valor para comparar (texto de hasta 2048 caracteres; sin `null`, por EN8). Un campo desconocido → 400.
+- **EN8 · Entregas que nunca tuvieron enlace (D2):** si la solicitud no tiene enlace registrado → **409** `MENSAJE_ENTREGA_SIN_ENLACE_PREVIO`. Agregar un enlace por primera vez queda fuera de alcance. Esta regla la garantiza **solo el servicio** (no hay un `CHECK` para ella), y la cubren las pruebas. No se modifican registros históricos: la entrega de PODCAST de DA-5 sigue igual.
+- **EN9 · Valor anterior observado (D9):** si `enlace_entrega_anterior` no es el vigente → **409** `MENSAJE_ENLACE_DESACTUALIZADO`, sin escritura ni log. `esperado` lleva `estado: 'Entregado'` y el enlace observado; si cambia entre la lectura y la escritura, el *compare-and-set* pierde → 409. Si el valor vuelve al que el cliente vio (ABA), la regla se cumple.
+- **EN10 · Motivo opcional (D8):**
+  - Validación: `@ValidateIf(o => o.motivo_correccion !== undefined)` y `@TextoConLongitudReal(10, 500, MENSAJE_MOTIVO_CORRECCION)`. **`@IsOptional()` solo no sirve:** también deja pasar `null` sin validar, y lo convertiría en «sin motivo».
+  - Ausente: válido. `null`, `''`, solo espacios, otro tipo, o fuera de 10 a 500 caracteres reales después de recortar → **400**. No hay conversión silenciosa a ausencia.
+  - Se guarda recortado: exactamente el texto que se validó (B9 de ADR-012 mide `char_length(btrim(…))`).
+  - Solo existe en eventos ENTREGA: los demás DTO no lo declaran (400 por `forbidNonWhitelisted`) y el motor lo prohíbe en otros eventos (B8).
+  - No lo exige la pregunta 24: es trazabilidad adicional.
+  - En la interfaz, el campo advierte que no se escriban datos personales, contraseñas, tokens ni otra información sensible.
+- **EN11 · Sin cambios (D10):** si el enlace pedido ya es el vigente → **200** con `sin_cambios: true`, sin escritura, sin evento y **sin guardar el motivo**. La pipe valida el cuerpo completo (motivo incluido) antes del servicio, así que un cuerpo mal formado recibe 400 aunque el enlace coincida. Un motivo nuevo con el mismo enlace no crea un evento: los logs no se editan y B2 exige un cambio real. No es idempotencia completa: ante una respuesta incierta, el frontend vuelve a consultar el detalle.
+- **EN12 · Orden:** 401 → 403 → 400 de forma (pipe) → 404 si no existe → 400 si la categoría no lleva enlace → 200 `sin_cambios` → 409 si no está en `Entregado` → 409 por EN8 → 409 por EN9 → *compare-and-set* y evento (200, o 409 si pierde). La igualdad va antes del estado solo porque no escribe.
+- `Solicitud_entrega_con_enlace_check` (`NOT VALID`, EN4) no cambia: una corrección siempre deja un valor no nulo.
+
 ---
 
 ## 3. Preguntas abiertas y deuda aceptada
 
 | # | Tema | Resolución |
 |---|---|---|
-| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | **Deuda aceptada.** Hoy se corrige solo con una migración de datos auditada. Pregunta para el Responsable del Estudio C: ¿se necesita «corregir enlace» con su propio registro en el log? |
+| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | Era deuda aceptada. **Resuelta funcionalmente** por la pregunta 24 (Responsable del Estudio C, 2026-11-10): el Staff lo corrige desde el sistema y la corrección queda en el log. Mecanismo propuesto en §2.7; **implementación pendiente**. Mientras tanto, solo se corrige con una migración de datos auditada |
 | DA-5 | La entrega histórica de PODCAST no tiene enlace | Se muestra sin la fila «Producto final». La tolera el `NOT VALID` (EN4) |
 | DA-6 | El enlace se valida por forma, no por contenido | El sistema no visita el enlace (sin SSRF ni dependencia de terceros); el Staff responde por el destino |
 | DA-7 | Los alias son solo de presentación | La API, el log y cualquier exportación siguen diciendo `Validado`. Un reporte futuro debe usar `etiquetaEstado()` |
@@ -193,7 +214,7 @@
 
 ## 6. Pendiente
 
-- **DA-4:** la pregunta al Responsable del Estudio C sobre corregir el enlace después de la entrega.
+- **DA-4:** implementar la corrección auditada (§2.7) junto con la migración de la Fase 9. La pregunta al Responsable ya se respondió (pregunta 24).
 - Heredados de ADR-007 §6: DA-2 (los ajustes en el historial), el texto de T10 y el retiro de una propuesta por el Staff.
 
 ---
