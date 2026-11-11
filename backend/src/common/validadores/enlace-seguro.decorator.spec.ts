@@ -5,6 +5,8 @@ import { crearValidationPipe } from '../pipes/crear-validation-pipe';
 import { ENLACE_MAXIMO, EnlaceSeguro, PATRON_ENLACE_SEGURO } from './enlace-seguro.decorator';
 import {
   ENLACES_ACEPTADOS,
+  ENLACES_CODIFICADOS,
+  ENLACES_CON_CONTROL_SIN_EVIDENCIA_DEL_MOTOR,
   ENLACES_RECHAZADOS_POR_EL_MOTOR,
   ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
   enlaceDeLongitud,
@@ -48,6 +50,16 @@ describe('EnlaceSeguro (Fase 9 · 9.1.1: fuente única del enlace https://)', ()
     },
   );
 
+  // Fase 9 · H0 (P0, fila 28): los controles que \s no reconoce. Los que el motor rechaza ya entran en la lista
+  // anterior; estos dos no tienen evidencia del motor y solo se prueban aquí.
+  it.each(ENLACES_CON_CONTROL_SIN_EVIDENCIA_DEL_MOTOR)('rechaza %s', async (_caso, enlace) => {
+    expect(await erroresDe({ enlace })).toContain(MENSAJE);
+  });
+
+  it.each(ENLACES_CODIFICADOS)('acepta el control codificado con %%: %s', async (enlace) => {
+    expect(await erroresDe({ enlace })).toEqual([]);
+  });
+
   it(`rechaza un enlace de ${ENLACE_MAXIMO + 1} caracteres`, async () => {
     expect(await erroresDe({ enlace: enlaceDeLongitud(ENLACE_MAXIMO + 1) })).toContain(MENSAJE);
   });
@@ -61,9 +73,11 @@ describe('EnlaceSeguro (Fase 9 · 9.1.1: fuente única del enlace https://)', ()
     expect(await erroresDe({})).toContain(MENSAJE);
   });
 
-  it('el patrón del pipe es el par documentado del CHECK (^https://[^[:space:]]+$)', () => {
-    expect(PATRON_ENLACE_SEGURO.source).toBe('^https:\\/\\/\\S+$');
-    expect(PATRON_ENLACE_SEGURO.flags).toBe('');
+  // Fase 9 · H0: el patrón cambió a propósito. \S dejaba pasar controles que [:space:] del CHECK rechaza
+  // (P0, fila 28); \p{Cc} los excluye y exige la bandera u. Sigue siendo más estricto que el CHECK.
+  it('el patrón del pipe excluye espacios y controles: más estricto que ^https://[^[:space:]]+$ del CHECK', () => {
+    expect(PATRON_ENLACE_SEGURO.source).toBe('^https:\\/\\/[^\\s\\p{Cc}]+$');
+    expect(PATRON_ENLACE_SEGURO.flags).toBe('u');
   });
 });
 

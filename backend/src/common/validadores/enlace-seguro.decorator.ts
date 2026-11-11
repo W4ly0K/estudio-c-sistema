@@ -12,11 +12,20 @@ import { IsString, IsUrl, Matches, MaxLength } from 'class-validator';
  * más laxo (si el motor rechazara algo que el pipe aceptó, respondería 500). Hoy lo es: @IsUrl
  * exige dominio de primer nivel y prohíbe usuario y contraseña, y MaxLength cuenta unidades UTF-16,
  * que nunca son menos que los caracteres que cuenta char_length.
+ *
+ * Fase 9 · H0 (P0, precheck 9.1.0b, fila 28): [:space:] del motor también rechaza U+001C a U+001F y
+ * U+0085, que \s de JavaScript no reconoce, y @IsUrl solo revisa el dominio. Con \S el pipe los
+ * aceptaba en la ruta, la consulta o el fragmento, y el CHECK respondía 500. Por eso el patrón excluye
+ * además todo carácter de control (\p{Cc}: U+0000 a U+001F y U+007F a U+009F). Un enlace legítimo
+ * los lleva codificados (%1C), y eso sigue aceptado. La prueba de P0 fue acotada a 35 candidatos.
  */
 export const ENLACE_MAXIMO = 2048;
 
-/** Prefijo exacto en minúsculas y sin espacios: el par de '^https://[^[:space:]]+$' del CHECK. */
-export const PATRON_ENLACE_SEGURO = /^https:\/\/\S+$/;
+/**
+ * Prefijo exacto en minúsculas, sin espacios (\s) ni caracteres de control (\p{Cc}): más estricto que
+ * '^https://[^[:space:]]+$' del CHECK. \p{Cc} evita escribir controles literales (no-control-regex).
+ */
+export const PATRON_ENLACE_SEGURO = /^https:\/\/[^\s\p{Cc}]+$/u;
 
 /**
  * Solo la forma. Si el campo es opcional lo decide cada DTO con su @IsOptional(): sin él,

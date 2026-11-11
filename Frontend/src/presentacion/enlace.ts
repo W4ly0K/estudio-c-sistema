@@ -17,7 +17,9 @@ export const TEXTO_RAZON_ENLACE_INVALIDO =
  * que el navegador lo lea como una URL https con dominio y sin credenciales.
  */
 export function esEnlaceSeguro(texto: string): boolean {
-  if (!texto.startsWith('https://') || texto.length > ENLACE_MAXIMO || /\s/.test(texto)) return false
+  // Fase 9 · H0: también rechaza caracteres de control sin codificar (\p{Cc}), como el servidor. Sin esto,
+  // new URL() los codificaría y la vista daría por bueno un enlace que el servidor rechaza.
+  if (!texto.startsWith('https://') || texto.length > ENLACE_MAXIMO || /[\s\p{Cc}]/u.test(texto)) return false
   try {
     const url = new URL(texto)
     return url.protocol === 'https:' && url.hostname !== '' && url.username === '' && url.password === ''

@@ -13,6 +13,9 @@ describe('esEnlaceSeguro (Fase 8 · requisito 4)', () => {
     'https://youtu.be/abc123',
     'https://drive.google.com/file/d/xyz/view?usp=sharing',
     'https://repositorio.unicesmag.edu.co/handle/123/456#descarga',
+    // Fase 9 · H0: los mismos controles codificados con % siguen siendo válidos.
+    'https://ejemplo.com/a%1Cb',
+    'https://ejemplo.com/video?x=a%C2%85b',
   ])('acepta %s', (enlace) => {
     expect(esEnlaceSeguro(enlace)).toBe(true)
   })
@@ -28,6 +31,15 @@ describe('esEnlaceSeguro (Fase 8 · requisito 4)', () => {
     ['con espacios', 'https://youtu.be/abc 123'],
     ['con usuario y contraseña', 'https://usuario:clave@ejemplo.com/video'],
     ['vacío', ''],
+    // Fase 9 · H0: caracteres de control sin codificar. new URL() los codificaría en vez de rechazarlos.
+    ['U+001C en la ruta', 'https://ejemplo.com/a\u001Cb'],
+    ['U+001D en la consulta', 'https://ejemplo.com/video?x=a\u001Db'],
+    ['U+001E en el fragmento', 'https://ejemplo.com/video#a\u001Eb'],
+    ['U+001F en la ruta', 'https://ejemplo.com/a\u001Fb'],
+    ['U+0085 en la ruta', 'https://ejemplo.com/a\u0085b'],
+    ['U+007F en la ruta', 'https://ejemplo.com/a\u007Fb'],
+    ['U+009F en la ruta', 'https://ejemplo.com/a\u009Fb'],
+    ['U+FEFF en la ruta', 'https://ejemplo.com/a\uFEFFb'],
   ])('rechaza %s', (_caso, enlace) => {
     expect(esEnlaceSeguro(enlace)).toBe(false)
   })
