@@ -96,6 +96,11 @@ const LOG_E2E: Log_Auditoria = {
   sub_espacio_nuevo: null,
   fecha_inicio_anterior: null,
   fecha_fin_anterior: null,
+  // Fase 9 (ADR-012): una transición no es un evento de enlace; los cuatro campos van en null.
+  enlace_campo: null,
+  enlace_anterior: null,
+  enlace_nuevo: null,
+  motivo_correccion: null,
 };
 
 interface ArgsCreateSolicitud {

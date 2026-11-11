@@ -32,6 +32,13 @@ enum SubEspacio {
   ESTUDIO_COMPLETO
 }
 
+/// Fase 9 (ADR-012, propuesto): qué enlace cambió en un evento de Log_Auditoria que no es una
+/// transición. Lo crea la migración 20261109110000_enlace_anexo.
+enum CampoEnlace {
+  ANEXO
+  ENTREGA
+}
+
 model Usuario {
   id_usuario  String     @id @default(uuid())
   nombre      String
@@ -136,6 +143,14 @@ model Log_Auditoria {
   /// 20261023120000_ca06_subespacios.
   fecha_inicio_anterior DateTime?
   fecha_fin_anterior    DateTime?
+  /// Fase 9 (ADR-012, propuesto): evento de enlace sin cambio de estado (cambio del anexo o corrección del
+  /// enlace de entrega). Los cuatro son NULL en las transiciones y en los logs históricos. Los CHECK B1 a B9
+  /// de la migración 20261109110000_enlace_anexo fijan cuándo existe cada uno; Prisma no modela CHECK.
+  enlace_campo          CampoEnlace?
+  enlace_anterior       String?      @db.Text
+  enlace_nuevo          String?      @db.Text
+  /// Opcional y solo en eventos ENTREGA (D8): de 10 a 500 caracteres reales sin los espacios de los extremos.
+  motivo_correccion     String?      @db.Text
 
   // Relaciones
   solicitud  Solicitud @relation(fields: [radicado_solicitud], references: [radicado])
