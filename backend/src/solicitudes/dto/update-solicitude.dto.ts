@@ -1,6 +1,6 @@
 import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { CreateSolicitudeDto } from './create-solicitude.dto';
-import { IsIn, IsOptional, ValidateIf } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { ENLACE_MAXIMO, EnlaceSeguro } from '../../common/validadores/enlace-seguro.decorator';
 import { TextoConLongitudReal } from '../../common/validadores/texto-con-longitud-real.decorator';
 // Fuente única de los estados: la máquina de estados (Fase 5 · H6). El pipe solo
@@ -23,6 +23,13 @@ export const MENSAJE_MOTIVO_RECHAZO =
 /** Fase 8 · requisito 4. El límite vive en la fuente única del enlace seguro (Fase 9 · 9.1.1). */
 export const MENSAJE_ENLACE_ENTREGA =
   `El enlace del producto final debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta ${ENLACE_MAXIMO} caracteres.`;
+
+/**
+ * Fase 9 · ADR-005 E7 (D4-B′, DJ1-a): forma de anexo_revisado. null es la ÚNICA manera de decir
+ * «no había anexo»: '' y solo espacios son vacíos y responden 400.
+ */
+export const MENSAJE_ANEXO_REVISADO_FORMA =
+  `anexo_revisado debe ser null o el enlace del anexo que se vio en el detalle (texto no vacío, hasta ${ENLACE_MAXIMO} caracteres).`;
 
 /**
  * Fase 8 · H2: la categoría NO se hereda al PATCH. Gobierna el lugar (SE10), el camino de
@@ -54,6 +61,18 @@ export class UpdateSolicitudeDto extends PartialType(
   @IsOptional()
   @EnlaceSeguro(MENSAJE_ENLACE_ENTREGA)
   enlace_entrega?: string;
+
+  // Fase 9 · ADR-005 E7: el anexo que el Staff vio en el detalle al aprobar (T1). Tres casos que el
+  // servicio distingue con igualdad estricta: ausente (la clave no viaja), null («vi que no había
+  // anexo») y texto (la URL vista). Sin @IsOptional, que trataría igual a null y a ausente: el
+  // ValidateIf solo omite la validación para esos dos; '' y solo espacios → 400. Es un valor para
+  // COMPARAR exactamente, no se guarda: sin @Transform (no se recorta) ni EnlaceSeguro (un anexo ya
+  // guardado debe poder aprobarse aunque la regla de forma se endurezca). Si aplica lo decide el servicio.
+  @ValidateIf((dto: UpdateSolicitudeDto) => dto.anexo_revisado !== undefined && dto.anexo_revisado !== null)
+  @IsString({ message: MENSAJE_ANEXO_REVISADO_FORMA })
+  @Matches(/\S/, { message: MENSAJE_ANEXO_REVISADO_FORMA })
+  @MaxLength(ENLACE_MAXIMO, { message: MENSAJE_ANEXO_REVISADO_FORMA })
+  anexo_revisado?: string | null;
 
   // modificado_por NO existe aquí por diseño (Zero Trust):
   // el autor de la auditoría se toma de req.user vía @UsuarioActual().

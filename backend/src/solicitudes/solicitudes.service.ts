@@ -145,6 +145,18 @@ export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
 export const MENSAJE_ANEXO_NO_APLICA =
   'Esta categoría no admite anexo: el guion solo se adjunta en solicitudes de pódcast, video o streaming.';
 
+/** Fase 9 · ADR-005 E7 (D4-B′): al aprobar (T1) en las categorías con anexo, el Staff indica cuál vio. */
+export const MENSAJE_ANEXO_REVISADO_OBLIGATORIO =
+  'Para aprobar esta solicitud indique el anexo revisado, o null si no tenía anexo.';
+
+/** Fase 9 · ADR-005 E7: el anexo que vio el Staff ya no es el vigente (lo cambió o retiró el solicitante). */
+export const MENSAJE_ANEXO_CAMBIO_EN_REVISION =
+  'El anexo cambió mientras se revisaba. Recargue el detalle y revíselo antes de aprobar.';
+
+/** Fase 9 · ADR-005 E7: anexo_revisado solo acompaña a T1 en PODCAST, VIDEO o STREAMING. */
+export const MENSAJE_ANEXO_REVISADO_NO_APLICA =
+  'anexo_revisado solo se envía al aprobar una solicitud de pódcast, video o streaming.';
+
 /**
  * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
  * cambió entre la lectura y la escritura). Distinto de CA-06: no es un cruce de franjas.
@@ -512,6 +524,26 @@ export class SolicitudesService {
       }
     }
 
+    // --- 2d. Fase 9 · ADR-005 E7 (D4-B′): al aprobar (T1, también con ajustes) en una categoría GUARDADA
+    // que admite anexo, el Staff confirma el anexo que vio: se protege la REFERENCIA, no la lectura del
+    // archivo. Va después de la máquina y antes de franja y CA-06 (solo cambia el orden de los errores).
+    // En cualquier otro caso, incluido un PATCH sin cambio de estado, el campo no aplica: 400, también
+    // antes de la salida sin escritura, para que no se ignore en silencio.
+    const exigeAnexoRevisado = accion === 'APROBAR' && POLITICA_POR_CATEGORIA[existente.categoria].admiteAnexo;
+    const anexoRevisado = updateSolicitudeDto.anexo_revisado;
+    if (!exigeAnexoRevisado && anexoRevisado !== undefined) {
+      throw new BadRequestException(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+    }
+    if (exigeAnexoRevisado) {
+      if (anexoRevisado === undefined) {
+        throw new BadRequestException(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      }
+      // Igualdad estricta y exacta: null === null («no había anexo»); una URL, carácter por carácter.
+      if (anexoRevisado !== existente.enlace_anexo) {
+        throw new ConflictException(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+      }
+    }
+
     // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
     // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
     if (accion === 'CERRAR_NO_ATENDIDA' && cambianFechas) {
@@ -600,6 +632,9 @@ export class SolicitudesService {
         fecha_fin: existente.fecha_fin,
         // Fase 7 · SE5: sobre el sub-espacio guardado también se calculó CA-06.
         sub_espacio: existente.sub_espacio,
+        // Fase 9 · ADR-005 E7: solo en T1 con anexo, el anexo que se comparó (el leído). Si el
+        // solicitante lo cambia entre la lectura y la escritura, el compare-and-set pierde → 409.
+        ...(exigeAnexoRevisado ? { enlace_anexo: existente.enlace_anexo } : {}),
       },
       data,
       recursos,

@@ -142,7 +142,8 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
   // --- Operaciones del sistema, tal como las ejecutan los controladores ---------------
   const aprobar = (r: string): Operacion => ({
     etiqueta: 'T1 aprobar (Staff A)', destino: 'Validado',
-    ejecutar: () => service.update(r, { estado: 'Validado' }, STAFF_A),
+    // Fase 9 · ADR-005 E7: VIDEO exige el anexo revisado al aprobar; la siembra no tiene anexo.
+    ejecutar: () => service.update(r, { estado: 'Validado', anexo_revisado: null }, STAFF_A),
   });
   const rechazar = (r: string): Operacion => ({
     etiqueta: 'T2 rechazar (Staff B)', destino: 'Rechazado',

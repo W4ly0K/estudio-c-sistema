@@ -8,7 +8,12 @@ import {
   ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
   enlaceDeLongitud,
 } from '../../../test/utils/casos-enlace';
-import { MENSAJE_ENLACE_ENTREGA, MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
+import {
+  MENSAJE_ANEXO_REVISADO_FORMA,
+  MENSAJE_ENLACE_ENTREGA,
+  MENSAJE_MOTIVO_RECHAZO,
+  UpdateSolicitudeDto,
+} from './update-solicitude.dto';
 import { ENLACE_MAXIMO } from '../../common/validadores/enlace-seguro.decorator';
 import {
   MENSAJE_MOTIVO_REPROGRAMACION,
@@ -344,6 +349,35 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       ])('acepta un motivo %s (límites exactos, contados como el motor)', async (_caso, motivo) => {
         expect(await erroresDe({ ...propuesta, motivo }, ProponerReprogramacionDto)).toEqual([]);
       });
+    });
+  });
+
+  describe('UpdateSolicitudeDto · anexo_revisado (Fase 9 · ADR-005 E7)', () => {
+    const conAnexoRevisado = (valor: unknown) =>
+      erroresDe({ estado: 'Validado', anexo_revisado: valor }, UpdateSolicitudeDto);
+    const URL = 'https://drive.google.com/file/d/guion/view';
+
+    it('ausente: el pipe no lo valida (si aplica lo decide el servicio)', async () => {
+      expect(await erroresDe({ estado: 'Validado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    it.each([
+      ['null («vi que no había anexo»)', null],
+      ['una URL', URL],
+      ['una URL con un espacio final (se compara exacta, sin recortar)', `${URL} `],
+      [`exactamente ${ENLACE_MAXIMO} caracteres`, 'h'.repeat(ENLACE_MAXIMO)],
+    ])('acepta %s', async (_caso, valor) => {
+      expect(await conAnexoRevisado(valor)).toEqual([]);
+    });
+
+    it.each([
+      ['la cadena vacía', ''],
+      ['solo espacios', '   '],
+      ['un número', 5],
+      ['un booleano', true],
+      [`${ENLACE_MAXIMO + 1} caracteres`, 'h'.repeat(ENLACE_MAXIMO + 1)],
+    ])('rechaza %s con el mensaje de forma', async (_caso, valor) => {
+      expect(await conAnexoRevisado(valor)).toContain(MENSAJE_ANEXO_REVISADO_FORMA);
     });
   });
 });

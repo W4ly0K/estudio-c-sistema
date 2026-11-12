@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud, SubEspacio } from '@prisma/client';
 import {
+  MENSAJE_ANEXO_CAMBIO_EN_REVISION,
   MENSAJE_ANEXO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
@@ -577,6 +580,213 @@ describe('SolicitudesService', () => {
 
       expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
       expect(JSON.stringify(prismaMock.solicitud.updateMany.mock.calls)).not.toContain('PODCAST');
+    });
+  });
+
+  describe('update() — E7 · anexo revisado al aprobar T1 (Fase 9 · ADR-005 E7)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/guion/view';
+    const OTRO = 'https://drive.google.com/file/d/otro/view';
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      estado?: string;
+      anexo_revisado?: string | null;
+      motivo_rechazo?: string;
+      proposito?: string;
+      fecha_inicio?: Date;
+      fecha_fin?: Date;
+    }
+    const conCategoria = (categoria: CategoriaSolicitud, enlace_anexo: string | null = null, estado = 'Recibido'): Solicitud => ({
+      ...solicitudBase,
+      categoria,
+      enlace_anexo,
+      estado,
+    });
+    const pedir = (cuerpo: Cuerpo) => service.update('EC-2099-0001', { estado: 'Validado', ...cuerpo }, 'uuid-staff');
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    /** Las condiciones del único compare-and-set de la prueba: exige que exista antes de leerlo. */
+    const whereDelCompareAndSet = (): Record<string, unknown> => {
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      const [llamada] = prismaMock.solicitud.updateMany.mock.calls;
+      if (llamada === undefined) throw new Error('El compare-and-set no se ejecutó');
+      return (llamada[0] as { where: Record<string, unknown> }).where;
+    };
+    const PREDICADOS_DE_SIEMPRE = {
+      radicado: 'EC-2099-0001',
+      estado: 'Recibido',
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+      sub_espacio: solicitudBase.sub_espacio,
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue({ ...solicitudBase, estado: 'Validado' });
+    });
+
+    describe.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      '%s (admite anexo)',
+      (categoria) => {
+        it('sin anexo_revisado → 400 OBLIGATORIO, sin escribir', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          const error = await rechazoDe(pedir({}));
+
+          expect(error).toBeInstanceOf(BadRequestException);
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          sinEscribir();
+        });
+
+        it('null con la solicitud sin anexo → aprueba; el compare-and-set suma enlace_anexo: null', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({ anexo_revisado: null });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+          expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+        });
+
+        it('la URL vista igual a la guardada → aprueba; el compare-and-set suma esa URL', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          await pedir({ anexo_revisado: ANEXO });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: ANEXO });
+        });
+
+        it.each([
+          ['vio null pero hay anexo', null, ANEXO],
+          ['vio un anexo pero ya no hay', ANEXO, null],
+          ['vio otro anexo', OTRO, ANEXO],
+          ['la misma URL con un espacio final (comparación exacta)', `${ANEXO} `, ANEXO],
+        ])('%s → 409 CAMBIO_EN_REVISION, sin escribir ni consultar CA-06', async (_caso, visto, guardado) => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, guardado));
+
+          const error = await rechazoDe(pedir({ anexo_revisado: visto }));
+
+          expect(error).toBeInstanceOf(ConflictException);
+          expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja también lo exige (400 antes de horario y CA-06)', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          const error = await rechazoDe(
+            pedir({ fecha_inicio: new Date('2099-01-16T09:00:00-05:00'), fecha_fin: new Date('2099-01-16T10:00:00-05:00') }),
+          );
+
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja y anexo_revisado correcto aprueba con enlace_anexo en el compare-and-set', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({
+            anexo_revisado: null,
+            fecha_inicio: new Date('2099-01-16T09:00:00-05:00'),
+            fecha_fin: new Date('2099-01-16T10:00:00-05:00'),
+          });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+        });
+
+        it('otra transición (En Producción) con anexo_revisado → 400 NO_APLICA; sin él, su compare-and-set no cambia', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO, 'Validado'));
+
+          const error = await rechazoDe(pedir({ estado: 'En Producción', anexo_revisado: ANEXO }));
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+          sinEscribir();
+
+          await pedir({ estado: 'En Producción' });
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, estado: 'Validado' });
+        });
+      },
+    );
+
+    describe.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s (no admite anexo)', (categoria) => {
+      it('aprobar sin el campo funciona como siempre: compare-and-set sin enlace_anexo', async () => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        await pedir({});
+
+        expect(whereDelCompareAndSet()).toEqual(PREDICADOS_DE_SIEMPRE);
+      });
+
+      it.each([
+        ['null', null],
+        ['una URL', ANEXO],
+      ])('aprobar con anexo_revisado %s → 400 NO_APLICA, sin escribir', async (_caso, valor) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        const error = await rechazoDe(pedir({ anexo_revisado: valor }));
+
+        expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+        sinEscribir();
+      });
+    });
+
+    it('RECHAZAR (T2) con anexo_revisado → 400 NO_APLICA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(
+        pedir({ estado: 'Rechazado', motivo_rechazo: 'El guion no corresponde a la actividad.', anexo_revisado: ANEXO }),
+      );
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('un PATCH sin cambio de estado con anexo_revisado → 400 NO_APLICA (no se ignora en silencio)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Recibido', anexo_revisado: ANEXO }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('orden: una transición ilegal responde primero el 409 de la máquina', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Entregado', anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+    });
+
+    it('orden: el 409 de E7 va antes de la franja vencida (D7)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue({
+        ...conCategoria(CategoriaSolicitud.PODCAST, ANEXO),
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+      });
+
+      const error = await rechazoDe(pedir({ anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+    });
+
+    it('la categoría sale de la base, no del cuerpo: un PODCAST no se aprueba sin anexo_revisado aunque el cuerpo diga ESPACIOS', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, null));
+      const dtoContaminado = { estado: 'Validado', categoria: CategoriaSolicitud.ESPACIOS } as unknown as UpdateSolicitudeDto;
+
+      const error = await rechazoDe(service.update('EC-2099-0001', dtoContaminado, 'uuid-staff'));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      sinEscribir();
     });
   });
 

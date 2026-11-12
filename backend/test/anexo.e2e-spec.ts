@@ -3,7 +3,12 @@ import { CategoriaSolicitud, RolUsuario, SubEspacio } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJE_ENLACE_ANEXO } from '../src/solicitudes/dto/create-solicitude.dto';
-import { MENSAJE_ANEXO_NO_APLICA } from '../src/solicitudes/solicitudes.service';
+import { MENSAJE_ANEXO_REVISADO_FORMA } from '../src/solicitudes/dto/update-solicitude.dto';
+import {
+  MENSAJE_ANEXO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
+} from '../src/solicitudes/solicitudes.service';
 import { crearAppE2E, PrismaMockE2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
 
 /**
@@ -98,6 +103,53 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
     expect(JSON.stringify(respuesta.body)).toContain('property enlace_anexo should not exist');
     expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  describe('A7. E7 · anexo_revisado al aprobar (Fase 9 · ADR-005 E7)', () => {
+    const aprobar = (body: object) =>
+      request(app.getHttpServer())
+        .patch(`/solicitudes/${SOLICITUD_E2E.radicado}`)
+        .set('Authorization', `Bearer ${tokenStaff}`)
+        .send({ estado: 'Validado', ...body });
+    const podcastSinAnexo = () =>
+      prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, categoria: CategoriaSolicitud.PODCAST });
+
+    it('PODCAST sin anexo_revisado → 400 OBLIGATORIO, sin transacción', async () => {
+      podcastSinAnexo();
+
+      const respuesta = await aprobar({}).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('PODCAST sin anexo y anexo_revisado null → 200; el compare-and-set exige enlace_anexo: null', async () => {
+      podcastSinAnexo();
+
+      await aprobar({ anexo_revisado: null }).expect(200);
+
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ estado: 'Recibido', enlace_anexo: null }) }),
+      );
+    });
+
+    it.each([
+      ['la cadena vacía', ''],
+      ['solo espacios', '   '],
+    ])('anexo_revisado con %s → 400 del pipe, sin leer ni escribir', async (_caso, valor) => {
+      const respuesta = await aprobar({ anexo_revisado: valor }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_REVISADO_FORMA);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('ESPACIOS con anexo_revisado null → 400 NO_APLICA, sin transacción', async () => {
+      const respuesta = await aprobar({ anexo_revisado: null }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   it('A5. GET del dueño: pide el anexo en la proyección y lo devuelve', async () => {
