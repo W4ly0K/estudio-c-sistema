@@ -109,6 +109,62 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
     expect(llamada().init.body).toBe(JSON.stringify(cuerpo))
   })
 
+  it('Fase 9 · K4 · historialEnlaces → GET …/historial-enlaces con el radicado codificado', async () => {
+    const { cliente, llamada } = crearEntornoDePrueba(json(200, { radicado: 'EC/1', eventos: [] }))
+
+    const resultado = await crearApiSolicitudes(cliente).historialEnlaces('EC/1')
+
+    expect(resultado).toEqual({ ok: true, datos: { radicado: 'EC/1', eventos: [] } })
+    expect(llamada().url).toBe(`${BASE}/solicitudes/EC%2F1/historial-enlaces`)
+    expect(llamada().init.method).toBe('GET')
+  })
+
+  it('Fase 9 · K4 · historialEnlaces: un campo de más en un evento es un error de contrato (DK4-2)', async () => {
+    const evento = {
+      id_log: 'log-1',
+      enlace_campo: 'ANEXO',
+      enlace_anterior: null,
+      enlace_nuevo: 'https://drive.google.com/file/d/xyz/view',
+      motivo_correccion: null,
+      modificado_por: 'uuid',
+      fecha_modificacion: '2026-10-09T14:00:00.000Z',
+      usuario: { nombre: 'Ana' },
+    }
+    const { cliente } = crearEntornoDePrueba(json(200, { radicado: 'EC-1', eventos: [evento] }))
+
+    expect(await crearApiSolicitudes(cliente).historialEnlaces('EC-1')).toEqual({ ok: false, error: { tipo: 'contrato' } })
+  })
+
+  it.each([
+    ['sin motivo', { enlace_entrega_anterior: 'https://youtu.be/viejo', enlace_entrega: 'https://youtu.be/nuevo' }],
+    [
+      'con motivo',
+      { enlace_entrega_anterior: 'https://youtu.be/viejo', enlace_entrega: 'https://youtu.be/nuevo', motivo_correccion: 'Se registró otra grabación.' },
+    ],
+  ] as const)('Fase 9 · K4 · corregirEnlaceEntrega → PATCH …/enlace-entrega %s, sin estado', async (_caso, cuerpo) => {
+    const { cliente, llamada } = crearEntornoDePrueba(
+      json(200, { mensaje: 'Enlace del producto final corregido.', sin_cambios: false, solicitud: DETALLE_STAFF }),
+    )
+
+    const resultado = await crearApiSolicitudes(cliente).corregirEnlaceEntrega('EC-1', cuerpo)
+
+    expect(resultado.ok && resultado.datos.sin_cambios).toBe(false)
+    expect(llamada().url).toBe(`${BASE}/solicitudes/EC-1/enlace-entrega`)
+    expect(llamada().init.method).toBe('PATCH')
+    expect(llamada().init.body).toBe(JSON.stringify(cuerpo))
+  })
+
+  it('Fase 9 · K4 · corregirEnlaceEntrega: sin sin_cambios es un error de contrato (fail-closed)', async () => {
+    const { cliente } = crearEntornoDePrueba(json(200, { mensaje: 'ok', solicitud: DETALLE_STAFF }))
+
+    const resultado = await crearApiSolicitudes(cliente).corregirEnlaceEntrega('EC-1', {
+      enlace_entrega_anterior: 'https://youtu.be/viejo',
+      enlace_entrega: 'https://youtu.be/nuevo',
+    })
+
+    expect(resultado).toEqual({ ok: false, error: { tipo: 'contrato' } })
+  })
+
   it('Fase 9 · K3 · editarAnexo: una respuesta sin sin_cambios es un error de contrato (fail-closed)', async () => {
     const { cliente } = crearEntornoDePrueba(json(200, { mensaje: 'Anexo actualizado.', solicitud: DETALLE_SOLICITANTE }))
 
@@ -228,6 +284,16 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.editarAnexo('EC-1', { enlace_anexo_anterior: null })
       // @ts-expect-error Fase 9 · K3: el anexo es texto o null.
       void api.editarAnexo('EC-1', { enlace_anexo_anterior: null, enlace_anexo: 42 })
+      // @ts-expect-error Fase 9 · K4: el anterior de la corrección nunca es null (EN8).
+      void api.corregirEnlaceEntrega('EC-1', { enlace_entrega_anterior: null, enlace_entrega: 'https://youtu.be/x' })
+      // @ts-expect-error Fase 9 · K4: el nuevo enlace nunca es null.
+      void api.corregirEnlaceEntrega('EC-1', { enlace_entrega_anterior: 'https://youtu.be/x', enlace_entrega: null })
+      // @ts-expect-error Fase 9 · K4: sin motivo, la clave no viaja; null nunca (400).
+      void api.corregirEnlaceEntrega('EC-1', { enlace_entrega_anterior: 'https://youtu.be/x', enlace_entrega: 'https://youtu.be/y', motivo_correccion: null })
+      // @ts-expect-error Fase 9 · K4: falta el anterior.
+      void api.corregirEnlaceEntrega('EC-1', { enlace_entrega: 'https://youtu.be/y' })
+      // @ts-expect-error Fase 9 · K4: la corrección no lleva estado (no es T9 ni T12).
+      void api.corregirEnlaceEntrega('EC-1', { enlace_entrega_anterior: 'https://youtu.be/x', enlace_entrega: 'https://youtu.be/y', estado: 'Entregado' })
       // Fase 9 · R9-1: en la radicación sí es válido (compila).
       void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).

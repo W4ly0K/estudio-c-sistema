@@ -94,6 +94,11 @@ export function apiFalsa(cambios: Partial<ApiSolicitudes> = {}): ApiSolicitudes 
     aceptarReprogramacion: vi.fn<ApiSolicitudes['aceptarReprogramacion']>(),
     rechazarReprogramacion: vi.fn<ApiSolicitudes['rechazarReprogramacion']>(),
     editarAnexo: vi.fn<ApiSolicitudes['editarAnexo']>(),
+    // K4: el detalle del Staff pide el historial en PODCAST, VIDEO y STREAMING; por defecto, vacío.
+    historialEnlaces: vi
+      .fn<ApiSolicitudes['historialEnlaces']>()
+      .mockImplementation((radicado) => Promise.resolve({ ok: true, datos: { radicado, eventos: [] } })),
+    corregirEnlaceEntrega: vi.fn<ApiSolicitudes['corregirEnlaceEntrega']>(),
     ...cambios,
   }
 }

@@ -4,7 +4,10 @@ import {
   esquemaCuerpoError,
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
+  esquemaEventoEnlace,
+  esquemaHistorialEnlaces,
   esquemaRespuestaComando,
+  esquemaRespuestaCorreccionEntrega,
   esquemaRespuestaEdicionAnexo,
   esquemaRespuestaLogin,
   esquemaSolicitudTablero,
@@ -199,5 +202,69 @@ describe('esquemaRespuestaEdicionAnexo (Fase 9 · K3 · AN14 y D10)', () => {
 
   it('los demás comandos no cambian: su esquema no exige sin_cambios', () => {
     expect(acepta(esquemaRespuestaComando(esquemaDetalleSolicitante), { mensaje: 'ok', solicitud: DETALLE_SOLICITANTE })).toBe(true)
+  })
+})
+
+describe('historial de enlaces (Fase 9 · K4 · J2b, DJ2b-2 y migración 20261109110000)', () => {
+  const ANEXO = {
+    id_log: 'log-1',
+    enlace_campo: 'ANEXO',
+    enlace_anterior: null,
+    enlace_nuevo: 'https://drive.google.com/file/d/xyz/view',
+    motivo_correccion: null,
+    modificado_por: 'uuid-solicitante',
+    fecha_modificacion: '2026-10-09T14:00:00.000Z',
+  }
+  const ENTREGA = {
+    ...ANEXO,
+    id_log: 'log-2',
+    enlace_campo: 'ENTREGA',
+    enlace_anterior: 'https://youtu.be/viejo',
+    enlace_nuevo: 'https://youtu.be/nuevo',
+    motivo_correccion: 'Se registró otra grabación.',
+    modificado_por: 'uuid-staff',
+  }
+
+  it.each([
+    ['ANEXO agregado', ANEXO],
+    ['ANEXO retirado', { ...ANEXO, enlace_anterior: 'https://drive.google.com/file/d/xyz/view', enlace_nuevo: null }],
+    ['ENTREGA con motivo', ENTREGA],
+    ['ENTREGA sin motivo', { ...ENTREGA, motivo_correccion: null }],
+    // EN8 lo garantiza solo el servicio: el motor admite ENTREGA con anterior NULL, y aquí también.
+    ['ENTREGA con anterior null', { ...ENTREGA, enlace_anterior: null }],
+  ])('acepta %s', (_caso, evento) => {
+    expect(acepta(esquemaEventoEnlace, evento)).toBe(true)
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['un campo adicional (DK4-2)', { ...ANEXO, correo: 'ana@unicesmag.edu.co' }],
+    ['sin id_log', { ...ANEXO, id_log: undefined }],
+    ['sin modificado_por', { ...ANEXO, modificado_por: undefined }],
+    ['sin fecha_modificacion', { ...ANEXO, fecha_modificacion: undefined }],
+    ['un enlace_campo desconocido', { ...ANEXO, enlace_campo: 'OTRO' }],
+    ['motivo en ANEXO (B8)', { ...ANEXO, motivo_correccion: 'Un motivo cualquiera.' }],
+    ['ENTREGA sin enlace nuevo (B4)', { ...ENTREGA, enlace_nuevo: null }],
+    ['sin cambio real (B2)', { ...ENTREGA, enlace_anterior: ENTREGA.enlace_nuevo }],
+    ['ANEXO de null a null (B2)', { ...ANEXO, enlace_nuevo: null }],
+    ['fecha sin zona', { ...ANEXO, fecha_modificacion: '2026-10-09T14:00:00' }],
+  ])('rechaza %s', (_caso, evento) => {
+    const sinIndefinidos = Object.fromEntries(Object.entries(evento).filter(([, valor]) => valor !== undefined))
+    expect(acepta(esquemaEventoEnlace, sinIndefinidos)).toBe(false)
+  })
+
+  it('la respuesta tiene exactamente { radicado, eventos }', () => {
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [ANEXO, ENTREGA] })).toBe(true)
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [] })).toBe(true)
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [], logs: [] })).toBe(false)
+  })
+
+  it('respuesta de la corrección: sin_cambios booleano obligatorio con la proyección del Staff', () => {
+    const respuesta = { mensaje: 'Enlace del producto final corregido.', solicitud: { ...DETALLE_STAFF, estado: 'Entregado' } }
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: false })).toBe(true)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: true })).toBe(true)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, respuesta)).toBe(false)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: 'true' })).toBe(false)
+    // La proyección es la del Staff: la del solicitante no basta.
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: false, solicitud: DETALLE_SOLICITANTE })).toBe(false)
   })
 })

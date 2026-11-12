@@ -352,6 +352,15 @@ describe('DetalleSolicitud · edición del anexo por el dueño (Fase 9 · K3)', 
     })
   })
 
+  it('K4: la pantalla del solicitante nunca pide el historial de enlaces ni ofrece corregir la entrega', async () => {
+    const api = mostrar({ ...recibido('PODCAST', VIEJO), estado: 'Entregado', enlace_entrega: VIEJO })
+    await esperarDetalle()
+
+    expect(api.historialEnlaces).not.toHaveBeenCalled()
+    expect(screen.queryByRole('region', { name: 'Historial de enlaces' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Corregir enlace' })).not.toBeInTheDocument()
+  })
+
   describe('convivencia con la cancelación (T3)', () => {
     it('en «Recibido» se ofrecen las dos; cancelar sigue igual y la edición deja de ofrecerse', async () => {
       const cancelada: DetalleSolicitante = { ...recibido('PODCAST', VIEJO), estado: 'Cancelado por el Usuario' }

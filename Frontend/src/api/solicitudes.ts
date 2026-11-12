@@ -3,7 +3,9 @@ import type { ClienteApi, Resultado } from './cliente'
 import {
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
+  esquemaHistorialEnlaces,
   esquemaRespuestaComando,
+  esquemaRespuestaCorreccionEntrega,
   esquemaRespuestaEdicionAnexo,
   esquemaSolicitud,
   esquemaSolicitudPropia,
@@ -11,6 +13,8 @@ import {
   type Categoria,
   type DetalleSolicitante,
   type DetalleStaff,
+  type HistorialEnlaces,
+  type RespuestaCorreccionEntrega,
   type RespuestaEdicionAnexo,
   type Solicitud,
   type SolicitudPropia,
@@ -157,6 +161,18 @@ export interface CuerpoEditarAnexo {
   readonly enlace_anexo: string | null
 }
 
+/**
+ * PATCH /solicitudes/:radicado/enlace-entrega (STAFF · ADR-008 EN6 a EN12 · K4). Ninguna clave
+ * admite null: el anterior es el enlace vigente que se vio, exacto (EN8: sin él no hay
+ * corrección); el nuevo, un https seguro. El motivo es opcional: si no hay, la clave no viaja
+ * (null, '' o solo espacios responderían 400).
+ */
+export interface CuerpoCorregirEnlaceEntrega {
+  readonly enlace_entrega_anterior: string
+  readonly enlace_entrega: string
+  readonly motivo_correccion?: string
+}
+
 export interface FiltrosTablero {
   readonly estado?: Estado
   readonly categoria?: Categoria
@@ -210,6 +226,22 @@ export function crearApiSolicitudes(cliente: ClienteApi) {
         ruta: rutaDe(radicado),
         cuerpo: cambios,
         esquema: esquemaRespuestaComando(esquemaSolicitud),
+      }),
+
+    /** GET /solicitudes/:radicado/historial-enlaces (STAFF · J2b): eventos de enlace, aparte de la línea de vida. */
+    historialEnlaces: (radicado: string): Promise<Resultado<HistorialEnlaces>> =>
+      cliente.solicitar({ metodo: 'GET', ruta: rutaDe(radicado, '/historial-enlaces'), esquema: esquemaHistorialEnlaces }),
+
+    /** PATCH /solicitudes/:radicado/enlace-entrega (STAFF · J3). No es una transición: el estado no cambia. */
+    corregirEnlaceEntrega: (
+      radicado: string,
+      cuerpo: CuerpoCorregirEnlaceEntrega,
+    ): Promise<Resultado<RespuestaCorreccionEntrega>> =>
+      cliente.solicitar({
+        metodo: 'PATCH',
+        ruta: rutaDe(radicado, '/enlace-entrega'),
+        cuerpo,
+        esquema: esquemaRespuestaCorreccionEntrega,
       }),
 
     /** POST /solicitudes/:radicado/reprogramacion (STAFF · T5). */

@@ -5,6 +5,7 @@ import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SIN_PROXIMAS } from './InicioSolicitante'
 import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
+import { TEXTO_HISTORIAL_VACIO, TEXTO_TITULO_HISTORIAL } from './presentacion/enlaces-staff'
 import { DETALLE_SOLICITANTE, DETALLE_STAFF, json } from './test/fixtures-api'
 
 // El botón real de Google necesita su proveedor y la red. El sustituto entrega una
@@ -170,6 +171,8 @@ describe('App', () => {
     const fetchFalso = servidorFalso({
       '/auth/perfil': () => json(200, { id: 'uuid-staff', nombre: 'Staff Estudio C', rol: 'STAFF' }),
       '/solicitudes/EC-2026-0142': () => json(200, DETALLE_STAFF),
+      // Fase 9 · K4 (DK4-1): el detalle del Staff de un PODCAST pide también su historial de enlaces.
+      '/solicitudes/EC-2026-0142/historial-enlaces': () => json(200, { radicado: 'EC-2026-0142', eventos: [] }),
     })
     mostrarApp('/solicitudes/EC-2026-0142')
 
@@ -179,8 +182,12 @@ describe('App', () => {
     // C6: en el detalle ninguna entrada de la navegación es la página actual.
     const navegacion = screen.getByRole('navigation', { name: 'Navegación principal' })
     expect(within(navegacion).queryByRole('link', { current: 'page' })).not.toBeInTheDocument()
+    // El historial se pide en un efecto, después de pintar el detalle: se espera a que su respuesta
+    // se vea (condición observable) y entonces se exige la lista EXACTA, sin duplicados.
+    const historial = screen.getByRole('region', { name: TEXTO_TITULO_HISTORIAL })
+    expect(await within(historial).findByText(TEXTO_HISTORIAL_VACIO)).toBeInTheDocument()
     const rutas = fetchFalso.mock.calls.map(([url]) => url.replace(API, ''))
-    expect(rutas).toEqual(['/auth/perfil', '/solicitudes/EC-2026-0142'])
+    expect(rutas).toEqual(['/auth/perfil', '/solicitudes/EC-2026-0142', '/solicitudes/EC-2026-0142/historial-enlaces'])
   })
 
   it('Fase 7 · C1: el STAFF en "/tablero" ve el tablero, con las mismas peticiones que en "/"', async () => {

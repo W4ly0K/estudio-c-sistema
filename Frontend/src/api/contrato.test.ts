@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
-import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO, CATEGORIAS, SUB_ESPACIOS } from './esquemas'
+import { CAMPOS_ENLACE, CATEGORIA_QUE_ELIGE_SUB_ESPACIO, CATEGORIAS, SUB_ESPACIOS } from './esquemas'
 import { ADMITE_ANEXO, PASA_POR_EDICION, REQUIERE_ENLACE, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
 import { ENLACE_MAXIMO } from '../presentacion/enlace'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
@@ -16,7 +16,8 @@ import fuenteDtoReprogramacion from '../../../backend/src/solicitudes/dto/propon
 import fuenteDecorador from '../../../backend/src/common/validadores/texto-con-longitud-real.decorator.ts?raw'
 import fuenteCategorias from '../../../backend/src/solicitudes/reglas/categorias.ts?raw'
 import fuenteEnlaceSeguro from '../../../backend/src/common/validadores/enlace-seguro.decorator.ts?raw'
-import { LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
+import { LIMITES_MOTIVO_CORRECCION, LIMITES_MOTIVO_RECHAZO, LIMITES_MOTIVO_REPROGRAMACION } from '../presentacion/motivo'
+import fuenteDtoCorreccion from '../../../backend/src/solicitudes/dto/corregir-enlace-entrega.dto.ts?raw'
 
 /** En Windows, Git entrega CRLF: se normaliza antes de buscar. */
 const lf = (texto: string): string => texto.replace(/\r\n/g, '\n')
@@ -78,6 +79,17 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('las categorías coinciden con el enum CategoriaSolicitud de Prisma', () => {
     expect([...CATEGORIAS]).toEqual(enumDePrisma('CategoriaSolicitud'))
+  })
+
+  it('Fase 9 · K4 · los tipos de evento de enlace coinciden con el enum CampoEnlace de Prisma', () => {
+    expect([...CAMPOS_ENLACE]).toEqual(enumDePrisma('CampoEnlace'))
+  })
+
+  it('Fase 9 · K4 · los límites del motivo de la corrección son los del DTO del backend (EN10)', () => {
+    expect(LIMITES_MOTIVO_CORRECCION).toEqual({
+      minimo: numeroDelBackend(fuenteDtoCorreccion, 'MOTIVO_CORRECCION_MINIMO'),
+      maximo: numeroDelBackend(fuenteDtoCorreccion, 'MOTIVO_CORRECCION_MAXIMO'),
+    })
   })
 
   it('los sub-espacios coinciden con el enum SubEspacio de Prisma (Fase 7)', () => {

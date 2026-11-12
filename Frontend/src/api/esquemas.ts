@@ -162,6 +162,56 @@ export const esquemaRespuestaEdicionAnexo = esquemaRespuestaComando(esquemaDetal
 });
 export type RespuestaEdicionAnexo = z.infer<typeof esquemaRespuestaEdicionAnexo>;
 
+// --- Fase 9 · K4: historial de enlaces y corrección de la entrega (solo STAFF) ------------------
+
+/** Copia del enum CampoEnlace de schema.prisma (contrato.test.ts la compara). */
+export const CAMPOS_ENLACE = ['ANEXO', 'ENTREGA'] as const;
+
+/**
+ * Un evento de GET /solicitudes/:radicado/historial-enlaces (J2b · DJ2b-2): EXACTAMENTE los siete
+ * campos de SELECT_HISTORIAL_ENLACES, con `strictObject` (un campo de más se rechaza: K4 · DK4-2).
+ * La nulabilidad es la del MOTOR (migración 20261109110000), no la del camino habitual:
+ *  - B8: motivo_correccion solo en ENTREGA.
+ *  - B4: ENTREGA siempre con enlace_nuevo; enlace_anterior admite NULL en la base (EN8 lo
+ *    garantiza solo el servicio), así que aquí también.
+ *  - B2: un cambio real (el anterior y el nuevo distintos), en la refinación de abajo.
+ */
+const camposComunesDelEvento = {
+  id_log: textoNoVacio,
+  modificado_por: textoNoVacio,
+  fecha_modificacion: fechaIso,
+};
+const esquemaEventoAnexo = z.strictObject({
+  ...camposComunesDelEvento,
+  enlace_campo: z.literal('ANEXO'),
+  enlace_anterior: z.string().nullable(),
+  enlace_nuevo: z.string().nullable(),
+  motivo_correccion: z.null(),
+});
+const esquemaEventoEntrega = z.strictObject({
+  ...camposComunesDelEvento,
+  enlace_campo: z.literal('ENTREGA'),
+  enlace_anterior: z.string().nullable(),
+  enlace_nuevo: z.string(),
+  motivo_correccion: z.string().nullable(),
+});
+export const esquemaEventoEnlace = z
+  .discriminatedUnion('enlace_campo', [esquemaEventoAnexo, esquemaEventoEntrega])
+  .refine((evento) => evento.enlace_anterior !== evento.enlace_nuevo, { message: 'Un evento de enlace es un cambio real (B2).' });
+export type EventoEnlace = z.infer<typeof esquemaEventoEnlace>;
+
+export const esquemaHistorialEnlaces = z.strictObject({
+  radicado: textoNoVacio,
+  eventos: z.array(esquemaEventoEnlace),
+});
+export type HistorialEnlaces = z.infer<typeof esquemaHistorialEnlaces>;
+
+/** PATCH /solicitudes/:radicado/enlace-entrega (DJ3-4): proyección del Staff y `sin_cambios` obligatorio. */
+export const esquemaRespuestaCorreccionEntrega = esquemaRespuestaComando(esquemaDetalleStaff).extend({
+  sin_cambios: z.boolean(),
+});
+export type RespuestaCorreccionEntrega = z.infer<typeof esquemaRespuestaCorreccionEntrega>;
+
 // --- Errores -----------------------------------------------------------------------
 
 /**
