@@ -45,6 +45,8 @@ Migraciones vigentes: `0_init` (*baseline*), `20261002200000_ca06_sin_traslape` 
 
 **Fase 8 · orden de despliegue (migraciones aplicadas en producción el 2026-10-28).** Primero la migración, después **este** backend y por último el frontend. El backend anterior a la Fase 8, contra la base migrada, ofrece T9 a PODCAST y VIDEO, y su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500: en esa ventana no se registran entregas. El frontend de la Fase 8 exige `enlace_entrega` en su esquema, así que tampoco funciona contra un backend anterior (ADR-008 §2.6).
 
+**Fase 9 · R9-1 (implementada en la rama `feat/fase-9-anexo-solicitante`; producción pendiente).** La migración `20261109110000_enlace_anexo` agrega `enlace_anexo` a `Solicitud`, con su formato y su regla de categoría, y las columnas y restricciones de los eventos de enlace de `Log_Auditoria` ([ADR-009](../docs/adr/ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md) y [ADR-012](../docs/adr/ADR-012-eventos-de-auditoria-sin-transicion.md)). Se verificó **solo en la base desechable** de integración; su checksum vigente está en ADR-009 §2.6. En producción llega con el paso 9.1.5 (precheck 0c, postcheck reescrito, respaldo, `migrate status` y `npm run db:migrate`), en el mismo orden de la Fase 8: migración, backend y, por último, el frontend. ⚠️ Hasta el lote K, el frontend no envía `anexo_revisado` (§10): contra este backend, aprobar PODCAST, VIDEO o STREAMING desde la interfaz responde 400. Debe resolverse antes del PR y del despliegue.
+
 ```bash
 npm run db:migrate   # prisma migrate deploy: aplica las migraciones pendientes
 npx prisma migrate status
@@ -73,10 +75,10 @@ npm run start:dev   # http://localhost:3000, con recarga automática
 ## 4. Pruebas
 
 ```bash
-npm test                 # Pruebas unitarias (705; 1 omitida por diseño)
-npm run test:e2e         # Pruebas end-to-end por HTTP real (64)
+npm test                 # Pruebas unitarias (1.365; 1 omitida por diseño)
+npm run test:e2e         # Pruebas end-to-end por HTTP real (126)
 npm run test:tz          # Pruebas de src/solicitudes en 4 zonas horarias
-npm run test:integracion # CA-06, K9, motivos, concurrencia, anexo y auditoría de enlaces contra PostgreSQL real, en una base DESECHABLE (11 suites, 182)
+npm run test:integracion # CA-06, K9, motivos, concurrencia, anexo y auditoría de enlaces contra PostgreSQL real, en una base DESECHABLE (16 suites, 212)
 ```
 
 - `npm test`, `test:e2e` y `test:tz` **nunca tocan Supabase**: `PrismaService` se reemplaza por un mock. Los e2e levantan el `AppModule` real (guards globales, rutas y `ValidationPipe` de producción) y hacen peticiones HTTP reales con `supertest`.
@@ -159,7 +161,7 @@ Petición HTTP
 10. Agrega pruebas **en el mismo commit**: unitarias para los metadatos de `@Roles` y la política, y e2e si cambias la cadena de seguridad (incluido un caso de recurso **ajeno**).
 11. **Fechas y horas:** recibe fechas con `@FechaConZonaHoraria()` (nunca `@Type(() => Date)` solo), obtén el "ahora" del `Reloj` inyectado (nunca `new Date()` ni `@MinDate` en un DTO, que se evalúa al cargar el módulo) y evalúa las reglas en la hora de Bogotá con `aMomentoLocal()`. **Nunca** uses métodos locales de `Date` (`getHours`, `getDay`, `getFullYear`…). Ejecuta `npm run test:tz`.
 12. **Integridad garantizada por el motor:** toda regla de unicidad o de no traslape se garantiza con una restricción de PostgreSQL, no solo con una consulta previa (bajo concurrencia, la consulta previa no protege: ADR-004). El error del motor se traduce con un detector anclado a **esa** restricción y **nunca** se reenvía su mensaje al cliente (el `DETAIL` contiene datos de terceros). Los cambios de esquema van solo por migraciones nuevas con `npm run db:migrate`; una migración aplicada no se edita. Ejecuta `npm run test:integracion` si tocas restricciones o migraciones.
-13. **Cambios de estado:** ningún endpoint escribe `estado` por su cuenta. Consulta la máquina (`evaluarTransicion` en el tablero, `evaluarAccion` en un comando), traduce sus motivos (403 solo para `ROL_NO_AUTORIZADO`, 409 para el resto) y escribe **solo** con `escribirConCompareAndSet()`, con el estado leído en el `WHERE` y el log en la misma transacción. En los comandos del solicitante, primero la propiedad (`leerPropiaYAutorizar`) y después el estado. Una transición nueva es una fila nueva en `TRANSICIONES`, nunca un `if` en el servicio ([ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)).
+13. **Cambios de estado:** ningún endpoint escribe `estado` por su cuenta. Consulta la máquina (`evaluarTransicion` en el tablero, `evaluarAccion` en un comando), traduce sus motivos (403 solo para `ROL_NO_AUTORIZADO`, 409 para el resto) y escribe **solo** con `escribirConCompareAndSet()`, con el estado leído en el `WHERE` y el log en la misma transacción. En los comandos del solicitante, primero la propiedad (`leerPropiaYAutorizar`) y después el estado. Una transición nueva es una fila nueva en `TRANSICIONES`, nunca un `if` en el servicio ([ADR-005](../docs/adr/ADR-005-maquina-de-estados-ca10.md)). Los eventos que **no** son transiciones (Fase 9: cambios del anexo y correcciones del enlace de entrega) se escriben por el mismo `escribirConCompareAndSet()`, con un `EventoAuditoria` tipado y sin pasar por la máquina ([ADR-012](../docs/adr/ADR-012-eventos-de-auditoria-sin-transicion.md)).
 
 ### Matriz de acceso vigente
 
@@ -177,6 +179,9 @@ Petición HTTP
 | `POST /solicitudes/:radicado/reprogramacion` | 🛡️ STAFF (T5, CA-10). El autor del log sale del token |
 | `POST /solicitudes/:radicado/reprogramacion/aceptar` | 🙋 SOLICITANTE **dueño** (T7). Ajeno o inexistente → **404 idéntico** |
 | `POST /solicitudes/:radicado/reprogramacion/rechazar` | 🙋 SOLICITANTE **dueño** (T8). Ajeno o inexistente → **404 idéntico** |
+| `PATCH /solicitudes/:radicado/anexo` | 🙋 SOLICITANTE **dueño** (Fase 9 · AN10). Solo en `Recibido` y en PODCAST, VIDEO y STREAMING. Ajeno o inexistente → **404 idéntico** (§14.1) |
+| `GET /solicitudes/:radicado/historial-enlaces` | 🛡️ STAFF (Fase 9 · ADR-012 EV7). El servicio repite la comprobación del rol antes de consultar (§14.2) |
+| `PATCH /solicitudes/:radicado/enlace-entrega` | 🛡️ STAFF (Fase 9 · ADR-008 EN6). Solo en el `Entregado` de PODCAST, VIDEO y STREAMING con enlace registrado. El servicio repite la comprobación del rol antes de consultar (§14.3) |
 | `DELETE /solicitudes/:radicado` | 🛡️ STAFF. El borrado físico está prohibido (responde 501 y remite a `POST /solicitudes/:radicado/cancelar`) |
 | `/usuarios` (todas las operaciones) | 🛡️ STAFF |
 | `GET /recursos`, `GET /recursos/:id` | 🔐 Autenticado (catálogo del formulario) |
@@ -227,6 +232,8 @@ El *por qué* de este diseño está en los ADR (Architecture Decision Records):
 - [ADR-006 — Bases del frontend y contrato tipado con la API](../docs/adr/ADR-006-frontend-contrato-tipado.md) (el consumidor de este contrato; ver también el [README del frontend](../Frontend/README.md))
 - [ADR-007 — Sub-espacios del Estudio C y cierre de solicitudes no atendidas](../docs/adr/ADR-007-subespacios-y-no-atendida.md) (Fase 7: CA-06 por sub-espacio, T10 y el ajuste al validar)
 - [ADR-008 — Reglas por categoría: «Edición y postproducción», enlace del producto final y categoría inmutable](../docs/adr/ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) (Fase 8: directrices del tutor)
+- [ADR-009 — Anexo opcional del solicitante (R9-1) y fuente única del enlace seguro](../docs/adr/ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md) (Fase 9: 🟡 aceptado en la rama; pasa a ✅ con el postcheck del 9.1.5)
+- [ADR-012 — Eventos de auditoría que no son transiciones de estado](../docs/adr/ADR-012-eventos-de-auditoria-sin-transicion.md) (Fase 9: aceptado; backend implementado en la rama)
 
 ## 8. Contrato de `GET /solicitudes/:radicado` para el frontend (pantalla B3)
 
@@ -247,6 +254,7 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
   "sub_espacio": "CABINA_AUDIO",
   "sub_espacio_propuesto": null,
   "enlace_entrega": null,
+  "enlace_anexo": null,
   "recursos": [{ "cantidad_solicitada": 2, "recurso": { "nombre": "Micrófono de solapa" } }],
   "logs": [
     { "estado_anterior": "Recibido", "estado_nuevo": "Validado",
@@ -257,9 +265,11 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 ```
 
 - `logs` viene ordenado por fecha ascendente: alimenta directamente la **línea de vida operativa**. El actor de cada cambio no se envía; la UI debe mostrarlo como *"Staff Estudio C"*.
+- **Fase 9 · solo transiciones en `logs`** (ADR-012 EV7): en los dos roles, `logs` excluye los eventos de enlace (`enlace_campo` distinto de `null`). Un cambio del anexo o una corrección del enlace de entrega no es una transición: si apareciera aquí, movería la fecha de «Recibido» o de «Entregado» en la línea de vida. El Staff los consulta aparte (§14.2); el solicitante no ve ese historial (D7).
 - `motivo_reprogramacion` (Fase 6.1b) solo tiene valor en los registros cuyo `estado_nuevo` es `Pendiente de Reprogramación` (T5): es la justificación del Staff y la UI la muestra como *"Motivo informado por el Staff"*. Es inmutable: sigue en el historial después de aceptar o rechazar la propuesta. `motivo_rechazo` (Fase 6.5b) solo tiene valor en el registro de T2: de 10 a 500 caracteres, guardado sin los espacios de los extremos; la UI lo muestra como *"Motivo del rechazo"*.
 - `sub_espacio` (Fase 7) es `CABINA_AUDIO`, `ESTUDIO_GRABACION` o `ESTUDIO_COMPLETO`; lo anterior a la Fase 7 vale `ESTUDIO_COMPLETO`. `sub_espacio_propuesto` es el lugar de una propuesta de reprogramación: con una propuesta pendiente **siempre tiene valor** y sin ella siempre es `null` (M4, desde el *contract*). Las columnas del ajuste que guarda el log (`sub_espacio_anterior`, `sub_espacio_nuevo`, `fecha_*_anterior`) **todavía no** se exponen (ADR-007, DA-2).
-- `enlace_entrega` (Fase 8) es el enlace `https://` del producto final. Solo tiene valor en un `Entregado` de PODCAST, VIDEO o STREAMING registrado desde la Fase 8; las entregas anteriores y las demás categorías valen `null` (ADR-008, EN4). La UI lo abre en una pestaña nueva con `rel="noopener noreferrer"`.
+- `enlace_entrega` (Fase 8) es el enlace `https://` del producto final. Solo tiene valor en un `Entregado` de PODCAST, VIDEO o STREAMING registrado desde la Fase 8; las entregas anteriores y las demás categorías valen `null` (ADR-008, EN4). La UI lo abre en una pestaña nueva con `rel="noopener noreferrer"`. Desde la Fase 9, el Staff lo corrige con su propia ruta (§14.3).
+- `enlace_anexo` (Fase 9 · R9-1) es el enlace `https://` del guion que adjuntó el solicitante, o `null`. Solo puede tener valor en PODCAST, VIDEO y STREAMING (AN2b). Lo reciben los dos roles; el solicitante lo cambia o lo retira solo en `Recibido` (§14.1).
 - **404** `{ "statusCode": 404, "message": "Solicitud no encontrada.", "error": "Not Found" }` cuando el radicado no existe **o** no pertenece al usuario. La UI debe tratar ambos casos igual (por ejemplo: *"No encontramos esa solicitud"*).
 - El STAFF recibe además `id_usuario`, `usuario`, `recursos[].id_detalle`, `recurso.id_recurso`, `recurso.cantidad_total`, `logs[].id_log` y `logs[].modificado_por`.
 
@@ -273,6 +283,17 @@ Respuesta **200** para el SOLICITANTE dueño (proyección mínima):
 | `ESPACIOS` | Ausente o inválido | **400** del pipe: `["El sub-espacio debe ser CABINA_AUDIO, ESTUDIO_GRABACION o ESTUDIO_COMPLETO (obligatorio en una solicitud de espacio físico)."]` |
 | `PODCAST`, `VIDEO`, `STREAMING`, `ASESORIAS` | Ausente | Se guarda `ESTUDIO_COMPLETO` |
 | `PODCAST`, `VIDEO`, `STREAMING`, `ASESORIAS` | Presente | **400** del servicio, antes que cualquier otra regla: `El sub-espacio solo se elige en una solicitud de espacio físico; para los demás servicios lo asigna el Estudio C.` (con un valor inventado, el 400 del pipe) |
+
+**Anexo opcional (Fase 9 · R9-1, ADR-009).** `enlace_anexo` es opcional: ausente o `null` es «sin anexo», válido en cualquier categoría. Si llega:
+
+| Caso | Resultado |
+|---|---|
+| Forma inválida (sin `https://`, con espacios, usuario y contraseña, `''` o más de 2048 caracteres) | **400** del pipe: `["El enlace del anexo debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta 2048 caracteres."]` |
+| Forma válida en `ESPACIOS` o `ASESORIAS` (AN2b) | **400** del servicio, después de la regla del sub-espacio y antes del horario y de CA-06, sin consultar ni escribir: `Esta categoría no admite anexo: el guion solo se adjunta en solicitudes de pódcast, video o streaming.` |
+| Forma válida en `PODCAST`, `VIDEO` o `STREAMING` | Se guarda |
+
+- El motor repite la regla de categoría (`Solicitud_enlace_anexo_segun_categoria_check`, DTO ⊆ CHECK). Antes de la validación del servicio (J0), la radicación terminaba en una excepción de Prisma sin traducir (medido en I-38e).
+- Pendiente del lote K: el formulario todavía ofrece el campo en todas las categorías.
 
 **Fechas:** `fecha_inicio` y `fecha_fin` deben ser ISO 8601 con zona horaria explícita. Cualquiera de estas formas es válida:
 
@@ -315,6 +336,8 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 - Enviar el estado actual no es un cambio de estado: **200** sin log.
 - `categoria` **no** se acepta (Fase 8): la categoría no cambia después de radicar. El pipe responde **400** con `property categoria should not exist` (ADR-008, IN1).
 - `enlace_entrega` (Fase 8) es opcional y solo acompaña una entrega. Si no empieza por `https://`, tiene espacios, usuario y contraseña o más de 2048 caracteres, el pipe responde **400** con `message` = `["El enlace del producto final debe empezar por https://, sin espacios ni usuario y contraseña, y tener hasta 2048 caracteres."]`. `null` cuenta como ausente.
+- `anexo_revisado` (Fase 9 · ADR-005 E7) acompaña **solo** la aprobación (T1, también con ajustes) de PODCAST, VIDEO o STREAMING, y ahí es **obligatorio**: es el enlace del anexo que el Staff vio en el detalle, o `null` si no tenía. Se compara exactamente con el vigente y no se guarda. `''`, solo espacios, otro tipo o más de 2048 caracteres → **400** del pipe con `["anexo_revisado debe ser null o el enlace del anexo que se vio en el detalle (texto no vacío, hasta 2048 caracteres)."]`. En esa aprobación, el *compare-and-set* incluye `enlace_anexo`: si el solicitante lo cambia entre la lectura y la escritura, responde la fila 8. ⚠️ Pendiente del lote K: `AccionesStaff` todavía no envía este campo.
+- `enlace_anexo` **no** se acepta (Fase 9 · ADR-009 AN4): el pipe responde **400** con `property enlace_anexo should not exist`. El solicitante lo edita por su propia ruta (§14.1).
 - **Rechazar (T2)** exige `motivo_rechazo`: texto de **10 a 500 caracteres** sin contar los espacios de los extremos, que se recortan antes de guardarlo. Se cuenta en caracteres reales: un emoji o una letra con tilde valen 1, igual que en PostgreSQL. Si falta, no es texto o no cumple la longitud, el pipe responde **400** con `message` = `["El motivo del rechazo es obligatorio y debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`.
 - Con otro `estado`, el pipe no valida el motivo: lo rechaza la fila 2 de la tabla, incluido repetir `Rechazado` sobre una solicitud ya rechazada.
 - El pipe valida el cuerpo **antes** que la tabla: el orden completo es 401 (token) → 403 (rol) → 400 (cuerpo) → la tabla.
@@ -335,6 +358,9 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 | 3 | Otra categoría pide T11 o T12 (Fase 8) | 409 | `Esta categoría no pasa por "Edición y postproducción": la entrega se registra directamente desde "En Producción".` |
 | 3a | Entrega de PODCAST, VIDEO o STREAMING sin `enlace_entrega` (Fase 8) | 400 | `Para entregar esta solicitud se requiere el enlace del producto final (https://).` |
 | 3a | Entrega de ESPACIOS o ASESORIAS con `enlace_entrega` (Fase 8) | 400 | `Esta categoría no tiene un producto final en línea: la entrega se registra sin enlace.` |
+| 3a.1 | `anexo_revisado` fuera de T1 de PODCAST, VIDEO o STREAMING, también con `null` o sin cambio de estado (Fase 9) | 400 | `anexo_revisado solo se envía al aprobar una solicitud de pódcast, video o streaming.` |
+| 3a.2 | T1 de PODCAST, VIDEO o STREAMING sin `anexo_revisado` (Fase 9) | 400 | `Para aprobar esta solicitud indique el anexo revisado, o null si no tenía anexo.` |
+| 3a.3 | `anexo_revisado` distinto del anexo vigente (Fase 9) | 409 | `El anexo cambió mientras se revisaba. Recargue el detalle y revíselo antes de aprobar.` |
 | 3b | Se cierra como `No atendida` (T10) enviando fechas | 400 | `Al cerrar una solicitud como "No atendida" no se envían fechas: se cierra con la franja registrada.` |
 | 4 | Cambian las fechas y la solicitud no está en `Recibido` | 409 | `Las fechas solo se editan mientras la solicitud está en "Recibido". Para una solicitud validada, proponga una reprogramación.` |
 | 4b | Llega `sub_espacio` y la solicitud no está en `Recibido` | 409 | `El sub-espacio solo se ajusta mientras la solicitud está en "Recibido", al validarla. Para una solicitud validada, proponga una reprogramación.` |
@@ -356,7 +382,7 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 
 | # | Origen | Destino | Rol | Ruta |
 |---|---|---|---|---|
-| T1 | Recibido | Validado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Validado" }`, con o sin ajuste de fechas y `sub_espacio` (§10) |
+| T1 | Recibido | Validado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Validado" }`, con o sin ajuste de fechas y `sub_espacio` (§10); en PODCAST, VIDEO y STREAMING exige `anexo_revisado` (Fase 9 · E7) |
 | T2 | Recibido | Rechazado | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "Rechazado", "motivo_rechazo": "…" }` |
 | T3 | Recibido | Cancelado por el Usuario | SOLICITANTE (dueño) | `POST /solicitudes/:radicado/cancelar` |
 | T4 | Validado | En Producción | STAFF | `PATCH /solicitudes/:radicado` con `{ "estado": "En Producción" }` |
@@ -371,7 +397,7 @@ Es el **tablero** del Staff: edita la solicitud y ejecuta las transiciones T1, T
 
 - Estado inicial: `Recibido`. **Estados finales:** `Entregado`, `Rechazado`, `Cancelado por el Usuario` y `No atendida`; no admiten ningún cambio de estado. `No atendida` no lleva motivo: el solicitante ve un texto fijo del frontend.
 - Cualquier par que no está en la tabla está prohibido. Ninguna transición es compartida entre roles: si la pide el otro rol, la respuesta es 403.
-- Toda transición queda en `Log_Auditoria`, en la misma transacción que el cambio, con el autor tomado del token.
+- Toda transición queda en `Log_Auditoria`, en la misma transacción que el cambio, con el autor tomado del token. Desde la Fase 9, `Log_Auditoria` también guarda eventos de enlace que **no** son transiciones (el mismo estado antes y después, §14): no están en esta tabla ni pasan por la máquina.
 - **Franjas:** todos los estados ocupan su franja oficial **en su sub-espacio** salvo `Rechazado`, `Cancelado por el Usuario`, `No atendida` y `Edición y postproducción`; el `Entregado` de PODCAST y VIDEO tampoco ocupa (Fase 8: ya la liberó en T11). En `Pendiente de Reprogramación` la franja oficial **sigue ocupada** y la propuesta **no** se reserva (§12.2).
 - La base de datos garantiza que hay propuesta (`fecha_propuesta_inicio` y `fecha_propuesta_fin`) **si y solo si** la solicitud está en `Pendiente de Reprogramación`, y que la propuesta termina después de empezar (invariante K9).
 - La base de datos también garantiza que todo log de T5, y solo ese, lleva `motivo_reprogramacion`, con 10 a 500 caracteres sin contar los espacios de los extremos (Fase 6.1b).
@@ -480,3 +506,89 @@ Permite al frontend reconstruir la sesión al recargar la página con el JWT que
 - La identidad sale del token; el `nombre` y el `rol` se leen de la base de datos en ese momento. Si el Staff le cambió el rol a alguien, el perfil ya muestra el rol nuevo, aunque el token diga otro.
 - No incluye el correo (minimización): la interfaz no lo necesita.
 - **401** sin token, con un token inválido o vencido, o si el usuario del token ya no existe. El frontend lo trata como sesión vencida: borra el token y vuelve al login.
+
+## 14. Contratos de enlaces (Fase 9 · R9-1 · ADR-009, ADR-008 §2.7 y ADR-012)
+
+**Estado:** implementado en el backend de la rama `feat/fase-9-anexo-solicitante` (hasta `e0bc0d7`) y probado contra la base desechable. **No desplegado en producción** (paso 9.1.5). El frontend todavía no consume estas rutas (lote K, §14.4).
+
+En las tres rutas:
+
+- **401** sin token. **403** `No tienes permisos para realizar esta acción.` si el rol no corresponde (`RolesGuard`). El actor sale del token, nunca del cuerpo.
+
+Solo en los dos comandos `PATCH` (§14.1 y §14.3):
+
+- Un campo desconocido en el cuerpo → **400** del pipe.
+- Un cambio efectivo se escribe con `escribirConCompareAndSet()` y deja **un** evento de enlace (`ANEXO` o `ENTREGA`) en `Log_Auditoria`, en la misma transacción. No es una transición: el estado no cambia y el evento no aparece en `logs` (§8).
+- **409** `La solicitud fue modificada por otra operación mientras se procesaba este cambio. Recargue y vuelva a intentarlo.` si otra operación cambió la solicitud entre la lectura y la escritura.
+- **`sin_cambios` (ADR-012 D10, enmendada el 2026-11-12):** si el enlace pedido ya es el vigente, **200** con `sin_cambios: true`, sin escritura y sin evento. Solo se responde después de comprobar el rol, la forma del cuerpo, la existencia o propiedad, la categoría y **el estado** (y EN8 en la corrección), así que nunca oculta un 409 de estado. Sí se responde aunque el valor anterior enviado esté desactualizado. No es idempotencia completa: ante una respuesta incierta, la UI vuelve a consultar el detalle. Las respuestas de los dos comandos llevan `sin_cambios` siempre explícito.
+
+El `GET` del historial (§14.2) solo lee: no escribe, no usa *compare-and-set* ni responde `sin_cambios`.
+
+### 14.1 `PATCH /solicitudes/:radicado/anexo` (SOLICITANTE dueño · AN10 a AN14)
+
+```json
+{ "enlace_anexo_anterior": "https://drive.google.com/…", "enlace_anexo": null }
+```
+
+- Las dos propiedades son **obligatorias** y admiten `null`. `enlace_anexo`: un enlace nuevo, o `null` para retirar el anexo; con texto, la forma de la §9 (`El enlace del anexo debe empezar por https://…`). `enlace_anexo_anterior`: el anexo que se vio en el detalle, o `null` si no había; se compara exactamente. Ausente, `''`, solo espacios, otro tipo o más de 2048 caracteres → **400** con `["enlace_anexo_anterior debe ser null o el enlace que se vio en el detalle (texto no vacío, hasta 2048 caracteres)."]`.
+- La propiedad va en el `WHERE`: el STAFF recibe 403 del guard y un radicado ajeno, el mismo 404 que uno inexistente.
+
+| # | Regla | HTTP | `message` |
+|---|---|---|---|
+| 1 | Ajeno o inexistente | 404 | `Solicitud no encontrada.` |
+| 2 | La categoría no admite anexo | 400 | `Esta categoría no admite anexo: el guion solo se adjunta en solicitudes de pódcast, video o streaming.` |
+| 3 | La solicitud no está en `Recibido` | 409 | `El anexo solo se puede cambiar mientras la solicitud está en Recibido.` |
+| 4 | El valor pedido ya es el vigente | 200 | `El anexo ya tenía ese valor.` (`sin_cambios: true`) |
+| 5 | `enlace_anexo_anterior` no es el vigente | 409 | `El anexo cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.` |
+| 6 | *Compare-and-set* perdido | 409 | El de concurrencia |
+
+**200:** `{ mensaje, sin_cambios, solicitud }`, con la proyección del solicitante (§8). `mensaje`: `Anexo actualizado.`, `Anexo retirado.` o `El anexo ya tenía ese valor.`. El evento guarda el enlace anterior (leído de la base), el nuevo (`null` al retirar), el actor y la fecha.
+
+### 14.2 `GET /solicitudes/:radicado/historial-enlaces` (STAFF)
+
+Además del guard, el servicio comprueba el rol **antes de consultar** (403 `El historial de enlaces solo lo puede consultar el Staff.`, defensa en profundidad). Un radicado inexistente → **404** `Solicitud no encontrada.`.
+
+```json
+{
+  "radicado": "EC-2026-0142",
+  "eventos": [
+    { "id_log": "…", "enlace_campo": "ANEXO", "enlace_anterior": null,
+      "enlace_nuevo": "https://drive.google.com/…", "motivo_correccion": null,
+      "modificado_por": "uuid-del-usuario", "fecha_modificacion": "2026-10-09T14:00:00.000Z" }
+  ]
+}
+```
+
+- Solo eventos de enlace (`ANEXO` y `ENTREGA`), en orden cronológico (`fecha_modificacion` y, en un empate, `id_log`); las transiciones siguen en `logs` (§8). Sin eventos → `eventos: []`.
+- Exactamente esos siete campos: del actor solo `modificado_por`, sin nombre ni correo. `motivo_correccion` solo puede tener valor en un evento `ENTREGA`.
+
+### 14.3 `PATCH /solicitudes/:radicado/enlace-entrega` (STAFF · ADR-008 EN6 a EN12)
+
+```json
+{ "enlace_entrega_anterior": "https://…", "enlace_entrega": "https://…", "motivo_correccion": "Se registró el enlace de otra grabación." }
+```
+
+- `enlace_entrega`: obligatorio, sin `null`, con la forma de la §10 (`El enlace del producto final debe empezar por https://…`).
+- `enlace_entrega_anterior`: obligatorio, sin `null`; el enlace que se vio en el detalle, comparado exactamente. Ausente, `''`, solo espacios, otro tipo o más de 2048 caracteres → **400** con `["enlace_entrega_anterior debe ser el enlace que se vio en el detalle (texto no vacío, hasta 2048 caracteres)."]`.
+- `motivo_correccion`: opcional. Si llega, de 10 a 500 caracteres reales sin contar los espacios de los extremos; `null`, `''`, solo espacios u otro tipo → **400** con `["Si se indica, el motivo de la corrección debe tener entre 10 y 500 caracteres (sin contar los espacios de los extremos)."]`. Se guarda recortado en el evento, solo si hay una corrección efectiva.
+
+| # | Regla | HTTP | `message` |
+|---|---|---|---|
+| 1 | El rol no es STAFF (comprobación del servicio, antes de consultar) | 403 | `La corrección del enlace del producto final solo la hace el Staff.` |
+| 2 | El radicado no existe | 404 | `Solicitud no encontrada.` |
+| 3 | ESPACIOS o ASESORIAS | 400 | `Esta categoría no tiene un enlace de producto final que corregir.` |
+| 4 | La solicitud no está en `Entregado` | 409 | `El enlace del producto final solo se corrige en una solicitud entregada.` |
+| 5 | La entrega no tiene enlace (EN8, por ejemplo la entrega histórica de PODCAST de DA-5) | 409 | `Esta entrega no tiene un enlace registrado; agregarlo por primera vez no está disponible.` |
+| 6 | El enlace pedido ya es el vigente (el motivo no se guarda) | 200 | `El enlace ya tenía ese valor.` (`sin_cambios: true`) |
+| 7 | `enlace_entrega_anterior` no es el vigente | 409 | `El enlace cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.` |
+| 8 | *Compare-and-set* perdido | 409 | El de concurrencia |
+
+**200:** `{ mensaje, sin_cambios, solicitud }`, con la proyección del Staff (§8). `mensaje`: `Enlace del producto final corregido.` o `El enlace ya tenía ese valor.`. La solicitud sigue en `Entregado`; el evento `ENTREGA` guarda el enlace anterior, el nuevo, el motivo (si llegó), el actor y la fecha.
+
+### 14.4 Pendiente del frontend (lote K) y de producción
+
+- `anexo_revisado` en las dos rutas de T1 de `AccionesStaff` (§10). **Bloquea el PR.**
+- El formulario de radicación muestra el anexo solo en PODCAST, VIDEO y STREAMING, con el texto de ayuda vigente (`TEXTO_AYUDA_ANEXO`, ADR-009 AN15).
+- La edición y el retiro del anexo (§14.1), el historial de enlaces del Staff (§14.2) y la corrección del enlace de entrega, con la advertencia de no escribir datos personales en el motivo (§14.3).
+- Los contratos de Zod con `sin_cambios` y con la forma del historial.
+- Producción: el paso 9.1.5 (§2.1) y la prueba manual con navegador real después del despliegue.
