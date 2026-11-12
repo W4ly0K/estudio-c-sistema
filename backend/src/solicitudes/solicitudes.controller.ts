@@ -7,6 +7,7 @@ import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import { EditarAnexoDto } from './dto/editar-anexo.dto';
 
 // Autenticación: APP_GUARD global. Autorización: @Roles por endpoint.
 @Controller('solicitudes')
@@ -84,6 +85,18 @@ export class SolicitudesController {
   @HttpCode(HttpStatus.OK)
   rechazarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
     return this.solicitudesService.rechazarReprogramacion(radicado, usuario);
+  }
+
+  // Fase 9 · ADR-009 AN10 (lote J2): solo el DUEÑO agrega, cambia o retira su anexo, en «Recibido».
+  // Separado del PATCH del tablero (que sigue rechazando enlace_anexo). 200 por defecto en PATCH.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Patch(':radicado/anexo')
+  editarAnexo(
+    @Param('radicado') radicado: string,
+    @Body() dto: EditarAnexoDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.editarAnexo(radicado, usuario, dto);
   }
 
   @Roles(RolUsuario.STAFF)

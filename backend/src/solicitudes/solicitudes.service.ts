@@ -11,6 +11,7 @@ import {
 import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import type { EditarAnexoDto } from './dto/editar-anexo.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
@@ -156,6 +157,36 @@ export const MENSAJE_ANEXO_CAMBIO_EN_REVISION =
 /** Fase 9 · ADR-005 E7: anexo_revisado solo acompaña a T1 en PODCAST, VIDEO o STREAMING. */
 export const MENSAJE_ANEXO_REVISADO_NO_APLICA =
   'anexo_revisado solo se envía al aprobar una solicitud de pódcast, video o streaming.';
+
+/** Fase 9 · ADR-009 AN10 (DJ2-3): el solicitante solo cambia el anexo en «Recibido». */
+export const MENSAJE_ANEXO_SOLO_EN_RECIBIDO =
+  'El anexo solo se puede cambiar mientras la solicitud está en Recibido.';
+
+/** Fase 9 · ADR-009 AN13 (D9): el anexo que vio el solicitante ya no es el vigente. */
+export const MENSAJE_ANEXO_DESACTUALIZADO =
+  'El anexo cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.';
+
+/** Fase 9 · ADR-009 AN10 a AN14: respuestas del comando del anexo. */
+export const MENSAJE_ANEXO_ACTUALIZADO = 'Anexo actualizado.';
+export const MENSAJE_ANEXO_RETIRADO = 'Anexo retirado.';
+export const MENSAJE_ANEXO_SIN_CAMBIOS = 'El anexo ya tenía ese valor.';
+
+/**
+ * Fase 9 · DJ2-2: respuesta de PATCH /solicitudes/:radicado/anexo. `sin_cambios` va SIEMPRE explícito;
+ * `solicitud` es la proyección del dueño, también cuando no hubo escritura.
+ */
+export interface RespuestaEdicionAnexo {
+  mensaje: string;
+  sin_cambios: boolean;
+  solicitud: DetalleSolicitudSolicitante;
+}
+
+/** Fase 9 · AN10: lo mínimo que lee el comando del anexo (propiedad aparte, en el WHERE). */
+const SELECT_ANEXO_SOLICITANTE = {
+  estado: true,
+  categoria: true,
+  enlace_anexo: true,
+} satisfies Prisma.SolicitudSelect;
 
 /**
  * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
@@ -833,6 +864,66 @@ export class SolicitudesService {
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
     return { mensaje: MENSAJE_REPROGRAMACION_RECHAZADA, solicitud };
+  }
+
+  /**
+   * Fase 9 · ADR-009 AN10 a AN14 (lote J2): el DUEÑO agrega, cambia o retira el anexo de su solicitud.
+   * Orden (DJ2-1, enmienda de AN14): propiedad (404 uniforme) → categoría (400) → «Recibido» (409) →
+   * sin_cambios (200) → valor anterior observado (409) → compare-and-set con el evento ENLACE_ANEXO.
+   * sin_cambios solo se responde después de comprobar propiedad, categoría y estado: nunca hay éxito en
+   * un estado no autorizado. Si el valor pedido ya es el vigente, es sin_cambios aunque el anterior
+   * observado difiera (D10: el efecto pedido ya existe; no es idempotencia completa).
+   */
+  async editarAnexo(radicado: string, usuario: UsuarioAutenticado, dto: EditarAnexoDto): Promise<RespuestaEdicionAnexo> {
+    // ADR-002: la propiedad va DENTRO del WHERE, explícita por id_usuario (además de @Roles).
+    const propia = { radicado, id_usuario: usuario.id } satisfies Prisma.SolicitudWhereInput;
+    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_ANEXO_SOLICITANTE });
+    if (!existente) {
+      // Ajena o inexistente → el mismo 404, antes de revelar categoría o estado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // AN2b: la categoría GUARDADA decide si admite anexo (el motor lo repite en A3).
+    if (!POLITICA_POR_CATEGORIA[existente.categoria].admiteAnexo) {
+      throw new BadRequestException(MENSAJE_ANEXO_NO_APLICA);
+    }
+    // AN10 (pregunta 3): solo en «Recibido».
+    if (existente.estado !== ESTADO_INICIAL) {
+      throw new ConflictException(MENSAJE_ANEXO_SOLO_EN_RECIBIDO);
+    }
+    // AN14 · D10: el valor pedido ya es el vigente → sin escritura ni evento, con la proyección del dueño.
+    if (dto.enlace_anexo === existente.enlace_anexo) {
+      const solicitud = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_DETALLE_SOLICITANTE });
+      if (!solicitud) {
+        throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      }
+      return { mensaje: MENSAJE_ANEXO_SIN_CAMBIOS, sin_cambios: true, solicitud };
+    }
+    // AN13 · D9: comparación exacta con el vigente (null === null: «no había anexo»).
+    if (dto.enlace_anexo_anterior !== existente.enlace_anexo) {
+      throw new ConflictException(MENSAJE_ANEXO_DESACTUALIZADO);
+    }
+
+    // ADR-012 EV5: el cambio y su evento en la MISMA transacción. El compare-and-set exige el dueño, el
+    // estado y el anexo observado: si cualquiera cambió entre la lectura y la escritura → 409, sin evento.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { id_usuario: usuario.id, estado: ESTADO_INICIAL, enlace_anexo: existente.enlace_anexo },
+      data: { enlace_anexo: dto.enlace_anexo },
+      evento: {
+        tipo: 'ENLACE_ANEXO',
+        modificado_por: usuario.id, // Zero Trust: autor tomado del JWT
+        // El valor LEÍDO de la base (igual al observado tras AN13): el log dice exactamente qué había.
+        enlace_anterior: existente.enlace_anexo,
+        enlace_nuevo: dto.enlace_anexo,
+      },
+      // Proyección del dueño: sus logs excluyen los eventos de enlace (ADR-012 EV7, lote I-2).
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return {
+      mensaje: dto.enlace_anexo === null ? MENSAJE_ANEXO_RETIRADO : MENSAJE_ANEXO_ACTUALIZADO,
+      sin_cambios: false,
+      solicitud,
+    };
   }
 
   /**

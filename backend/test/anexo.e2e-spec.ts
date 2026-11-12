@@ -4,12 +4,14 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJE_ENLACE_ANEXO } from '../src/solicitudes/dto/create-solicitude.dto';
 import { MENSAJE_ANEXO_REVISADO_FORMA } from '../src/solicitudes/dto/update-solicitude.dto';
+import { MENSAJE_ANEXO_ANTERIOR_FORMA } from '../src/solicitudes/dto/editar-anexo.dto';
 import {
   MENSAJE_ANEXO_NO_APLICA,
   MENSAJE_ANEXO_REVISADO_NO_APLICA,
   MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
 } from '../src/solicitudes/solicitudes.service';
-import { crearAppE2E, PrismaMockE2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
+import { crearAppE2E, PrismaMockE2E, SOLICITUD_AJENA_E2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
 
 /**
  * Fase 9 · R9-1 · el anexo opcional del solicitante por HTTP real: JWT, guards, ValidationPipe,
@@ -148,6 +150,74 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
       const respuesta = await aprobar({ anexo_revisado: null }).expect(400);
 
       expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('A8. PATCH /solicitudes/:radicado/anexo (Fase 9 · ADR-009 AN10 a AN14)', () => {
+    const editar = (radicado: string, body: object, token?: string) => {
+      const peticion = request(app.getHttpServer()).patch(`/solicitudes/${radicado}/anexo`);
+      return (token === undefined ? peticion : peticion.set('Authorization', `Bearer ${token}`)).send(body);
+    };
+    const podcastSinAnexo = () =>
+      prisma.solicitud.findFirst.mockResolvedValueOnce({ ...SOLICITUD_E2E, categoria: CategoriaSolicitud.PODCAST });
+
+    it('sin token → 401, sin consultar', async () => {
+      await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: ANEXO }).expect(401);
+
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('con token de Staff → 403, sin consultar (el Staff nunca edita el anexo del solicitante)', async () => {
+      await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: ANEXO }, tokenStaff).expect(403);
+
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('sin enlace_anexo_anterior → 400 del pipe, sin consultar', async () => {
+      const respuesta = await editar(SOLICITUD_E2E.radicado, { enlace_anexo: ANEXO }, tokenSolicitante).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_ANTERIOR_FORMA);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('una solicitud ajena → 404 uniforme, sin escribir', async () => {
+      const respuesta = await editar(SOLICITUD_AJENA_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: ANEXO }, tokenSolicitante).expect(404);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('ESPACIOS (propia) → 400 de categoría, sin escribir', async () => {
+      const respuesta = await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: ANEXO }, tokenSolicitante).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_NO_APLICA);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('PODCAST propio: agregar → 200, compare-and-set con el dueño y evento ENLACE_ANEXO', async () => {
+      podcastSinAnexo();
+
+      const respuesta = await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: ANEXO }, tokenSolicitante).expect(200);
+
+      expect(respuesta.body).toMatchObject({ sin_cambios: false });
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id_usuario: 'uuid-solicitante', estado: 'Recibido', enlace_anexo: null }),
+          data: { enlace_anexo: ANEXO },
+        }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ enlace_campo: 'ANEXO', enlace_anterior: null, enlace_nuevo: ANEXO, modificado_por: 'uuid-solicitante' }),
+      });
+    });
+
+    it('PODCAST propio sin anexo con null y null → 200 sin_cambios, sin transacción', async () => {
+      podcastSinAnexo();
+
+      const respuesta = await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: null }, tokenSolicitante).expect(200);
+
+      expect(respuesta.body).toMatchObject({ sin_cambios: true });
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
