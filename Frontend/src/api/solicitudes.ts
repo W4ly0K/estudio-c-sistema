@@ -4,12 +4,14 @@ import {
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
   esquemaRespuestaComando,
+  esquemaRespuestaEdicionAnexo,
   esquemaSolicitud,
   esquemaSolicitudPropia,
   esquemaSolicitudTablero,
   type Categoria,
   type DetalleSolicitante,
   type DetalleStaff,
+  type RespuestaEdicionAnexo,
   type Solicitud,
   type SolicitudPropia,
   type SolicitudTablero,
@@ -144,6 +146,17 @@ export interface CuerpoProponerReprogramacion {
   readonly motivo: string
 }
 
+/**
+ * PATCH /solicitudes/:radicado/anexo (SOLICITANTE dueño · ADR-009 AN10 a AN14 · K3). Las DOS
+ * claves son obligatorias (sin `?`): `enlace_anexo_anterior` es el anexo que se vio, exacto, o
+ * null si no había; `enlace_anexo` es el nuevo, o null para retirarlo. El servidor decide
+ * propiedad, estado y categoría.
+ */
+export interface CuerpoEditarAnexo {
+  readonly enlace_anexo_anterior: string | null
+  readonly enlace_anexo: string | null
+}
+
 export interface FiltrosTablero {
   readonly estado?: Estado
   readonly categoria?: Categoria
@@ -210,6 +223,10 @@ export function crearApiSolicitudes(cliente: ClienteApi) {
         cuerpo,
         esquema: esquemaRespuestaComando(esquemaDetalleStaff),
       }),
+
+    /** PATCH /solicitudes/:radicado/anexo (SOLICITANTE dueño · AN10 a AN14). No es una transición. */
+    editarAnexo: (radicado: string, cuerpo: CuerpoEditarAnexo): Promise<Resultado<RespuestaEdicionAnexo>> =>
+      cliente.solicitar({ metodo: 'PATCH', ruta: rutaDe(radicado, '/anexo'), cuerpo, esquema: esquemaRespuestaEdicionAnexo }),
 
     /** POST /solicitudes/:radicado/cancelar (SOLICITANTE dueño · T3 y T6). Sin cuerpo. */
     cancelar: (radicado: string): Promise<Resultado<RespuestaComando<DetalleSolicitante>>> =>

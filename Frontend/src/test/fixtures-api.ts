@@ -93,6 +93,7 @@ export function apiFalsa(cambios: Partial<ApiSolicitudes> = {}): ApiSolicitudes 
     cancelar: vi.fn<ApiSolicitudes['cancelar']>(),
     aceptarReprogramacion: vi.fn<ApiSolicitudes['aceptarReprogramacion']>(),
     rechazarReprogramacion: vi.fn<ApiSolicitudes['rechazarReprogramacion']>(),
+    editarAnexo: vi.fn<ApiSolicitudes['editarAnexo']>(),
     ...cambios,
   }
 }

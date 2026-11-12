@@ -94,6 +94,30 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
   })
 
   it.each([
+    ['agregar (anterior null)', { enlace_anexo_anterior: null, enlace_anexo: 'https://drive.google.com/file/d/xyz/view' }],
+    ['retirar (nuevo null)', { enlace_anexo_anterior: 'https://drive.google.com/file/d/xyz/view', enlace_anexo: null }],
+  ] as const)('Fase 9 · K3 · editarAnexo → PATCH …/anexo, %s: las dos claves viajan, null incluido', async (_caso, cuerpo) => {
+    const { cliente, llamada } = crearEntornoDePrueba(
+      json(200, { mensaje: 'Anexo actualizado.', sin_cambios: false, solicitud: { ...DETALLE_SOLICITANTE, estado: 'Recibido' } }),
+    )
+
+    const resultado = await crearApiSolicitudes(cliente).editarAnexo('EC/1?x', cuerpo)
+
+    expect(resultado.ok && resultado.datos.sin_cambios).toBe(false)
+    expect(llamada().url).toBe(`${BASE}/solicitudes/EC%2F1%3Fx/anexo`)
+    expect(llamada().init.method).toBe('PATCH')
+    expect(llamada().init.body).toBe(JSON.stringify(cuerpo))
+  })
+
+  it('Fase 9 · K3 · editarAnexo: una respuesta sin sin_cambios es un error de contrato (fail-closed)', async () => {
+    const { cliente } = crearEntornoDePrueba(json(200, { mensaje: 'Anexo actualizado.', solicitud: DETALLE_SOLICITANTE }))
+
+    const resultado = await crearApiSolicitudes(cliente).editarAnexo('EC-1', { enlace_anexo_anterior: null, enlace_anexo: null })
+
+    expect(resultado).toEqual({ ok: false, error: { tipo: 'contrato' } })
+  })
+
+  it.each([
     ['sin anexo, con null explícito', { estado: 'Validado', anexo_revisado: null }],
     ['con el anexo observado', { estado: 'Validado', anexo_revisado: 'https://drive.google.com/file/d/xyz/view' }],
   ] as const)('Fase 9 · E7 · actualizarTablero → PATCH de T1 %s', async (_caso, cambios) => {
@@ -198,6 +222,12 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.crear({ categoria: 'ESPACIOS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // @ts-expect-error Fase 9 · AN2b: ASESORIAS no admite anexo.
       void api.crear({ categoria: 'ASESORIAS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      // @ts-expect-error Fase 9 · K3: las dos claves de editarAnexo son obligatorias (falta el anterior).
+      void api.editarAnexo('EC-1', { enlace_anexo: null })
+      // @ts-expect-error Fase 9 · K3: falta el nuevo (null para retirar, nunca ausente).
+      void api.editarAnexo('EC-1', { enlace_anexo_anterior: null })
+      // @ts-expect-error Fase 9 · K3: el anexo es texto o null.
+      void api.editarAnexo('EC-1', { enlace_anexo_anterior: null, enlace_anexo: 42 })
       // Fase 9 · R9-1: en la radicación sí es válido (compila).
       void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).

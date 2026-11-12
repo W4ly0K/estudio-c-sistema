@@ -5,6 +5,7 @@ import {
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
   esquemaRespuestaComando,
+  esquemaRespuestaEdicionAnexo,
   esquemaRespuestaLogin,
   esquemaSolicitudTablero,
 } from './esquemas'
@@ -178,5 +179,25 @@ describe('Esquemas del contrato (DC1)', () => {
     it('rechaza un message numérico', () => {
       expect(acepta(esquemaCuerpoError, { statusCode: 500, message: 500 })).toBe(false)
     })
+  })
+})
+
+describe('esquemaRespuestaEdicionAnexo (Fase 9 · K3 · AN14 y D10)', () => {
+  const ok = { mensaje: 'Anexo actualizado.', sin_cambios: false, solicitud: { ...DETALLE_SOLICITANTE, estado: 'Recibido' } }
+
+  it.each([false, true])('acepta sin_cambios = %s con la proyección del dueño', (sin_cambios) => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { ...ok, sin_cambios })).toBe(true)
+  })
+
+  it('fail-closed: sin `sin_cambios` la respuesta no se acepta', () => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { mensaje: ok.mensaje, solicitud: ok.solicitud })).toBe(false)
+  })
+
+  it.each([null, 'false', 0])('rechaza sin_cambios = %j (debe ser booleano)', (valor) => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { ...ok, sin_cambios: valor })).toBe(false)
+  })
+
+  it('los demás comandos no cambian: su esquema no exige sin_cambios', () => {
+    expect(acepta(esquemaRespuestaComando(esquemaDetalleSolicitante), { mensaje: 'ok', solicitud: DETALLE_SOLICITANTE })).toBe(true)
   })
 })

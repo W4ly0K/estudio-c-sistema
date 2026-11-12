@@ -152,6 +152,16 @@ export function esquemaRespuestaComando<T extends z.ZodType>(esquemaDeLaSolicitu
   return z.object({ mensaje: z.string(), solicitud: esquemaDeLaSolicitud });
 }
 
+/**
+ * Fase 9 · ADR-009 AN14 (DJ2-2) y ADR-012 D10 (K3): respuesta de PATCH /solicitudes/:radicado/anexo.
+ * `sin_cambios` es OBLIGATORIO (fail-closed): sin él no se distingue un cambio efectivo de uno
+ * que no escribió. `solicitud` es la proyección del dueño, también cuando no hubo escritura.
+ */
+export const esquemaRespuestaEdicionAnexo = esquemaRespuestaComando(esquemaDetalleSolicitante).extend({
+  sin_cambios: z.boolean(),
+});
+export type RespuestaEdicionAnexo = z.infer<typeof esquemaRespuestaEdicionAnexo>;
+
 // --- Errores -----------------------------------------------------------------------
 
 /**
