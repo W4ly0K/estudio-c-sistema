@@ -1,4 +1,4 @@
-import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
+import { Prisma, CampoEnlace, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import {
   Injectable,
   BadRequestException,
@@ -41,6 +41,7 @@ import {
   type DetalleSolicitudStaff,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
 } from './proyecciones/detalle-solicitud.proyeccion';
 import { datosDelLog, type EventoAuditoria } from './auditoria/evento-auditoria';
 
@@ -179,6 +180,26 @@ export interface RespuestaEdicionAnexo {
   mensaje: string;
   sin_cambios: boolean;
   solicitud: DetalleSolicitudSolicitante;
+}
+
+/** Fase 9 · ADR-012 D7 (lote J2b, DJ2b-3): el historial de enlaces es solo para el Staff. */
+export const MENSAJE_HISTORIAL_SOLO_STAFF = 'El historial de enlaces solo lo puede consultar el Staff.';
+
+/** Fase 9 · J2b: un evento de enlace, con EXACTAMENTE los campos permitidos (DJ2b-2). */
+export interface EventoDeEnlace {
+  id_log: string;
+  enlace_campo: CampoEnlace;
+  enlace_anterior: string | null;
+  enlace_nuevo: string | null;
+  motivo_correccion: string | null;
+  modificado_por: string;
+  fecha_modificacion: Date;
+}
+
+/** Fase 9 · J2b (DJ2b-1): respuesta de GET /solicitudes/:radicado/historial-enlaces. */
+export interface HistorialDeEnlaces {
+  radicado: string;
+  eventos: EventoDeEnlace[];
 }
 
 /** Fase 9 · AN10: lo mínimo que lee el comando del anexo (propiedad aparte, en el WHERE). */
@@ -924,6 +945,42 @@ export class SolicitudesService {
       sin_cambios: false,
       solicitud,
     };
+  }
+
+  /**
+   * Fase 9 · ADR-012 EV7 y D7 (lote J2b): historial de enlaces de una solicitud, solo para el STAFF.
+   * Consulta APARTE del detalle: `logs` del detalle sigue con solo transiciones (I-2) y la línea de vida
+   * no cambia. Una sola lectura: sin fila → 404 uniforme; con fila y sin eventos → lista vacía.
+   */
+  async historialDeEnlaces(radicado: string, usuario: UsuarioAutenticado): Promise<HistorialDeEnlaces> {
+    // DJ2b-3 · defensa en profundidad (además de @Roles): fail-closed ANTES de consultar.
+    if (usuario.rol !== RolUsuario.STAFF) {
+      throw new ForbiddenException(MENSAJE_HISTORIAL_SOLO_STAFF);
+    }
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { radicado },
+      select: { radicado: true, logs: SELECT_HISTORIAL_ENLACES },
+    });
+    if (!solicitud) {
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // La respuesta se construye campo por campo: nunca se devuelve el objeto de Prisma.
+    const eventos = solicitud.logs.map((log): EventoDeEnlace => {
+      if (log.enlace_campo === null) {
+        // Imposible con el filtro de la consulta; si ocurriera, se falla en vez de mezclar una transición.
+        throw new Error('El historial de enlaces recibió un log que no es un evento de enlace.');
+      }
+      return {
+        id_log: log.id_log,
+        enlace_campo: log.enlace_campo,
+        enlace_anterior: log.enlace_anterior,
+        enlace_nuevo: log.enlace_nuevo,
+        motivo_correccion: log.motivo_correccion,
+        modificado_por: log.modificado_por,
+        fecha_modificacion: log.fecha_modificacion,
+      };
+    });
+    return { radicado: solicitud.radicado, eventos };
   }
 
   /**

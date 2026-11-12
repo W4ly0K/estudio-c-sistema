@@ -17,6 +17,7 @@ import {
   MENSAJE_ANEXO_REVISADO_NO_APLICA,
   MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_HISTORIAL_SOLO_STAFF,
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
   MENSAJE_CANCELAR_EN_PRODUCCION,
@@ -52,6 +53,7 @@ import {
   DetalleSolicitudSolicitante,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
 } from './proyecciones/detalle-solicitud.proyeccion';
 import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 import { PrismaService } from '../prisma/prisma.service';
@@ -943,6 +945,90 @@ describe('SolicitudesService', () => {
       expect(error).toBeInstanceOf(ConflictException);
       expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
       expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('historialDeEnlaces() — solo el Staff (Fase 9 · ADR-012 EV7 · lote J2b)', () => {
+    const ANEXO_EVENTO = {
+      id_log: 'uuid-log-1',
+      enlace_campo: 'ANEXO',
+      enlace_anterior: null,
+      enlace_nuevo: 'https://drive.google.com/file/d/a/view',
+      motivo_correccion: null,
+      modificado_por: 'uuid-solicitante',
+      fecha_modificacion: new Date('2026-10-06T09:00:00-05:00'),
+    };
+    const ENTREGA_EVENTO = {
+      id_log: 'uuid-log-2',
+      enlace_campo: 'ENTREGA',
+      enlace_anterior: 'https://youtu.be/a',
+      enlace_nuevo: 'https://youtu.be/b',
+      motivo_correccion: 'El enlace apuntaba a un borrador.',
+      modificado_por: 'uuid-staff',
+      fecha_modificacion: new Date('2026-10-07T09:00:00-05:00'),
+    };
+    const fila = (logs: readonly object[]) =>
+      ({ radicado: 'EC-2099-0001', logs } as unknown as Solicitud);
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await service.historialDeEnlaces('EC-2099-0001', USUARIO_SOLICITANTE).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_HISTORIAL_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await service.historialDeEnlaces('EC-2099-9999', USUARIO_STAFF).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    });
+
+    it('una sola consulta: por radicado, con el filtro, el orden y las columnas del historial', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF);
+
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { radicado: true, logs: SELECT_HISTORIAL_ENLACES },
+      });
+    });
+
+    it('existente sin eventos → lista vacía', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [],
+      });
+    });
+
+    it('ANEXO y ENTREGA, en el orden de la base, con EXACTAMENTE los campos permitidos', async () => {
+      // La fila trae campos de más: la respuesta se construye campo por campo y no los deja pasar.
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        fila([
+          { ...ANEXO_EVENTO, estado_anterior: 'Recibido', radicado_solicitud: 'EC-2099-0001', motivo_rechazo: null },
+          { ...ENTREGA_EVENTO, estado_nuevo: 'Entregado', usuario: { correo: 'staff@unicesmag.edu.co' } },
+        ]),
+      );
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [ANEXO_EVENTO, ENTREGA_EVENTO],
+      });
+    });
+
+    it('fail-closed: un log sin enlace_campo (una transición) nunca se devuelve como evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([{ ...ANEXO_EVENTO, enlace_campo: null }]));
+
+      await expect(service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).rejects.toThrow(
+        'El historial de enlaces recibió un log que no es un evento de enlace.',
+      );
     });
   });
 

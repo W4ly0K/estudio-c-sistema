@@ -18,6 +18,31 @@ import { Prisma } from '@prisma/client';
  */
 export const FILTRO_LOGS_DE_TRANSICION = { enlace_campo: null } as const satisfies Prisma.Log_AuditoriaWhereInput;
 
+/**
+ * Fase 9 · ADR-012 EV7 (lote J2b): el filtro COMPLEMENTARIO, para el historial de enlaces del Staff
+ * (GET /solicitudes/:radicado/historial-enlaces). Entre los dos cubren todo Log_Auditoria sin
+ * solaparse: transiciones (enlace_campo IS NULL) y eventos de enlace (IS NOT NULL).
+ */
+export const FILTRO_EVENTOS_DE_ENLACE = { enlace_campo: { not: null } } as const satisfies Prisma.Log_AuditoriaWhereInput;
+
+/**
+ * Fase 9 · J2b: lo único que se lee de cada evento de enlace (minimización). Sin los estados: los fija
+ * el tipo de evento (B3 y B4). Orden cronológico ascendente, con id_log solo para desempatar.
+ */
+export const SELECT_HISTORIAL_ENLACES = {
+  where: FILTRO_EVENTOS_DE_ENLACE,
+  orderBy: [{ fecha_modificacion: 'asc' }, { id_log: 'asc' }],
+  select: {
+    id_log: true,
+    enlace_campo: true,
+    enlace_anterior: true,
+    enlace_nuevo: true,
+    motivo_correccion: true,
+    modificado_por: true,
+    fecha_modificacion: true,
+  },
+} satisfies Prisma.Solicitud$logsArgs;
+
 /** Vista completa para el Staff (gestión y auditoría). */
 export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
   radicado: true,

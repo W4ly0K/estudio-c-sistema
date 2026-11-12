@@ -23,7 +23,8 @@ type MetodoControlador =
   | 'proponerReprogramacion'
   | 'aceptarReprogramacion'
   | 'rechazarReprogramacion'
-  | 'editarAnexo';
+  | 'editarAnexo'
+  | 'historialDeEnlaces';
 
 const reflector = new Reflector();
 const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined =>
@@ -34,7 +35,7 @@ const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined 
 
 describe('SolicitudesController', () => {
   describe('Autorización declarada (@Roles / @Public)', () => {
-    it.each<MetodoControlador>(['findAll', 'update', 'remove', 'proponerReprogramacion'])(
+    it.each<MetodoControlador>(['findAll', 'update', 'remove', 'proponerReprogramacion', 'historialDeEnlaces'])(
       '%s exige el rol STAFF',
       (metodo) => {
         expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toEqual([RolUsuario.STAFF]);
@@ -77,6 +78,7 @@ describe('SolicitudesController', () => {
         'aceptarReprogramacion',
         'rechazarReprogramacion',
         'editarAnexo',
+        'historialDeEnlaces',
       ];
       for (const metodo of metodos) {
         expect(metadatoDe<boolean>(IS_PUBLIC_KEY, metodo)).toBeUndefined();
@@ -97,6 +99,7 @@ describe('SolicitudesController', () => {
       aceptarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
       rechazarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
       editarAnexo: jest.fn<Promise<null>, [string, UsuarioAutenticado, EditarAnexoDto]>(),
+      historialDeEnlaces: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -176,6 +179,14 @@ describe('SolicitudesController', () => {
       await controller.editarAnexo('EC-2099-0001', dto, USUARIO_SOLICITANTE);
 
       expect(serviceMock.editarAnexo).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE, dto);
+    });
+
+    it('historialDeEnlaces() entrega al servicio el usuario COMPLETO del token (el rol se revisa allí también)', async () => {
+      serviceMock.historialDeEnlaces.mockResolvedValue(null);
+
+      await controller.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF);
+
+      expect(serviceMock.historialDeEnlaces).toHaveBeenCalledWith('EC-2099-0001', USUARIO_STAFF);
     });
   });
 });

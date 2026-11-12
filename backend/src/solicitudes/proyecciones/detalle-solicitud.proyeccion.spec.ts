@@ -1,7 +1,9 @@
 import {
+  FILTRO_EVENTOS_DE_ENLACE,
   FILTRO_LOGS_DE_TRANSICION,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
 } from './detalle-solicitud.proyeccion';
 
 /*
@@ -93,5 +95,29 @@ describe('Proyecciones de detalle · logs solo con transiciones (ADR-012 EV7)', 
     it('la respuesta conserva exactamente sus claves', () => {
       expect(Object.keys(select)).toEqual(claves);
     });
+  });
+});
+
+describe('Historial de enlaces del Staff (ADR-012 EV7 · lote J2b)', () => {
+  it('el filtro es el complemento del de transiciones sobre la misma columna (IS NOT NULL frente a IS NULL)', () => {
+    expect(FILTRO_EVENTOS_DE_ENLACE).toStrictEqual({ enlace_campo: { not: null } });
+    expect(Object.keys(FILTRO_EVENTOS_DE_ENLACE)).toEqual(Object.keys(FILTRO_LOGS_DE_TRANSICION));
+  });
+
+  it('usa el filtro de eventos y el orden cronológico ascendente con id_log para desempatar', () => {
+    expect(SELECT_HISTORIAL_ENLACES.where).toBe(FILTRO_EVENTOS_DE_ENLACE);
+    expect(SELECT_HISTORIAL_ENLACES.orderBy).toStrictEqual([{ fecha_modificacion: 'asc' }, { id_log: 'asc' }]);
+  });
+
+  it('lee exactamente los siete campos permitidos, sin estados ni el radicado', () => {
+    expect(Object.keys(SELECT_HISTORIAL_ENLACES.select)).toEqual([
+      'id_log',
+      'enlace_campo',
+      'enlace_anterior',
+      'enlace_nuevo',
+      'motivo_correccion',
+      'modificado_por',
+      'fecha_modificacion',
+    ]);
   });
 });

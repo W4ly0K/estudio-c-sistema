@@ -39,6 +39,14 @@ export class SolicitudesController {
     return this.solicitudesService.findOne(radicado, usuario);
   }
 
+  // Fase 9 · ADR-012 EV7 y D7 (lote J2b): historial de enlaces (cambios del anexo y correcciones de la
+  // entrega), solo para el STAFF. El servicio repite la comprobación del rol antes de consultar.
+  @Roles(RolUsuario.STAFF)
+  @Get(':radicado/historial-enlaces')
+  historialDeEnlaces(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.historialDeEnlaces(radicado, usuario);
+  }
+
   @Roles(RolUsuario.STAFF)
   @Patch(':radicado')
   update(
