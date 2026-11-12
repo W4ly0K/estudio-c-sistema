@@ -18,6 +18,13 @@ import {
   MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_HISTORIAL_SOLO_STAFF,
+  MENSAJE_CORRECCION_NO_APLICA,
+  MENSAJE_CORRECCION_SOLO_EN_ENTREGADO,
+  MENSAJE_CORRECCION_SOLO_STAFF,
+  MENSAJE_ENLACE_DESACTUALIZADO,
+  MENSAJE_ENLACE_ENTREGA_CORREGIDO,
+  MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS,
+  MENSAJE_ENTREGA_SIN_ENLACE_PREVIO,
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
   MENSAJE_CANCELAR_EN_PRODUCCION,
@@ -943,6 +950,166 @@ describe('SolicitudesService', () => {
       const error = await rechazoDe(editar(ANEXO, OTRO));
 
       expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('corregirEnlaceEntrega() — el Staff corrige el enlace de una entrega (Fase 9 · ADR-008 EN6 a EN12)', () => {
+    const A = 'https://youtu.be/entrega-a';
+    const B = 'https://youtu.be/entrega-b';
+    const MOTIVO = 'El enlace apuntaba a un borrador.';
+    const DETALLE = { radicado: 'EC-2099-0001', estado: 'Entregado', logs: [] };
+    const lectura = (enlace_entrega: string | null, estado = 'Entregado', categoria: CategoriaSolicitud = CategoriaSolicitud.PODCAST) =>
+      ({ estado, categoria, enlace_entrega }) as unknown as Solicitud;
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      enlace_entrega_anterior: string;
+      enlace_entrega: string;
+      motivo_correccion?: string;
+    }
+    const corregir = (cuerpo: Cuerpo, usuario = USUARIO_STAFF) => service.corregirEnlaceEntrega('EC-2099-0001', usuario, cuerpo);
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }, USUARIO_SOLICITANTE));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_CORRECCION_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('lee por radicado solo lo mínimo; inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(null);
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { estado: true, categoria: true, enlace_entrega: true },
+      });
+      sinEscribir();
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s → 400 (sin enlace que corregir)', async (categoria) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_CORRECCION_NO_APLICA);
+      sinEscribir();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción', 'Edición y postproducción', 'Cancelado por el Usuario'])(
+      'en «%s» → 409 aunque el enlace pedido sea el vigente (sin_cambios nunca da éxito fuera de Entregado)',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B, estado));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: B, enlace_entrega: B }));
+
+        expect((error as ConflictException).message).toBe(MENSAJE_CORRECCION_SOLO_EN_ENTREGADO);
+        expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+        sinEscribir();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'EN8 · %s entregado sin enlace previo → 409, sin escribir (agregarlo por primera vez queda fuera de alcance)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_ENTREGA_SIN_ENLACE_PREVIO);
+        sinEscribir();
+      },
+    );
+
+    it.each([
+      ['el mismo enlace', B],
+      ['el mismo enlace aunque el anterior observado difiera', A],
+    ])('sin_cambios: %s → 200 con la proyección del Staff, sin escribir ni guardar el motivo', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B)).mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      const respuesta = await corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B, motivo_correccion: MOTIVO });
+
+      expect(respuesta).toEqual({ mensaje: MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS, sin_cambios: true, solicitud: DETALLE });
+      expect(prismaMock.solicitud.findUnique).toHaveBeenNthCalledWith(2, {
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      sinEscribir();
+    });
+
+    it.each([
+      ['vio otro enlace', 'https://youtu.be/otro'],
+      ['el mismo enlace con un espacio final (comparación exacta)', `${A} `],
+    ])('%s → 409 DESACTUALIZADO, sin escribir', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ENLACE_DESACTUALIZADO);
+      sinEscribir();
+    });
+
+    it.each([
+      ['con motivo', { motivo_correccion: MOTIVO }, { motivo_correccion: MOTIVO }],
+      ['sin motivo (la propiedad no viaja)', {}, {}],
+    ])('corrección %s: compare-and-set sin estado y un solo evento ENLACE_ENTREGA, sin transición', async (_caso, extra, enEvento) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const respuesta = await corregir({ enlace_entrega_anterior: A, enlace_entrega: B, ...extra });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001', estado: 'Entregado', enlace_entrega: A },
+        data: { enlace_entrega: B },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Entregado',
+          estado_nuevo: 'Entregado',
+          modificado_por: USUARIO_STAFF.id,
+          enlace_campo: 'ENTREGA',
+          enlace_anterior: A,
+          enlace_nuevo: B,
+          ...enEvento,
+        },
+      });
+      // Sin motivo, la clave no llega a Prisma (ni siquiera con undefined): D8 y el criterio de J3.
+      const [escritura] = prismaMock.log_Auditoria.create.mock.calls;
+      if (escritura === undefined) throw new Error('No se escribió el evento');
+      expect(Object.keys((escritura[0] as { data: object }).data).includes('motivo_correccion')).toBe('motivo_correccion' in enEvento);
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      expect(respuesta).toMatchObject({ mensaje: MENSAJE_ENLACE_ENTREGA_CORREGIDO, sin_cambios: false });
+    });
+
+    it('compare-and-set perdido (el enlace cambió entre la lectura y la escritura) → 409, sin evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B, motivo_correccion: MOTIVO }));
+
       expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
       expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
     });

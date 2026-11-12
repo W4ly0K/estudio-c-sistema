@@ -12,6 +12,7 @@ import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/creat
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import type { EditarAnexoDto } from './dto/editar-anexo.dto';
+import type { CorregirEnlaceEntregaDto } from './dto/corregir-enlace-entrega.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
@@ -43,7 +44,7 @@ import {
   SELECT_DETALLE_STAFF,
   SELECT_HISTORIAL_ENLACES,
 } from './proyecciones/detalle-solicitud.proyeccion';
-import { datosDelLog, type EventoAuditoria } from './auditoria/evento-auditoria';
+import { datosDelLog, ESTADO_DEL_EVENTO_DE_ENLACE, type EventoAuditoria } from './auditoria/evento-auditoria';
 
 /** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
 export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
@@ -201,6 +202,34 @@ export interface HistorialDeEnlaces {
   radicado: string;
   eventos: EventoDeEnlace[];
 }
+
+/** Fase 9 · ADR-008 EN6 (lote J3, DJ3-2): la corrección del enlace de entrega es solo del Staff. */
+export const MENSAJE_CORRECCION_SOLO_STAFF = 'La corrección del enlace del producto final solo la hace el Staff.';
+
+/** Fase 9 · ADR-008 EN6 a EN9 (DJ3-3). */
+export const MENSAJE_CORRECCION_NO_APLICA = 'Esta categoría no tiene un enlace de producto final que corregir.';
+export const MENSAJE_CORRECCION_SOLO_EN_ENTREGADO =
+  'El enlace del producto final solo se corrige en una solicitud entregada.';
+export const MENSAJE_ENTREGA_SIN_ENLACE_PREVIO =
+  'Esta entrega no tiene un enlace registrado; agregarlo por primera vez no está disponible.';
+export const MENSAJE_ENLACE_DESACTUALIZADO =
+  'El enlace cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.';
+export const MENSAJE_ENLACE_ENTREGA_CORREGIDO = 'Enlace del producto final corregido.';
+export const MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS = 'El enlace ya tenía ese valor.';
+
+/** Fase 9 · DJ3-4: respuesta de la corrección, con la proyección del Staff (también sin escritura). */
+export interface RespuestaCorreccionEntrega {
+  mensaje: string;
+  sin_cambios: boolean;
+  solicitud: DetalleSolicitudStaff;
+}
+
+/** Fase 9 · EN6: lo mínimo que lee la corrección. */
+const SELECT_ENTREGA_STAFF = {
+  estado: true,
+  categoria: true,
+  enlace_entrega: true,
+} satisfies Prisma.SolicitudSelect;
 
 /** Fase 9 · AN10: lo mínimo que lee el comando del anexo (propiedad aparte, en el WHERE). */
 const SELECT_ANEXO_SOLICITANTE = {
@@ -945,6 +974,70 @@ export class SolicitudesService {
       sin_cambios: false,
       solicitud,
     };
+  }
+
+  /**
+   * Fase 9 · ADR-008 EN6 a EN12 (lote J3): el STAFF corrige el enlace del producto final de una entrega.
+   * Orden (DJ3-1, enmienda de EN12): rol (403, antes de consultar) → 404 uniforme → categoría (400) →
+   * «Entregado» (409) → enlace previo (409, EN8) → sin_cambios (200) → enlace anterior observado (409) →
+   * compare-and-set con el evento ENLACE_ENTREGA. No es una transición: el estado no cambia, no pasa por
+   * la máquina (ni T9 ni T12) y no deja log de transición; la línea de vida no se mueve (I-2).
+   */
+  async corregirEnlaceEntrega(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+    dto: CorregirEnlaceEntregaDto,
+  ): Promise<RespuestaCorreccionEntrega> {
+    // DJ3-2 · defensa en profundidad (además de @Roles): fail-closed ANTES de consultar.
+    if (usuario.rol !== RolUsuario.STAFF) {
+      throw new ForbiddenException(MENSAJE_CORRECCION_SOLO_STAFF);
+    }
+    const existente = await this.prisma.solicitud.findUnique({ where: { radicado }, select: SELECT_ENTREGA_STAFF });
+    if (!existente) {
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // EN6: solo las categorías cuya entrega exige el enlace (PODCAST, VIDEO y STREAMING).
+    if (POLITICA_POR_CATEGORIA[existente.categoria].enlaceAlEntregar !== 'OBLIGATORIO') {
+      throw new BadRequestException(MENSAJE_CORRECCION_NO_APLICA);
+    }
+    // EN6 · B4: solo en «Entregado» (el estado en que existe un evento ENTREGA).
+    if (existente.estado !== ESTADO_DEL_EVENTO_DE_ENLACE.ENTREGA) {
+      throw new ConflictException(MENSAJE_CORRECCION_SOLO_EN_ENTREGADO);
+    }
+    // EN8 · D2: agregar un enlace por primera vez queda fuera de alcance (entregas históricas, DA-5).
+    const vigente = existente.enlace_entrega;
+    if (vigente === null) {
+      throw new ConflictException(MENSAJE_ENTREGA_SIN_ENLACE_PREVIO);
+    }
+    // EN11 · D10: el enlace pedido ya es el vigente → sin escritura, sin evento y sin guardar el motivo.
+    if (dto.enlace_entrega === vigente) {
+      const solicitud = await this.prisma.solicitud.findUnique({ where: { radicado }, select: SELECT_DETALLE_STAFF });
+      if (!solicitud) {
+        throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      }
+      return { mensaje: MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS, sin_cambios: true, solicitud };
+    }
+    // EN9 · D9: comparación exacta con el vigente.
+    if (dto.enlace_entrega_anterior !== vigente) {
+      throw new ConflictException(MENSAJE_ENLACE_DESACTUALIZADO);
+    }
+
+    // ADR-012 EV5: el cambio y su evento en la MISMA transacción. Sin `estado` en data.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { estado: ESTADO_DEL_EVENTO_DE_ENLACE.ENTREGA, enlace_entrega: vigente },
+      data: { enlace_entrega: dto.enlace_entrega },
+      evento: {
+        tipo: 'ENLACE_ENTREGA',
+        modificado_por: usuario.id, // Zero Trust: autor tomado del JWT
+        enlace_anterior: vigente, // el valor LEÍDO de la base
+        enlace_nuevo: dto.enlace_entrega,
+        // D8: sin motivo, la propiedad no viaja; con él, ya recortado por el DTO (B9).
+        ...(dto.motivo_correccion === undefined ? {} : { motivo_correccion: dto.motivo_correccion }),
+      },
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
+    });
+    return { mensaje: MENSAJE_ENLACE_ENTREGA_CORREGIDO, sin_cambios: false, solicitud };
   }
 
   /**

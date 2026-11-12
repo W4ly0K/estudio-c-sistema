@@ -8,6 +8,7 @@ import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
 import { EditarAnexoDto } from './dto/editar-anexo.dto';
+import { CorregirEnlaceEntregaDto } from './dto/corregir-enlace-entrega.dto';
 
 // Autenticación: APP_GUARD global. Autorización: @Roles por endpoint.
 @Controller('solicitudes')
@@ -105,6 +106,18 @@ export class SolicitudesController {
     @UsuarioActual() usuario: UsuarioAutenticado,
   ) {
     return this.solicitudesService.editarAnexo(radicado, usuario, dto);
+  }
+
+  // Fase 9 · ADR-008 EN6 (lote J3): el STAFF corrige el enlace del producto final de una entrega. No es
+  // el PATCH del tablero (que solo escribe el enlace al entregar). El servicio repite la comprobación del rol.
+  @Roles(RolUsuario.STAFF)
+  @Patch(':radicado/enlace-entrega')
+  corregirEnlaceEntrega(
+    @Param('radicado') radicado: string,
+    @Body() dto: CorregirEnlaceEntregaDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.corregirEnlaceEntrega(radicado, usuario, dto);
   }
 
   @Roles(RolUsuario.STAFF)
