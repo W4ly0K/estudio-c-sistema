@@ -6,7 +6,7 @@ import fuenteEsquemaPrisma from '../../../backend/prisma/schema.prisma?raw'
 import fuenteMaquina from '../../../backend/src/solicitudes/reglas/maquina-estados.ts?raw'
 import fuenteServicio from '../../../backend/src/solicitudes/solicitudes.service.ts?raw'
 import { CATEGORIA_QUE_ELIGE_SUB_ESPACIO, CATEGORIAS, SUB_ESPACIOS } from './esquemas'
-import { PASA_POR_EDICION, REQUIERE_ENLACE, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
+import { ADMITE_ANEXO, PASA_POR_EDICION, REQUIERE_ENLACE, TRANSICIONES_CON_EDICION, TRANSICIONES_SIN_EDICION } from './categorias'
 import { ENLACE_MAXIMO } from '../presentacion/enlace'
 import { ACCIONES, ESTADOS, ROLES, TRANSICIONES } from './maquina-estados'
 import fuenteHorario from '../../../backend/src/solicitudes/reglas/horario.validator.ts?raw'
@@ -122,6 +122,17 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
     ]
     expect(filas).toHaveLength(CATEGORIAS.length)
     expect(Object.fromEntries(filas.map(([, categoria, regla]) => [categoria ?? '', regla === 'OBLIGATORIO']))).toEqual(REQUIERE_ENLACE)
+  })
+
+  it('Fase 9 · K1 · las categorías que admiten anexo son las admiteAnexo de POLITICA_POR_CATEGORIA del backend', () => {
+    // Aquí admiteAnexo es OBLIGATORIO en el patrón: una fila sin él no cuenta y el piso falla.
+    const filas = [
+      ...lf(fuenteCategorias).matchAll(
+        /^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (?:true|false), enlaceAlEntregar: '(?:OBLIGATORIO|PROHIBIDO)', admiteAnexo: (true|false) \}\),/gm,
+      ),
+    ]
+    expect(filas).toHaveLength(CATEGORIAS.length)
+    expect(Object.fromEntries(filas.map(([, categoria, valor]) => [categoria ?? '', valor === 'true']))).toEqual(ADMITE_ANEXO)
   })
 
   it('Fase 8 · el límite del enlace es ENLACE_MAXIMO de la fuente única del backend (DTO y CHECK)', () => {

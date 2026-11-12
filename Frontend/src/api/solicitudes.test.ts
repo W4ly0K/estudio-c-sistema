@@ -93,6 +93,21 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
     expect(llamada().init.method).toBe('PATCH')
   })
 
+  it.each([
+    ['sin anexo, con null explícito', { estado: 'Validado', anexo_revisado: null }],
+    ['con el anexo observado', { estado: 'Validado', anexo_revisado: 'https://drive.google.com/file/d/xyz/view' }],
+  ] as const)('Fase 9 · E7 · actualizarTablero → PATCH de T1 %s', async (_caso, cambios) => {
+    const { cliente, llamada } = crearEntornoDePrueba(
+      json(200, { mensaje: 'Estado actualizado y auditado correctamente en la bitácora', solicitud: SOLICITUD }),
+    )
+
+    await crearApiSolicitudes(cliente).actualizarTablero('EC-1', cambios)
+
+    // JSON.stringify conserva el null: la clave viaja (el servidor distingue null de ausente).
+    expect(llamada().init.body).toBe(JSON.stringify(cambios))
+    expect(JSON.parse(String(llamada().init.body))).toStrictEqual(cambios)
+  })
+
   it('7B.3 · actualizarTablero → PATCH de "Validar con ajustes": destino, franja y sub-espacio en el mismo cuerpo', async () => {
     const { cliente, llamada } = crearEntornoDePrueba(
       json(200, { mensaje: 'Estado actualizado y auditado correctamente en la bitácora', solicitud: { ...SOLICITUD, sub_espacio: 'ESTUDIO_GRABACION' } }),
@@ -165,6 +180,17 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.actualizarTablero('EC-1', { estado: 'Edición y postproducción', enlace_entrega: 'https://youtu.be/abc123' })
       // @ts-expect-error Fase 9 · R9-1: el anexo no viaja en el PATCH (el backend lo omite: 400).
       void api.actualizarTablero('EC-1', { estado: 'Validado', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      // Fase 9 · E7: T1 con la revisión del anexo compila, directo y con ajustes.
+      void api.actualizarTablero('EC-1', { estado: 'Validado', anexo_revisado: null })
+      void api.actualizarTablero('EC-1', { estado: 'Validado', sub_espacio: 'CABINA_AUDIO', anexo_revisado: 'https://drive.google.com/file/d/xyz/view' })
+      // @ts-expect-error Fase 9 · E7: anexo_revisado solo acompaña a T1 ("Validado").
+      void api.actualizarTablero('EC-1', { estado: 'En Producción', anexo_revisado: null })
+      // @ts-expect-error Fase 9 · E7: tampoco acompaña la entrega.
+      void api.actualizarTablero('EC-1', { estado: 'Entregado', enlace_entrega: 'https://youtu.be/abc123', anexo_revisado: null })
+      // @ts-expect-error Fase 9 · E7: tampoco acompaña el rechazo.
+      void api.actualizarTablero('EC-1', { estado: 'Rechazado', motivo_rechazo: 'Motivo suficiente', anexo_revisado: null })
+      // @ts-expect-error Fase 9 · E7: es el enlace observado o null, nunca otro tipo.
+      void api.actualizarTablero('EC-1', { estado: 'Validado', anexo_revisado: 42 })
       // Fase 9 · R9-1: en la radicación sí es válido (compila).
       void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).

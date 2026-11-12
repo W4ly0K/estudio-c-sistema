@@ -23,6 +23,18 @@ export const REQUIERE_ENLACE: Readonly<Record<Categoria, boolean>> = {
   ASESORIAS: false,
 }
 
+/**
+ * Fase 9 · AN2b (ADR-009 §2.7): las categorías que admiten anexo (admiteAnexo). En T1 de estas
+ * categorías el Staff confirma el anexo que vio (ADR-005 E7); en las demás, anexo_revisado no viaja.
+ */
+export const ADMITE_ANEXO: Readonly<Record<Categoria, boolean>> = {
+  PODCAST: true,
+  VIDEO: true,
+  ESPACIOS: false,
+  STREAMING: true,
+  ASESORIAS: false,
+}
+
 export const TRANSICIONES_SIN_EDICION: readonly IdTransicion[] = ['T9']
 export const TRANSICIONES_CON_EDICION: readonly IdTransicion[] = ['T11', 'T12']
 

@@ -67,8 +67,17 @@ export type AjusteAlValidar =
   | { readonly fecha_inicio: string; readonly fecha_fin: string; readonly sub_espacio?: SubEspacio }
   | { readonly fecha_inicio?: never; readonly fecha_fin?: never; readonly sub_espacio?: SubEspacio }
 
-/** T1: el destino y, si los hay, sus ajustes. */
-type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never; readonly enlace_entrega?: never } & AjusteAlValidar
+/**
+ * Fase 9 · ADR-005 E7 (D4-B′): en T1 de PODCAST, VIDEO y STREAMING el Staff confirma el anexo que
+ * vio en el detalle: el enlace exacto o null si no había (obligatorio; el servidor responde 400 si
+ * falta). En ESPACIOS y ASESORIAS la clave no existe (400 si viajara, también con null). La
+ * categoría solo se conoce en ejecución: la elige revisionDelAnexo() (presentacion/acciones-staff).
+ */
+export type RevisionDelAnexo = { readonly anexo_revisado: string | null } | { readonly anexo_revisado?: never }
+
+/** T1: el destino, si los hay, sus ajustes, y la revisión del anexo (E7). */
+type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never; readonly enlace_entrega?: never } & AjusteAlValidar &
+  RevisionDelAnexo
 
 /**
  * PATCH /solicitudes/:radicado (solo STAFF). Siempre con un destino: el tablero no edita
@@ -86,6 +95,7 @@ export type CambiosTablero =
       readonly fecha_fin?: never
       readonly sub_espacio?: never
       readonly enlace_entrega?: never
+      readonly anexo_revisado?: never
     }
   | {
       // Fase 8 · requisito 4: el enlace del producto final solo acompaña la entrega (T9 y T12).
@@ -96,6 +106,7 @@ export type CambiosTablero =
       readonly fecha_inicio?: never
       readonly fecha_fin?: never
       readonly sub_espacio?: never
+      readonly anexo_revisado?: never
     }
   | {
       readonly estado: 'Rechazado'
@@ -104,6 +115,7 @@ export type CambiosTablero =
       readonly fecha_fin?: never
       readonly sub_espacio?: never
       readonly enlace_entrega?: never
+      readonly anexo_revisado?: never
     }
 
 /** POST /solicitudes/:radicado/reprogramacion (T5 · README §12.2). */

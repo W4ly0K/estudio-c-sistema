@@ -17,9 +17,12 @@ import {
   TEXTO_LEYENDA_SUB_ESPACIO_PROPUESTO,
   TEXTO_ETIQUETA_MOTIVO_RECHAZO,
   TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION,
+  TEXTO_AYUDA_ANEXO_REVISADO,
+  TEXTO_ETIQUETA_ANEXO_REVISADO,
+  TEXTO_SIN_ANEXO,
 } from './componentes/AccionesStaff'
 import { formatearFranja } from './fechas/bogota'
-import { TEXTO_FRANJA_INICIADA, TEXTO_RAZON_AJUSTE_SIN_CAMBIOS } from './presentacion/acciones-staff'
+import { TEXTO_FRANJA_INICIADA, TEXTO_RAZON_AJUSTE_SIN_CAMBIOS, TEXTO_RAZON_RECARGAR_TRAS_CONFLICTO } from './presentacion/acciones-staff'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { TEXTO_ETIQUETA_ENLACE } from './componentes/CampoEnlace'
 import { TEXTO_RAZON_ENLACE_INVALIDO, TEXTO_RAZON_ENLACE_VACIO } from './presentacion/enlace'
@@ -91,7 +94,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     expect(screen.queryByRole('region', { name: 'Resolución' })).not.toBeInTheDocument()
   })
 
-  it('validar (T1): envía solo el destino, anuncia el éxito, recarga el detalle (DA2) y deja el foco en el radicado', async () => {
+  it('validar (T1): envía el destino y, en PODCAST sin anexo, anexo_revisado null (E7); anuncia el éxito, recarga el detalle (DA2) y deja el foco en el radicado', async () => {
     const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
     const detalleStaff = vi
       .fn<ApiSolicitudes['detalleStaff']>()
@@ -105,7 +108,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, validar' }))
 
     expect(await screen.findByRole('button', { name: 'Iniciar producción' })).toBeEnabled()
-    expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Validado' })
+    expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', { estado: 'Validado', anexo_revisado: null })
     expect(detalleStaff).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('status')).toHaveTextContent('La solicitud pasó a "Revisado y aprobado".')
     // Cerrado con close(), no arrancado del DOM todavía abierto.
@@ -435,6 +438,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(actualizarTablero).toHaveBeenCalledExactlyOnceWith('EC-2026-0142', {
         estado: 'Validado',
         sub_espacio: 'ESTUDIO_GRABACION',
+        anexo_revisado: null,
       })
       await waitFor(() => expect(detalleStaff).toHaveBeenCalledTimes(2))
       expect(dialogo).not.toHaveAttribute('open')
@@ -454,6 +458,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
         estado: 'Validado',
         fecha_inicio: '2026-10-20T09:00:00-05:00',
         fecha_fin: '2026-10-20T11:00:00-05:00',
+        anexo_revisado: null,
       })
     })
 
@@ -479,6 +484,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
         fecha_inicio: '2026-10-22T14:00:00-05:00',
         fecha_fin: '2026-10-22T15:00:00-05:00',
         sub_espacio: 'ESTUDIO_COMPLETO',
+        anexo_revisado: null,
       })
     })
 
@@ -515,7 +521,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
       expect(within(dialogo).getByRole('button', { name: 'Recargar la solicitud' })).toBeInTheDocument()
     })
 
-    it('un borrador abandonado no se filtra: reabrir vuelve a lo pedido y "Validar" sigue enviando solo el destino', async () => {
+    it('un borrador abandonado no se filtra: reabrir vuelve a lo pedido y "Validar" envía solo el destino y la revisión del anexo', async () => {
       const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
       mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(RECIBIDO)), actualizarTablero })
       await esperarDetalle()
@@ -532,7 +538,7 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
       fireEvent.click(within(abrir('Validar', 'Validar la solicitud')).getByRole('button', { name: 'Sí, validar' }))
       await waitFor(() => expect(actualizarTablero).toHaveBeenCalledOnce())
-      expect(actualizarTablero).toHaveBeenCalledWith('EC-2026-0142', { estado: 'Validado' })
+      expect(actualizarTablero).toHaveBeenCalledWith('EC-2026-0142', { estado: 'Validado', anexo_revisado: null })
     })
   })
 
@@ -784,6 +790,187 @@ describe('DetalleStaff · acciones T1, T2, T4 y T9 (6.5.3)', () => {
 
       const otraVez = abrir('Marcar como entregada', 'Marcar como entregada')
       expect(within(otraVez).getByLabelText(TEXTO_ETIQUETA_ENLACE)).toHaveValue('')
+    })
+  })
+
+  describe('Fase 9 · K1 · revisión del anexo en T1 (ADR-005 E7)', () => {
+    // Consulta, fragmento y mayúsculas: cualquier normalización del cliente lo cambiaría.
+    const ANEXO = 'https://drive.google.com/file/d/AbC_1/view?usp=sharing#Guion'
+    const ANEXO_NUEVO = 'https://drive.google.com/file/d/ZyX_2/view'
+    const MENSAJE_E7 = 'El anexo cambió mientras se revisaba. Recargue el detalle y revíselo antes de aprobar.'
+    const CONFLICTO_E7 = {
+      ok: false,
+      error: { tipo: 'http', status: 409, mensajes: [MENSAJE_E7], requiereRecarga: false },
+    } as const
+    const recibido = (categoria: Categoria, enlace_anexo: string | null): DatosDetalleStaff => ({ ...RECIBIDO, categoria, enlace_anexo })
+    const grupoAnexo = (dialogo: HTMLElement) => within(dialogo).getByRole('group', { name: TEXTO_ETIQUETA_ANEXO_REVISADO })
+    const confirmarValidar = (dialogo: HTMLElement) => within(dialogo).getByRole('button', { name: 'Sí, validar' })
+
+    /** Abre la ruta de T1 y confirma. La de ajustes cambia solo el lugar (lo mínimo que la habilita). */
+    async function validarPor(ruta: 'directa' | 'ajustes', detalle: DatosDetalleStaff) {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(PATCH_OK)
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(detalle)), actualizarTablero })
+      await esperarDetalle()
+      if (ruta === 'directa') {
+        fireEvent.click(confirmarValidar(abrir('Validar', 'Validar la solicitud')))
+      } else {
+        const dialogo = abrir('Validar con ajustes', 'Validar con ajustes')
+        fireEvent.click(
+          within(within(dialogo).getByRole('group', { name: TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE })).getByLabelText(
+            ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION,
+          ),
+        )
+        fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, validar con ajustes' }))
+      }
+      await waitFor(() => expect(actualizarTablero).toHaveBeenCalledOnce())
+      return actualizarTablero.mock.calls[0]?.[1]
+    }
+
+    const RUTAS = ['directa', 'ajustes'] as const
+    const lugar = (ruta: 'directa' | 'ajustes') => (ruta === 'ajustes' ? { sub_espacio: 'ESTUDIO_GRABACION' } : {})
+
+    it.each(
+      (['PODCAST', 'VIDEO', 'STREAMING'] as const).flatMap((categoria) =>
+        RUTAS.flatMap((ruta) => [
+          [categoria, ruta, ANEXO],
+          [categoria, ruta, null],
+        ] as const),
+      ),
+    )('%s · ruta %s · anexo %s: envía anexo_revisado EXACTO (null explícito si no hay)', async (categoria, ruta, anexo) => {
+      const cuerpo = await validarPor(ruta, recibido(categoria, anexo))
+
+      expect(cuerpo).toStrictEqual({ estado: 'Validado', ...lugar(ruta), anexo_revisado: anexo })
+      expect(cuerpo).toHaveProperty('anexo_revisado', anexo)
+    })
+
+    it.each(
+      (['ESPACIOS', 'ASESORIAS'] as const).flatMap((categoria) =>
+        RUTAS.flatMap((ruta) => [
+          [categoria, ruta, null],
+          [categoria, ruta, ANEXO],
+        ] as const),
+      ),
+    )('%s · ruta %s · anexo %s: la propiedad anexo_revisado NO viaja', async (categoria, ruta, anexo) => {
+      const cuerpo = await validarPor(ruta, recibido(categoria, anexo))
+
+      expect(cuerpo).not.toHaveProperty('anexo_revisado')
+      expect(cuerpo).toStrictEqual({ estado: 'Validado', ...lugar(ruta) })
+    })
+
+    it('DK1-1: el diálogo muestra el anexo que se confirma, con su enlace seguro; no exige abrirlo', async () => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(recibido('VIDEO', ANEXO))) })
+      await esperarDetalle()
+
+      const dialogo = abrir('Validar', 'Validar la solicitud')
+      const enlace = within(grupoAnexo(dialogo)).getByRole('link', { name: /Abrir el anexo de EC-2026-0142/ })
+      expect(enlace).toHaveAttribute('href', ANEXO)
+      expect(within(grupoAnexo(dialogo)).getByText(TEXTO_AYUDA_ANEXO_REVISADO)).toBeInTheDocument()
+      expect(confirmarValidar(dialogo)).toBeEnabled()
+    })
+
+    it.each(['Validar', 'Validar con ajustes'])('DK1-1: sin anexo, "%s" muestra "Sin anexo"', async (boton) => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(recibido('PODCAST', null))) })
+      await esperarDetalle()
+
+      const dialogo = abrir(boton, boton === 'Validar' ? 'Validar la solicitud' : 'Validar con ajustes')
+      expect(within(grupoAnexo(dialogo)).getByText(TEXTO_SIN_ANEXO)).toBeInTheDocument()
+      expect(within(grupoAnexo(dialogo)).queryByRole('link')).not.toBeInTheDocument()
+    })
+
+    it.each<Categoria>(['ESPACIOS', 'ASESORIAS'])('DK1-1: en %s el diálogo de T1 no habla de anexo', async (categoria) => {
+      mostrar({ detalleStaff: vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(recibido(categoria, null))) })
+      await esperarDetalle()
+
+      const dialogo = abrir('Validar', 'Validar la solicitud')
+      expect(within(dialogo).queryByRole('group', { name: TEXTO_ETIQUETA_ANEXO_REVISADO })).not.toBeInTheDocument()
+    })
+
+    it('DK1-2: 409 → mensaje del servidor, sin reintento ni nueva confirmación; cerrar recarga y la nueva validación usa el anexo NUEVO', async () => {
+      const actualizarTablero = vi
+        .fn<ApiSolicitudes['actualizarTablero']>()
+        .mockResolvedValueOnce(CONFLICTO_E7)
+        .mockResolvedValueOnce(PATCH_OK)
+      const detalleStaff = vi
+        .fn<ApiSolicitudes['detalleStaff']>()
+        .mockResolvedValueOnce(ok(recibido('PODCAST', ANEXO)))
+        .mockResolvedValue(ok(recibido('PODCAST', ANEXO_NUEVO)))
+      mostrar({ detalleStaff, actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrir('Validar', 'Validar la solicitud')
+      fireEvent.click(confirmarValidar(dialogo))
+
+      const alerta = await within(dialogo).findByRole('alert')
+      expect(alerta).toHaveTextContent(MENSAJE_E7)
+      expect(alerta).toHaveTextContent(TEXTO_AYUDA_CONFLICTO)
+      // La foto ya no vale: no se puede volver a confirmar con ella.
+      expect(confirmarValidar(dialogo)).toBeDisabled()
+      expect(confirmarValidar(dialogo)).toHaveAccessibleDescription(TEXTO_RAZON_RECARGAR_TRAS_CONFLICTO)
+      fireEvent.click(confirmarValidar(dialogo))
+      expect(actualizarTablero).toHaveBeenCalledOnce()
+
+      // Cerrar sin pulsar "Recargar la solicitud" también recarga, una sola vez.
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+      await waitFor(() => expect(detalleStaff).toHaveBeenCalledTimes(2))
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Validar' })).toBeEnabled())
+      expect(detalleStaff).toHaveBeenCalledTimes(2)
+
+      // Nueva revisión: el diálogo muestra el anexo nuevo y es el que se confirma.
+      const otraVez = abrir('Validar', 'Validar la solicitud')
+      expect(within(grupoAnexo(otraVez)).getByRole('link', { name: /Abrir el anexo/ })).toHaveAttribute('href', ANEXO_NUEVO)
+      expect(confirmarValidar(otraVez)).toBeEnabled()
+      fireEvent.click(confirmarValidar(otraVez))
+      await waitFor(() => expect(actualizarTablero).toHaveBeenCalledTimes(2))
+      expect(actualizarTablero).toHaveBeenLastCalledWith('EC-2026-0142', { estado: 'Validado', anexo_revisado: ANEXO_NUEVO })
+    })
+
+    it('DK1-2: en "Validar con ajustes", "Recargar la solicitud" recarga una sola vez (el cierre no repite la recarga)', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue(CONFLICTO_E7)
+      const detalleStaff = vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(recibido('STREAMING', ANEXO)))
+      mostrar({ detalleStaff, actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrir('Validar con ajustes', 'Validar con ajustes')
+      fireEvent.click(
+        within(within(dialogo).getByRole('group', { name: TEXTO_LEYENDA_SUB_ESPACIO_AJUSTE })).getByLabelText(
+          ETIQUETAS_SUB_ESPACIO.ESTUDIO_GRABACION,
+        ),
+      )
+      const confirmar = within(dialogo).getByRole('button', { name: 'Sí, validar con ajustes' })
+      fireEvent.click(confirmar)
+      expect(await within(dialogo).findByRole('alert')).toHaveTextContent(MENSAJE_E7)
+      expect(confirmar).toBeDisabled()
+
+      fireEvent.click(within(dialogo).getByRole('button', { name: 'Recargar la solicitud' }))
+      await waitFor(() => expect(detalleStaff).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Validar con ajustes' })).toBeEnabled())
+      expect(detalleStaff).toHaveBeenCalledTimes(2)
+      expect(dialogo).not.toHaveAttribute('open')
+    })
+
+    it('Las demás acciones no cambian: un 409 al rechazar no bloquea el diálogo ni recarga al cerrar', async () => {
+      const actualizarTablero = vi.fn<ApiSolicitudes['actualizarTablero']>().mockResolvedValue({
+        ok: false,
+        error: { tipo: 'http', status: 409, mensajes: [MENSAJE_CAMBIO_CONCURRENTE], requiereRecarga: true },
+      })
+      const detalleStaff = vi.fn<ApiSolicitudes['detalleStaff']>().mockResolvedValue(ok(recibido('PODCAST', ANEXO)))
+      mostrar({ detalleStaff, actualizarTablero })
+      await esperarDetalle()
+
+      const dialogo = abrir('Rechazar', 'Rechazar la solicitud')
+      fireEvent.change(within(dialogo).getByLabelText(TEXTO_ETIQUETA_MOTIVO_RECHAZO), {
+        target: { value: 'El set está en mantenimiento esa semana' },
+      })
+      fireEvent.click(within(dialogo).getByRole('button', { name: 'Sí, rechazar' }))
+      expect(await within(dialogo).findByRole('alert')).toHaveTextContent(MENSAJE_CAMBIO_CONCURRENTE)
+      expect(within(dialogo).getByRole('button', { name: 'Sí, rechazar' })).toBeEnabled()
+      expect(within(dialogo).queryByRole('group', { name: TEXTO_ETIQUETA_ANEXO_REVISADO })).not.toBeInTheDocument()
+      expect(actualizarTablero.mock.calls[0]?.[1]).not.toHaveProperty('anexo_revisado')
+
+      fireEvent.click(within(dialogo).getByRole('button', { name: TEXTO_VOLVER_SIN_CAMBIOS }))
+      expect(dialogo).not.toHaveAttribute('open')
+      expect(detalleStaff).toHaveBeenCalledOnce()
     })
   })
 })

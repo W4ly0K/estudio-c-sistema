@@ -7,6 +7,7 @@ import { FRANJA_VACIA, type ValoresFranja } from './franja'
 import {
   TEXTO_FRANJA_INICIADA,
   TEXTO_RAZON_AJUSTE_SIN_CAMBIOS,
+  revisionDelAnexo,
   TEXTO_RAZON_FRANJA_AJUSTE_INCOMPLETA,
   TEXTO_RAZON_FRANJA_INCOMPLETA,
   accionesDelStaff,
@@ -294,6 +295,37 @@ describe('Validar con ajustes (Fase 7 · 7B.3 · PRD v2.2 §5.6)', () => {
         error: MENSAJE_FIN_NO_POSTERIOR,
       })
     })
+  })
+})
+
+describe('Fase 9 · K1 · revisionDelAnexo (ADR-005 E7)', () => {
+  // Un enlace con consulta, fragmento y mayúsculas: cualquier normalización lo cambiaría.
+  const ANEXO = 'https://drive.google.com/file/d/AbC_1/view?usp=sharing#Guion'
+
+  it.each<Categoria>(['PODCAST', 'VIDEO', 'STREAMING'])('%s: el anexo observado viaja exacto', (categoria) => {
+    expect(revisionDelAnexo(categoria, ANEXO)).toStrictEqual({ anexo_revisado: ANEXO })
+  })
+
+  it.each<Categoria>(['PODCAST', 'VIDEO', 'STREAMING'])('%s: sin anexo viaja null EXPLÍCITO (la clave existe)', (categoria) => {
+    const revision = revisionDelAnexo(categoria, null)
+    expect(revision).toHaveProperty('anexo_revisado', null)
+    expect(JSON.stringify(revision)).toBe('{"anexo_revisado":null}')
+  })
+
+  it.each<Categoria>(['PODCAST', 'VIDEO', 'STREAMING'])('%s: no recorta ni transforma el valor', (categoria) => {
+    const conEspacios = ` ${ANEXO} `
+    expect(revisionDelAnexo(categoria, conEspacios)).toStrictEqual({ anexo_revisado: conEspacios })
+  })
+
+  it.each<[Categoria, string | null]>([
+    ['ESPACIOS', null],
+    ['ESPACIOS', ANEXO],
+    ['ASESORIAS', null],
+    ['ASESORIAS', ANEXO],
+  ])('%s (%s): la clave no existe (el servidor la rechazaría, también con null)', (categoria, anexo) => {
+    const revision = revisionDelAnexo(categoria, anexo)
+    expect(revision).not.toHaveProperty('anexo_revisado')
+    expect(JSON.stringify(revision)).toBe('{}')
   })
 })
 

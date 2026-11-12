@@ -1,13 +1,14 @@
 import { useId, useRef, useState } from 'react'
 import type { ErrorApi, Resultado } from '../api/cliente'
-import { REQUIERE_ENLACE } from '../api/categorias'
+import { ADMITE_ANEXO, REQUIERE_ENLACE } from '../api/categorias'
 import { useApi } from '../api/contexto-api'
 import { textoDeError } from '../api/errores'
 import type { DetalleStaff, SubEspacio } from '../api/esquemas'
-import type { CambiosTablero } from '../api/solicitudes'
+import type { CambiosTablero, RevisionDelAnexo } from '../api/solicitudes'
 import { formatearFranja } from '../fechas/bogota'
 import {
   TEXTO_FRANJA_INICIADA,
+  TEXTO_RAZON_RECARGAR_TRAS_CONFLICTO,
   accionesVisiblesDelStaff,
   ajusteAlValidar,
   franjaYaInicio,
@@ -15,6 +16,7 @@ import {
   porElTablero,
   razonBloqueoDelAjuste,
   razonBloqueoDelStaff,
+  revisionDelAnexo,
   textosDeLaOpcion,
   type DestinoDelStaff,
   type OpcionDelStaff,
@@ -34,6 +36,7 @@ import {
 import { CampoEnlace, TEXTO_AYUDA_ENLACE, TEXTO_ETIQUETA_ENLACE } from './CampoEnlace'
 import { CampoMotivo } from './CampoMotivo'
 import { CampoSubEspacio } from './CampoSubEspacio'
+import { EnlaceAnexo } from './EnlaceAnexo'
 import { CamposFranja } from './CamposFranja'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
 
@@ -57,6 +60,11 @@ export const TEXTO_AYUDA_AJUSTE =
  * condicional porque también es honesta ante el 409 de la franja ya iniciada (D7) o de una
  * propuesta que choca con otra reserva (CA-06).
  */
+/** Fase 9 · K1 (DK1-1): el anexo que se confirma al validar, tal como estaba al abrir el diálogo. */
+export const TEXTO_ETIQUETA_ANEXO_REVISADO = 'Anexo revisado'
+export const TEXTO_SIN_ANEXO = 'Sin anexo'
+export const TEXTO_AYUDA_ANEXO_REVISADO =
+  'Se confirma el anexo que muestra la solicitud en este momento. Si el solicitante lo cambia antes de que confirmes, el servidor rechazará la validación.'
 export const TEXTO_AYUDA_CONFLICTO =
   'Si la solicitud cambió mientras la tenías abierta (otra persona del Staff o el solicitante), recárgala para ver su estado actual.'
 
@@ -66,8 +74,14 @@ export const TEXTO_AYUDA_CONFLICTO =
  * solo se elige la rama. T1 directo no lleva ajuste (el ajuste sale de "Validar con ajustes").
  * Fase 8 · requisito 4: `enlace` es null cuando la categoría no lo pide; así ESPACIOS y
  * ASESORIAS entregan solo con el destino, como siempre.
+ * Fase 9 · E7 (K1): T1 suma la revisión del anexo, la misma que usa "Validar con ajustes".
  */
-function cambiosDe(transicion: TransicionDelTableroStaff, motivo: string, enlace: string | null): CambiosTablero {
+function cambiosDe(
+  transicion: TransicionDelTableroStaff,
+  motivo: string,
+  enlace: string | null,
+  revision: RevisionDelAnexo,
+): CambiosTablero {
   switch (transicion.accion) {
     case 'RECHAZAR':
       return { estado: transicion.destino, motivo_rechazo: motivoParaEnviar(motivo) }
@@ -76,7 +90,7 @@ function cambiosDe(transicion: TransicionDelTableroStaff, motivo: string, enlace
         ? { estado: transicion.destino }
         : { estado: transicion.destino, enlace_entrega: enlaceParaEnviar(enlace) }
     case 'APROBAR':
-      return { estado: transicion.destino }
+      return { estado: transicion.destino, ...revision }
     default:
       return { estado: transicion.destino }
   }
@@ -113,6 +127,13 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   /** Error de la validación local (DH4), antes de enviar: no hubo petición. */
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const candado = useRef(false)
+  // Fase 9 · E7 (K1): la FOTO del anexo al abrir el diálogo. Es lo que el Staff vio y lo que
+  // confirma; si el detalle cambiara con el diálogo abierto, no se enviaría un anexo no visto.
+  const [anexoObservado, setAnexoObservado] = useState<string | null>(detalle.enlace_anexo)
+  // K1 · DK1-2: un 409 en T1 invalida la foto. Hasta recargar no se vuelve a confirmar, y cerrar
+  // el diálogo recarga el detalle. Es un ref (no estado) para que el cierre no recargue dos veces.
+  const conflictoEnT1 = useRef(false)
+  const [bloqueadoPorConflicto, setBloqueadoPorConflicto] = useState(false)
 
   // Un único "ahora" por render: la advertencia DA4 y la oferta de T10 usan el mismo instante.
   const ahora = new Date()
@@ -123,6 +144,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const advertirFranja = acciones.some((t) => t.accion === 'APROBAR') && franjaYaInicio(detalle.fecha_inicio, ahora)
   const accion = seleccionada?.transicion.accion ?? null
   const ajustando = seleccionada?.ajustar === true
+  // E7: solo en T1 (directo o con ajustes) de las categorías con anexo se muestra lo que se confirma.
+  const confirmaAnexo = accion === 'APROBAR' && ADMITE_ANEXO[detalle.categoria]
   // 7B.3: lo pedido por el solicitante, en los campos y contra lo que se mide el ajuste.
   const vigente: VigenteDelAjuste = {
     franja: camposDeLaFranja(detalle.fecha_inicio, detalle.fecha_fin),
@@ -137,7 +160,9 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   const razonBloqueo =
     accion === null
       ? undefined
-      : ajustando
+      : bloqueadoPorConflicto
+        ? TEXTO_RAZON_RECARGAR_TRAS_CONFLICTO
+        : ajustando
         ? razonBloqueoDelAjuste(franja, subEspacio, vigente)
         : pideEnlace
           ? razonBloqueoDelEnlace(enlace)
@@ -153,6 +178,9 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     setEnlace('')
     setFranja(opcion.ajustar ? vigente.franja : FRANJA_VACIA)
     setSubEspacio(detalle.sub_espacio)
+    setAnexoObservado(detalle.enlace_anexo)
+    conflictoEnT1.current = false
+    setBloqueadoPorConflicto(false)
     setSeleccionada(opcion)
   }
 
@@ -161,10 +189,19 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
     setSeleccionada(null)
     setError(null)
     setErrorLocal(null)
+    // DK1-2: cerrar después de un 409 en T1 recarga; nunca se reintenta solo.
+    if (conflictoEnT1.current) {
+      conflictoEnT1.current = false
+      setBloqueadoPorConflicto(false)
+      alRecargar()
+    }
   }
 
   /** Arma la petición del canal que corresponde, o `null` si la validación local la frena. */
   const peticionDe = (opcion: OpcionDelStaff): Promise<Resultado<unknown>> | null => {
+    // E7 (K1): una sola revisión para las dos rutas de T1, calculada de la foto. Las demás
+    // acciones no la usan: cambiosDe solo la agrega en 'APROBAR'.
+    const revision = revisionDelAnexo(detalle.categoria, anexoObservado)
     if (opcion.ajustar) {
       // 7B.3: T1 y su ajuste en UN solo PATCH: el servidor valida y audita todo junto (U5).
       const resultado = ajusteAlValidar(franja, subEspacio, vigente)
@@ -172,10 +209,10 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         setErrorLocal(resultado.error)
         return null
       }
-      return api.actualizarTablero(detalle.radicado, { estado: opcion.transicion.destino, ...resultado.ajuste })
+      return api.actualizarTablero(detalle.radicado, { estado: opcion.transicion.destino, ...resultado.ajuste, ...revision })
     }
     const { transicion } = opcion
-    if (porElTablero(transicion)) return api.actualizarTablero(detalle.radicado, cambiosDe(transicion, motivo, pideEnlace ? enlace : null))
+    if (porElTablero(transicion)) return api.actualizarTablero(detalle.radicado, cambiosDe(transicion, motivo, pideEnlace ? enlace : null, revision))
     // T5 (DR5): las mismas dos reglas locales de B2; el resto lo decide el servidor.
     const propuesta = franjaDesdeCampos(franja)
     if (!propuesta.ok) {
@@ -209,10 +246,18 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
       alCompletar(seleccionada.transicion.destino)
     } else {
       setError(resultado.error)
+      // DK1-2: el 409 en T1 no se compara por texto (DC5): cualquier conflicto invalida la foto.
+      if (seleccionada.transicion.accion === 'APROBAR' && resultado.error.tipo === 'http' && resultado.error.status === 409) {
+        conflictoEnT1.current = true
+        setBloqueadoPorConflicto(true)
+      }
     }
   }
 
   const recargar = () => {
+    // Recarga explícita: el cierre que sigue no debe recargar otra vez.
+    conflictoEnT1.current = false
+    setBloqueadoPorConflicto(false)
     setSeleccionada(null)
     setError(null)
     setErrorLocal(null)
@@ -269,6 +314,18 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         onCerrar={cerrar}
       >
         {/* Los campos van antes que los botones: al abrir, el foco cae en el primero. */}
+        {confirmaAnexo && (
+          // fieldset/legend: grupo con nombre accesible nativo (sin role ni aria-labelledby).
+          <fieldset className="mt-4 min-w-0 border-0 p-0">
+            <legend className="p-0 text-gray-500">{TEXTO_ETIQUETA_ANEXO_REVISADO}</legend>
+            {anexoObservado === null ? (
+              <p className="font-medium text-primary">{TEXTO_SIN_ANEXO}</p>
+            ) : (
+              <EnlaceAnexo enlace={anexoObservado} radicado={detalle.radicado} />
+            )}
+            <p className="mt-1 text-xs text-gray-500">{TEXTO_AYUDA_ANEXO_REVISADO}</p>
+          </fieldset>
+        )}
         {accion === 'RECHAZAR' && (
           <CampoMotivo
             etiqueta={TEXTO_ETIQUETA_MOTIVO_RECHAZO}
