@@ -4,7 +4,8 @@
 |---|---|
 | **Estado** | ✅ Aceptado · implementado en `feat/fase-8-ux-estados-entregables` y migraciones aplicadas en producción el 2026-10-28 con precheck y postcheck |
 | **Fecha** | 2026-10-28 |
-| **Actualización** | 2026-11-10 · Fase 9 (propuesto; las columnas y restricciones del evento ENTREGA ya están en H1 y en el ADR-012 aceptado; el endpoint y el servicio sin implementar): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
+| **Actualización** | 2026-11-10 · Fase 9 (propuesto; las columnas y restricciones del evento ENTREGA ya están en H1 y en el ADR-012 aceptado; el endpoint y el servicio sin implementar ese día): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
+| **Actualización** | 2026-11-12 · Fase 9: §2.7 **aceptada** como base de diseño, con la enmienda DJ3-1 al orden de EN12, e **implementada en la rama** `feat/fase-9-anexo-solicitante` (lote J3, `e0bc0d7`). **Pendiente:** la interfaz (lote K) y la producción (paso 9.1.5). El estado de este ADR no cambia |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-8-ux-estados-entregables` (desde `develop` @ `ee86285`) |
 | **Complementa a** | [ADR-004](ADR-004-concurrencia-ca06.md) (AH: la fuente única de lo que libera la franja ahora depende también de la categoría) · [ADR-005](ADR-005-maquina-de-estados-ca10.md) (T11 y T12) · [ADR-006](ADR-006-frontend-contrato-tipado.md) (contrato Zod, `CambiosTablero`, acciones del Staff) · [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2: el `WHERE` de las dos exclusiones se recrea; SE10: la categoría ya gobernaba el lugar) |
@@ -137,13 +138,16 @@
   - El backend anterior, contra la base migrada, ofrece T9 a PODCAST y VIDEO. Además, su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500. Por eso, en esa ventana no se registran entregas.
   - El frontend nuevo exige `enlace_entrega` en el esquema Zod, así que contra un backend anterior rechazaría las respuestas.
 
-### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesto; el evento ENTREGA está en H1, el endpoint y el servicio sin implementar)
+### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesta el 2026-11-10; aceptada el 2026-11-12 e implementada en la rama en J3, `e0bc0d7`; interfaz y producción pendientes)
 
 **Origen.** La pregunta 24 del cuestionario firmado por el Responsable del Estudio C (2026-11-10) resuelve DA-4: el Staff corrige desde el sistema un enlace mal registrado, y la corrección queda en el registro de auditoría. Eso es lo institucional. El mecanismo de abajo, incluido el motivo opcional, sale de las decisiones del proyecto del 2026-11-10 (D2, D8, D9 y D10).
 
 - **EN6 · Endpoint:** `PATCH /solicitudes/:radicado/enlace-entrega`, `@Roles(STAFF)`. Solo en `Entregado` y en `CATEGORIAS_CON_ENLACE` (PODCAST, VIDEO y STREAMING). El actor sale del JWT. Cada corrección deja un evento ENTREGA en `Log_Auditoria` ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md)). No pasa por el `PATCH` del tablero.
+  - **Implementación (DJ3-2):** además del guard, el servicio comprueba el rol **antes de consultar** la solicitud → 403 `MENSAJE_CORRECCION_SOLO_STAFF` (defensa en profundidad, Zero Trust). Una categoría sin enlace al entregar → 400 `MENSAJE_CORRECCION_NO_APLICA`. Si la corrección prospera → 200 con `MENSAJE_ENLACE_ENTREGA_CORREGIDO` y la proyección del Staff (DJ3-4).
 - **EN7 · Cuerpo:** `{ enlace_entrega_anterior: string, enlace_entrega: string, motivo_correccion? }`. El enlace nuevo usa `EnlaceSeguro`. El anterior es un valor para comparar (texto de hasta 2048 caracteres; sin `null`, por EN8). Un campo desconocido → 400.
+  - **Precisión (2026-11-12, implementada en J3):** el anterior tampoco admite `''` ni solo espacios, y se compara exactamente, sin recortar; su forma inválida responde `MENSAJE_ENTREGA_ANTERIOR_FORMA`.
 - **EN8 · Entregas que nunca tuvieron enlace (D2):** si la solicitud no tiene enlace registrado → **409** `MENSAJE_ENTREGA_SIN_ENLACE_PREVIO`. Agregar un enlace por primera vez queda fuera de alcance. Esta regla la garantiza **solo el servicio** (no hay un `CHECK` para ella), y la cubren las pruebas. No se modifican registros históricos: la entrega de PODCAST de DA-5 sigue igual.
+  - **Cobertura:** unitarias y e2e. No se puede sembrar en integración, porque `Solicitud_entrega_con_enlace_check` (`NOT VALID`) sí se aplica a las filas nuevas o actualizadas.
 - **EN9 · Valor anterior observado (D9):** si `enlace_entrega_anterior` no es el vigente → **409** `MENSAJE_ENLACE_DESACTUALIZADO`, sin escritura ni log. `esperado` lleva `estado: 'Entregado'` y el enlace observado; si cambia entre la lectura y la escritura, el *compare-and-set* pierde → 409. Si el valor vuelve al que el cliente vio (ABA), la regla se cumple.
 - **EN10 · Motivo opcional (D8):**
   - Validación: `@ValidateIf(o => o.motivo_correccion !== undefined)` y `@TextoConLongitudReal(10, 500, MENSAJE_MOTIVO_CORRECCION)`. **`@IsOptional()` solo no sirve:** también deja pasar `null` sin validar, y lo convertiría en «sin motivo».
@@ -153,7 +157,10 @@
   - No lo exige la pregunta 24: es trazabilidad adicional.
   - En la interfaz, el campo advierte que no se escriban datos personales, contraseñas, tokens ni otra información sensible.
 - **EN11 · Sin cambios (D10):** si el enlace pedido ya es el vigente → **200** con `sin_cambios: true`, sin escritura, sin evento y **sin guardar el motivo**. La pipe valida el cuerpo completo (motivo incluido) antes del servicio, así que un cuerpo mal formado recibe 400 aunque el enlace coincida. Un motivo nuevo con el mismo enlace no crea un evento: los logs no se editan y B2 exige un cambio real. No es idempotencia completa: ante una respuesta incierta, el frontend vuelve a consultar el detalle.
-- **EN12 · Orden:** 401 → 403 → 400 de forma (pipe) → 404 si no existe → 400 si la categoría no lleva enlace → 200 `sin_cambios` → 409 si no está en `Entregado` → 409 por EN8 → 409 por EN9 → *compare-and-set* y evento (200, o 409 si pierde). La igualdad va antes del estado solo porque no escribe.
+- **EN12 · Orden (enmendado el 2026-11-12, DJ3-1; implementado en J3):** 401 → 403 (guard y servicio) → 400 de forma (pipe) → 404 si no existe → 400 si la categoría no lleva enlace → 409 si no está en `Entregado` → 409 por EN8 → 200 `sin_cambios` → 409 por EN9 → *compare-and-set* y evento (200, o 409 si pierde).
+  - **Por qué cambia:** `sin_cambios: true` solo se responde cuando la corrección sería válida en ese estado; antes podía responder 200 en una solicitud que no está en `Entregado`. Es la misma regla de [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) D10 enmendada.
+  - **Orden anterior (2026-11-10, sustituido; se conserva por trazabilidad):** … → 400 si la categoría no lleva enlace → 200 `sin_cambios` → 409 si no está en `Entregado` → 409 por EN8 → 409 por EN9 → … («La igualdad va antes del estado solo porque no escribe»).
+- **Pruebas de §2.7 (J3, `e0bc0d7`):** `corregir-enlace-entrega.dto.spec.ts`; `solicitudes.service.spec.ts` y `solicitudes.controller.spec.ts`; e2e `correccion-entrega.e2e-spec.ts`; integración I-43 (`correccion-entrega.int-spec.ts`). Ejecutadas en el entorno local de desarrollo; las cifras acumuladas **reportadas** por el responsable del proyecto al `e0bc0d7` son 1.365 unitarias, 126 e2e e integración 16 suites y 212 pruebas.
 - `Solicitud_entrega_con_enlace_check` (`NOT VALID`, EN4) no cambia: una corrección siempre deja un valor no nulo.
 
 ---
@@ -162,7 +169,7 @@
 
 | # | Tema | Resolución |
 |---|---|---|
-| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | Era deuda aceptada. **Resuelta funcionalmente** por la pregunta 24 (Responsable del Estudio C, 2026-11-10): el Staff lo corrige desde el sistema y la corrección queda en el log. Mecanismo propuesto en §2.7; **implementación pendiente**. Mientras tanto, solo se corrige con una migración de datos auditada |
+| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | Era deuda aceptada. **Resuelta funcionalmente** por la pregunta 24 (Responsable del Estudio C, 2026-11-10): el Staff lo corrige desde el sistema y la corrección queda en el log. Mecanismo en §2.7, aceptado el 2026-11-12 e **implementado en la rama** (J3, `e0bc0d7`). **Pendiente:** la interfaz (lote K) y la producción (9.1.5). Hasta el despliegue, en producción solo se corrige con una migración de datos auditada |
 | DA-5 | La entrega histórica de PODCAST no tiene enlace | Se muestra sin la fila «Producto final». La tolera el `NOT VALID` (EN4) |
 | DA-6 | El enlace se valida por forma, no por contenido | El sistema no visita el enlace (sin SSRF ni dependencia de terceros); el Staff responde por el destino |
 | DA-7 | Los alias son solo de presentación | La API, el log y cualquier exportación siguen diciendo `Validado`. Un reporte futuro debe usar `etiquetaEstado()` |
@@ -214,7 +221,7 @@
 
 ## 6. Pendiente
 
-- **DA-4:** implementar la corrección auditada (§2.7) junto con la migración de la Fase 9. La pregunta al Responsable ya se respondió (pregunta 24).
+- **DA-4:** backend implementado en la rama (J3, `e0bc0d7`). Falta la interfaz de corrección con la advertencia sobre datos personales (lote K) y el despliegue con la migración de la Fase 9 (paso 9.1.5). La pregunta al Responsable ya se respondió (pregunta 24).
 - Heredados de ADR-007 §6: DA-2 (los ajustes en el historial), el texto de T10 y el retiro de una propuesta por el Staff.
 
 ---
@@ -232,3 +239,4 @@
 | `aac0faa` | 8.6 · Enlace `https` del producto final obligatorio al entregar PODCAST, VIDEO y STREAMING |
 | — | 8.7 · Precheck (16 indicadores), `migrate status` (2 pendientes), `npm run db:migrate` y postcheck (19 indicadores) en producción, más la prueba visual de solo lectura |
 | — | 8.8 · Este ADR, las notas de ADR-005 y ADR-007, los README y el PRD v2.4 |
+| `e0bc0d7` | Fase 9 · J3 · Corrección auditada del enlace del producto final (`PATCH /solicitudes/:radicado/enlace-entrega`, evento ENTREGA), con el orden de EN12 enmendado (rama `feat/fase-9-anexo-solicitante`) |
