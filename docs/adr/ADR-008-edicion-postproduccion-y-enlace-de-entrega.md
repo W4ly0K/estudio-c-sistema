@@ -4,7 +4,7 @@
 |---|---|
 | **Estado** | ✅ Aceptado · implementado en `feat/fase-8-ux-estados-entregables` y migraciones aplicadas en producción el 2026-10-28 con precheck y postcheck |
 | **Fecha** | 2026-10-28 |
-| **Actualización** | 2026-11-10 · Fase 9 (propuesto, sin implementar): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
+| **Actualización** | 2026-11-10 · Fase 9 (propuesto; las columnas y restricciones del evento ENTREGA ya están en H1 y en el ADR-012 aceptado; el endpoint y el servicio sin implementar): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-8-ux-estados-entregables` (desde `develop` @ `ee86285`) |
 | **Complementa a** | [ADR-004](ADR-004-concurrencia-ca06.md) (AH: la fuente única de lo que libera la franja ahora depende también de la categoría) · [ADR-005](ADR-005-maquina-de-estados-ca10.md) (T11 y T12) · [ADR-006](ADR-006-frontend-contrato-tipado.md) (contrato Zod, `CambiosTablero`, acciones del Staff) · [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2: el `WHERE` de las dos exclusiones se recrea; SE10: la categoría ya gobernaba el lugar) |
@@ -108,10 +108,10 @@
     - Si es PROHIBIDO y llega: **400**.
   - `null` cuenta como ausente: por esa vía nunca llega al motor una entrega sin enlace.
 - **EN3 · Dos capas compatibles, no equivalentes:**
-  - **DTO:** `@MaxLength(2048)`, `@Matches(/^https:\/\/\S+$/)` e `@IsUrl({ protocols: ['https'], require_tld, disallow_auth })`. Desde la Fase 9 viven en `EnlaceSeguro` (ver la nota de abajo).
+  - **DTO:** `@MaxLength(2048)`, `@Matches(/^https:\/\/\S+$/)` (desde H0, `/^https:\/\/[^\s\p{Cc}]+$/u`) e `@IsUrl({ protocols: ['https'], require_tld, disallow_auth })`. Desde la Fase 9 viven en `EnlaceSeguro` (ver la nota de abajo).
   - **Motor:** sus propios `CHECK`: `segun_estado`, `segun_categoria` y `formato` (`^https://[^[:space:]]+$` y ≤ 2048), los tres validados al crearse porque la columna nació vacía.
   - El DTO cubre la regla del `CHECK` para que una entrada como `HTTPS://…` sea un 400 y nunca un 500. **No son equivalentes:** el DTO es más estricto en algunos casos (`MaxLength` cuenta unidades UTF-16; `IsUrl` exige dominio de primer nivel y prohíbe usuario y contraseña), así que el motor acepta valores que el DTO rechaza. Lo obligatorio es que sean compatibles: el DTO nunca acepta lo que el `CHECK` rechazaría (ADR-009 FU2).
-  - **Pendiente de verificar (2026-11-10):** que `\S` de JavaScript sea al menos tan estricto como `[^[:space:]]` de PostgreSQL con todos los espacios Unicode. Depende del `LC_CTYPE` de la base y se comprueba en P0 y en las pruebas de integración ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §2.3 y §6).
+  - **Verificado (2026-11-11):** con `\S`, el DTO aceptaba caracteres de control que el motor rechaza (P0, precheck 9.1.0b, fila 28). Desde H0 (`a111c73`), `PATRON_ENLACE_SEGURO` es `/^https:\/\/[^\s\p{Cc}]+$/u` y la vista aplica la misma exclusión; I-38b e I-40b lo cubren en la base desechable. En producción se confirma con el precheck 0c antes del 9.1.5 ([ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §2.3).
 
   > **Nota (Fase 9 · R9-1, 2026-11-09):** desde `a64984c` la regla del DTO vive en la fuente única `EnlaceSeguro` (`backend/src/common/validadores/enlace-seguro.decorator.ts`), compartida con `enlace_anexo`. `ENLACE_ENTREGA_MAXIMO` pasó a ser `ENLACE_MAXIMO` en ese archivo, y el contrato del frontend la lee de ahí. El comportamiento no cambió: las pruebas de EN3 siguieron en verde sin tocarse. Ver [ADR-009](ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md).
 - **EN4 · `Solicitud_entrega_con_enlace_check` `NOT VALID` (DT-3):**
@@ -137,7 +137,7 @@
   - El backend anterior, contra la base migrada, ofrece T9 a PODCAST y VIDEO. Además, su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500. Por eso, en esa ventana no se registran entregas.
   - El frontend nuevo exige `enlace_entrega` en el esquema Zod, así que contra un backend anterior rechazaría las respuestas.
 
-### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesto, sin implementar)
+### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesto; el evento ENTREGA está en H1, el endpoint y el servicio sin implementar)
 
 **Origen.** La pregunta 24 del cuestionario firmado por el Responsable del Estudio C (2026-11-10) resuelve DA-4: el Staff corrige desde el sistema un enlace mal registrado, y la corrección queda en el registro de auditoría. Eso es lo institucional. El mecanismo de abajo, incluido el motivo opcional, sale de las decisiones del proyecto del 2026-11-10 (D2, D8, D9 y D10).
 

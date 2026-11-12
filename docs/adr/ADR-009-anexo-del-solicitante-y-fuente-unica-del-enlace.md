@@ -2,9 +2,9 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | 🟡 Aceptado en la rama para el diseño original (`7b19090`). **Ampliado el 2026-11-10** con las respuestas del Responsable y las decisiones D1, D4-B′, D7, D9 y D10 (§2.7): la ampliación está **propuesta, sin implementar**. La migración `20261109110000_enlace_anexo` conserva su versión original y se ajusta antes de ejecutarse; la migración definitiva y el paso 9.1.5 están **pendientes**. Pasa a ✅ con el postcheck |
+| **Estado** | 🟡 Aceptado en la rama para el diseño original (`7b19090`). **Ampliado el 2026-11-10** con las respuestas del Responsable y las decisiones D1, D4-B′, D7, D9 y D10 (§2.7): la ampliación está **propuesta**. **Al 2026-11-11:** su parte de base de datos está implementada en la migración consolidada `20261109110000_enlace_anexo` (H1, `df4e6e9`), que reemplazó a la versión original y se verificó solo en la base desechable (H3-C); la parte de aplicación (AN2b en el DTO y el formulario, AN10 a AN15 y ADR-005 E7) está **sin implementar**. El paso 9.1.5 (producción) está **pendiente**. Pasa a ✅ con el postcheck |
 | **Fecha** | 2026-11-09 |
-| **Actualización** | 2026-11-10 · Respuestas 1, 2, 3, 4 y 5 del cuestionario (§3) y ampliación del anexo (§2.7, propuesta). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) y la E7 de [ADR-005](ADR-005-maquina-de-estados-ca10.md) |
+| **Actualización** | 2026-11-10 · Respuestas 1, 2, 3, 4 y 5 del cuestionario (§3) y ampliación del anexo (§2.7, propuesta) · 2026-11-11 · migración consolidada H1 y checksum vigente (§2.6). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) y la E7 de [ADR-005](ADR-005-maquina-de-estados-ca10.md) |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-9-anexo-solicitante` (desde `develop` @ `6c35493`) |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (las proyecciones son listas blancas: el anexo se agrega a propósito) · [ADR-006](ADR-006-frontend-contrato-tipado.md) (contrato Zod y cuerpos tipados) · [ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) (EN3 y EN5 pasan a la fuente única) |
@@ -59,14 +59,14 @@
 ### 2.6 Entrega y despliegue (AN9)
 
 - Precheck 9.1.0 (hecho: 10/10) → precheck de nuevo **justo antes** de migrar → `npx prisma migrate status` (host del pooler) → `npm run db:migrate` → postcheck 9.1.5 (checksum SHA-256 y conteos idénticos, DT-3).
-- **Checksum (actualizado el 2026-11-10):** `9840a71ecadad767aef2295acb9085eca95e10daa597ae30e2e1c87141b05d38` corresponde a la **versión original** de la migración, la que sigue en el repositorio. **No es el definitivo:** la migración se reescribirá con AN2b y las columnas de [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md), y el checksum nuevo se registrará desde la salida real. Antes, un P0 autorizado verifica `_prisma_migrations` por nombre y estado, B7 y el `LC_CTYPE` de la base.
+- **Checksum (actualizado el 2026-11-11):** el vigente es `886aeb80aee4a2f48c474b9b55013c7768aa06394eb06e3cc97465282549f059` (SHA-256 de la migración consolidada H1, en LF y sin CR, `df4e6e9`), con el anexo (AN1, AN2 y la regla de categoría de AN2b en el motor) y las columnas y restricciones de [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md). Reemplaza a `9840a71e…1b05d38`, la versión original, que nunca se aplicó en producción (P0, precheck 9.1.0b). P0 ya midió `_prisma_migrations`, B7 (0) y la compatibilidad Unicode (fila 28, corregida por H0, `a111c73`). El precheck 0c lo repite justo antes del 9.1.5, y el postcheck se reescribe para H1.
 - Hasta la migración, el equipo de la oficina sigue en `develop` @ `6c35493`: el código de esta rama escribe `enlace_anexo`. Después, backend y frontend se actualizan **juntos**, por AN6.
 
-### 2.7 Ampliación: categorías, edición, retiro y visibilidad (AN2b, AN10 a AN15; propuesto, sin implementar)
+### 2.7 Ampliación: categorías, edición, retiro y visibilidad (AN2b, AN10 a AN15; propuesto; la parte de base de datos está en H1 y la de aplicación sin implementar)
 
 **Origen.** Los requisitos son las preguntas 2, 3, 4 y 5 del cuestionario firmado (§3). El mecanismo sale de las decisiones del proyecto del 2026-11-10: D1 (retiro), D7 (visibilidad), D9 (valor anterior observado) y D10 (sin cambios), con la auditoría de [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md).
 
-- **AN2b · Categorías (pregunta 5):** solo PODCAST, VIDEO y STREAMING admiten anexo. Fuente única: `POLITICA_POR_CATEGORIA.admiteAnexo` y la lista derivada `CATEGORIAS_CON_ANEXO` (hoy coincide con `CATEGORIAS_CON_ENLACE`, pero por otro motivo). En el motor, `Solicitud_enlace_anexo_segun_categoria_check`: sin anexo, o una de esas categorías. Al radicar, un anexo en otra categoría → 400 `MENSAJE_ANEXO_NO_APLICA` (amplía AN3).
+- **AN2b · Categorías (pregunta 5):** solo PODCAST, VIDEO y STREAMING admiten anexo. Fuente única: `POLITICA_POR_CATEGORIA.admiteAnexo` y la lista derivada `CATEGORIAS_CON_ANEXO` (hoy coincide con `CATEGORIAS_CON_ENLACE`, pero por otro motivo). En el motor, `Solicitud_enlace_anexo_segun_categoria_check`: sin anexo, o una de esas categorías. Al radicar, un anexo en otra categoría → 400 `MENSAJE_ANEXO_NO_APLICA` (amplía AN3). **Estado (2026-11-11):** la restricción del motor está en H1 (I-38d); la validación del DTO y el formulario están sin implementar. Mientras tanto, con H1 aplicada, el DTO de la rama acepta un anexo en ESPACIOS o ASESORIAS que el motor rechaza: incumple DTO ⊆ CHECK (FU2) y debe cerrarse antes del PR y del 9.1.5.
 - **AN10 · Endpoint (preguntas 3 y 4):** `PATCH /solicitudes/:radicado/anexo`, `@Roles(SOLICITANTE)`, separado del `PATCH` del tablero. La propiedad va en el `WHERE`: una solicitud ajena o inexistente recibe el mismo 404 (ADR-002). Solo en `Recibido` y en `CATEGORIAS_CON_ANEXO`. El actor sale del JWT, y cada cambio efectivo deja un evento ANEXO (quién, cuándo, enlace anterior y nuevo) en la misma transacción.
 - **AN11 · Cuerpo:** `{ enlace_anexo_anterior: string | null, enlace_anexo: string | null }`, las dos **obligatorias**. Cada una se valida con `@ValidateIf(o => o.<campo> !== null)` seguido de sus validadores: si la propiedad no vino, los validadores corren y responden 400; con `null`, se omiten. El nuevo, si es texto, usa `EnlaceSeguro`; el anterior es un valor para comparar (texto de hasta 2048). Otro tipo, `''` o una forma insegura → 400.
 - **AN12 · Retiro (D1):** `enlace_anexo: null` retira el anexo, solo en solicitudes propias en `Recibido`. Si hay un cambio efectivo, el evento guarda el enlace anterior, `NULL` como nuevo, el actor, la fecha y el radicado.
@@ -103,9 +103,9 @@ Respuestas del cuestionario firmado por el Responsable del Estudio C. La pregunt
 | AN6 | `esquemas.test.ts` (acepta el anexo; rechaza una respuesta sin el campo) · `solicitudes.test.ts` (`@ts-expect-error`) |
 | AN7 | `EnlaceAnexo.test.tsx` · `EnlaceProductoFinal.test.tsx` (sin cambios) · `DetalleSolicitud.test.tsx` · `DetalleStaff.test.tsx` |
 | AN8 | `presentacion/anexo.test.ts` · `Dashboard.test.tsx` (ayuda accesible, recorte, sin clave si está vacío, inválido no se envía) |
-| AN2b, AN10 a AN15 | **Pendientes, sin implementar.** Plan en [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §6: categorías (unitarias, alineación e integración), los casos de ausencia y `null` del cuerpo, 404 uniforme, 409 por estado y por valor anterior, `sin_cambios` sin log, concurrencia, proyecciones y la relación con T1 (ADR-005 E7) |
+| AN2b, AN10 a AN15 | **Motor de AN2b (H1):** I-38d en H3-C. **Aplicación sin implementar.** Plan en [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) §6: categorías (unitarias, alineación e integración), los casos de ausencia y `null` del cuerpo, 404 uniforme, 409 por estado y por valor anterior, `sin_cambios` sin log, concurrencia, proyecciones y la relación con T1 (ADR-005 E7) |
 
-Cifras de la última corrida: backend 32 suites · 1067 + 1 omitida; e2e 7 · 92; integración 10 · 127/127; frontend 46 · 624. CI en verde en `aa9f9b7` y `749566d`.
+Cifras de la última corrida: backend 32 suites · 1067 + 1 omitida; e2e 7 · 92; integración 10 · 127/127; frontend 46 · 624. CI en verde en `aa9f9b7` y `749566d`. Con H1 (H3-C, base desechable, reportado el 2026-11-11): integración 11 · 182/182.
 
 ---
 
@@ -126,7 +126,7 @@ Cifras de la última corrida: backend 32 suites · 1067 + 1 omitida; e2e 7 · 92
 ## 6. Pendiente
 
 - Implementar la ampliación (§2.7) y la precondición de T1 (ADR-005 E7), con sus pruebas.
-- P0 autorizado y la migración definitiva (`20261109110000_enlace_anexo` reescrita), con su checksum nuevo.
+- Hecho: P0 (precheck 9.1.0b) y la migración consolidada H1 (`df4e6e9`, checksum en §2.6). Falta: el precheck 0c y el postcheck reescrito para H1, antes del 9.1.5.
 - Paso 9.1.5 en producción y su postcheck.
 - La prueba manual con navegador real después del 9.1.5 (con una solicitud real con anexo, o con un radicado de prueba que luego se cancela, conforme a DT-3).
 
@@ -140,5 +140,6 @@ Cifras de la última corrida: backend 32 suites · 1067 + 1 omitida; e2e 7 · 92
 | `a64984c` | 9.1.1 a 9.1.3 · Fuente única, migración aditiva, DTOs, servicio, proyecciones y pruebas |
 | `aa9f9b7` | Prueba del anexo con un objeto plano y `satisfies` (`no-misused-spread`) |
 | `749566d` | 9.1.4 · Frontend (contrato, `anexoParaEnviar`, `EnlaceExternoSeguro`, formulario B2 y detalles) y e2e del backend |
+| `f8b3706` · `a111c73` · `df4e6e9` · `2af8f2f` | L0 (ADR-012 y enmiendas), H0 (patrón sin `\p{Cc}`), H1 y H2 (migración consolidada y modelo) y H3-A (pruebas I-38 e I-40) |
 | — | 9.1.5 · Precheck, `migrate status`, `npm run db:migrate` y postcheck en producción ⏳ |
 | — | 9.1.6 · Este ADR, la nota de ADR-008, los README y el PR ⏳ |
