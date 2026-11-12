@@ -1,3 +1,5 @@
+import { ADMITE_ANEXO } from '../api/categorias'
+import type { Categoria } from '../api/esquemas'
 import { enlaceParaEnviar, esEnlaceSeguro } from './enlace'
 
 /**
@@ -9,11 +11,12 @@ import { enlaceParaEnviar, esEnlaceSeguro } from './enlace'
 export const TEXTO_ETIQUETA_ANEXO = 'Guion o documento de apoyo (opcional)'
 
 /**
- * Provisional (D3): depende de la pregunta 2 del cuestionario de la Fase 9 (¿con quién se comparte
- * el archivo?). Si el Responsable decide otra cosa, se cambia solo esta constante.
+ * Fase 9 · AN15 (pregunta 2, respondida el 2026-11-10; texto aprobado en K2 · DK2-1): el guion se
+ * comparte con las cuentas de la universidad. Orienta, no promete: el sistema NO verifica los
+ * permisos del archivo. Reemplaza el texto provisional D3 (estudioc@unicesmag.edu.co).
  */
 export const TEXTO_AYUDA_ANEXO =
-  'Opcional. Pega el enlace https:// de tu guion en Google Drive o Docs. Antes, compártelo como lector con estudioc@unicesmag.edu.co (Compartir → agrega el correo → Lector) y evita «Cualquier persona con el enlace», para que tu guion no quede público.'
+  'Opcional. Pega el enlace https:// de tu guion en Google Drive o Docs. Antes, inicia sesión en Drive con tu cuenta institucional (@unicesmag.edu.co) y, en Compartir, elige «Acceso general» → «Universidad Cesmag» → «Lector». Así podrán abrirlo, con el enlace, solo las personas de la universidad: no queda público. No uses «Cualquier persona con el enlace». Si no ves la opción de la universidad, consulta con el Estudio C.'
 
 export const TEXTO_ANEXO_INVALIDO =
   'El enlace del anexo debe empezar por https:// (en minúsculas) y no llevar espacios ni usuario y contraseña. Si no tienes anexo, deja el campo vacío.'
@@ -31,4 +34,14 @@ export function anexoParaEnviar(texto: string): AnexoParaEnviar {
   const limpio = enlaceParaEnviar(texto)
   if (limpio === '') return { ok: true }
   return esEnlaceSeguro(limpio) ? { ok: true, enlace: limpio } : { ok: false, error: TEXTO_ANEXO_INVALIDO }
+}
+
+/**
+ * Fase 9 · AN2b (K2): la regla de envío del anexo SEGÚN LA CATEGORÍA. En PODCAST, VIDEO y
+ * STREAMING, exactamente anexoParaEnviar (recorte D4, vacío = sin clave, inseguro = error). En
+ * ESPACIOS y ASESORIAS no hay anexo, sea cual sea el texto residual: ni se valida ni viaja (el
+ * servidor respondería 400 MENSAJE_ANEXO_NO_APLICA).
+ */
+export function anexoSegunCategoria(categoria: Categoria, texto: string): AnexoParaEnviar {
+  return ADMITE_ANEXO[categoria] ? anexoParaEnviar(texto) : { ok: true }
 }

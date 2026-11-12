@@ -26,13 +26,22 @@ export const REQUIERE_ENLACE: Readonly<Record<Categoria, boolean>> = {
 /**
  * Fase 9 · AN2b (ADR-009 §2.7): las categorías que admiten anexo (admiteAnexo). En T1 de estas
  * categorías el Staff confirma el anexo que vio (ADR-005 E7); en las demás, anexo_revisado no viaja.
+ * K2: literal (`as const`) para derivar CategoriaConAnexo; los valores no cambian.
  */
-export const ADMITE_ANEXO: Readonly<Record<Categoria, boolean>> = {
+export const ADMITE_ANEXO = {
   PODCAST: true,
   VIDEO: true,
   ESPACIOS: false,
   STREAMING: true,
   ASESORIAS: false,
+} as const satisfies Readonly<Record<Categoria, boolean>>
+
+/** Fase 9 · K2: las categorías con anexo, DERIVADAS de ADMITE_ANEXO (una sola fuente). */
+export type CategoriaConAnexo = { [C in Categoria]: (typeof ADMITE_ANEXO)[C] extends true ? C : never }[Categoria]
+
+/** Fase 9 · K2: la misma regla como guarda de tipo, para que el cuerpo de B2 se arme por rama. */
+export function admiteAnexo(categoria: Categoria): categoria is CategoriaConAnexo {
+  return ADMITE_ANEXO[categoria]
 }
 
 export const TRANSICIONES_SIN_EDICION: readonly IdTransicion[] = ['T9']

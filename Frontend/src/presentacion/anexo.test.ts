@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { anexoParaEnviar, TEXTO_ANEXO_INVALIDO } from './anexo'
+import type { Categoria } from '../api/esquemas'
+import { anexoParaEnviar, anexoSegunCategoria, TEXTO_ANEXO_INVALIDO } from './anexo'
 
 describe('anexoParaEnviar (Fase 9 · R9-1)', () => {
   it.each(['', '   '])('"%s" → sin anexo: la clave no viaja', (texto) => {
@@ -22,5 +23,24 @@ describe('anexoParaEnviar (Fase 9 · R9-1)', () => {
     ['con un espacio interno', 'https://drive.google.com/file/d/xyz /view'],
   ])('rechaza %s con el mensaje del anexo', (_caso, texto) => {
     expect(anexoParaEnviar(texto)).toEqual({ ok: false, error: TEXTO_ANEXO_INVALIDO })
+  })
+})
+
+describe('anexoSegunCategoria (Fase 9 · AN2b · K2)', () => {
+  const ANEXO = 'https://drive.google.com/file/d/xyz/view'
+  const TEXTOS = ['', '   ', `  ${ANEXO}  `, 'http://drive.google.com/file/d/xyz/view', 'javascript:alert(1)']
+
+  it.each(
+    (['PODCAST', 'VIDEO', 'STREAMING'] as const).flatMap((categoria) => TEXTOS.map((texto) => [categoria, texto] as const)),
+  )('%s con «%s»: exactamente la regla de anexoParaEnviar', (categoria, texto) => {
+    expect(anexoSegunCategoria(categoria, texto)).toStrictEqual(anexoParaEnviar(texto))
+  })
+
+  it.each(
+    (['ESPACIOS', 'ASESORIAS'] as const satisfies readonly Categoria[]).flatMap((categoria) =>
+      TEXTOS.map((texto) => [categoria, texto] as const),
+    ),
+  )('%s con «%s» residual: sin anexo y sin error (ni se valida ni viaja)', (categoria, texto) => {
+    expect(anexoSegunCategoria(categoria, texto)).toStrictEqual({ ok: true })
   })
 })

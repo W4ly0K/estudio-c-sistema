@@ -191,6 +191,13 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.actualizarTablero('EC-1', { estado: 'Rechazado', motivo_rechazo: 'Motivo suficiente', anexo_revisado: null })
       // @ts-expect-error Fase 9 · E7: es el enlace observado o null, nunca otro tipo.
       void api.actualizarTablero('EC-1', { estado: 'Validado', anexo_revisado: 42 })
+      // Fase 9 · AN2b (K2): el anexo compila en VIDEO y STREAMING (PODCAST, abajo) y con lugar no.
+      void api.crear({ categoria: 'VIDEO', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      void api.crear({ categoria: 'STREAMING', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      // @ts-expect-error Fase 9 · AN2b: ESPACIOS no admite anexo (400 MENSAJE_ANEXO_NO_APLICA).
+      void api.crear({ categoria: 'ESPACIOS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      // @ts-expect-error Fase 9 · AN2b: ASESORIAS no admite anexo.
+      void api.crear({ categoria: 'ASESORIAS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // Fase 9 · R9-1: en la radicación sí es válido (compila).
       void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
       // @ts-expect-error K7: proponer exige el motivo (Fase 6.1b).
@@ -203,6 +210,16 @@ describe('crearApiSolicitudes: una función por ruta del contrato', () => {
       void api.crear({ categoria: 'PODCAST', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'CABINA_AUDIO' })
       // @ts-expect-error Fase 7: un sub-espacio fuera del contrato.
       void api.crear({ categoria: 'ESPACIOS', proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', sub_espacio: 'SALA_3' })
+    }
+    expect(soloTipos).toBeTypeOf('function')
+  })
+
+  it('Fase 9 · AN2b (K2): una categoría sin estrechar no puede llevar anexo (verificado por tsc)', () => {
+    const soloTipos = (api: ApiSolicitudes, categoria: 'PODCAST' | 'ASESORIAS'): void => {
+      // @ts-expect-error Sin saber si la categoría lo admite, el anexo no compila: hay que estrechar con admiteAnexo().
+      void api.crear({ categoria, proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y', enlace_anexo: 'https://drive.google.com/file/d/xyz/view' })
+      // Sin anexo, la misma categoría sin estrechar sí compila.
+      void api.crear({ categoria, proposito: 'p', fecha_inicio: 'x', fecha_fin: 'y' })
     }
     expect(soloTipos).toBeTypeOf('function')
   })

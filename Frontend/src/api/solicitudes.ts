@@ -16,6 +16,7 @@ import {
   type SubEspacio,
   type CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
 } from './esquemas'
+import type { CategoriaConAnexo } from './categorias'
 import type { Estado, TRANSICIONES } from './maquina-estados'
 
 /**
@@ -30,23 +31,35 @@ interface RadicacionComun {
   readonly proposito: string
   readonly fecha_inicio: string
   readonly fecha_fin: string
-  /** Fase 9 · R9-1: anexo opcional; si no hay, la clave no viaja (el servidor rechaza ''). */
-  readonly enlace_anexo?: string
   readonly recursos?: readonly { readonly id_recurso: number; readonly cantidad: number }[]
 }
 
 /** La categoría en la que el solicitante elige el lugar (SE10). */
 type CategoriaQueElige = typeof CATEGORIA_QUE_ELIGE_SUB_ESPACIO
 
+/** Fase 7 · SE10: el lugar, obligatorio en la categoría que lo elige y prohibido en las demás. */
+type LugarDe<C extends Categoria> = C extends CategoriaQueElige
+  ? { readonly sub_espacio: SubEspacio }
+  : { readonly sub_espacio?: never }
+
+/**
+ * Fase 9 · AN2b (K2): el anexo, opcional en PODCAST, VIDEO y STREAMING (si no hay, la clave no
+ * viaja: el servidor rechaza '') y prohibido en las demás (400 MENSAJE_ANEXO_NO_APLICA).
+ */
+type AnexoDe<C extends Categoria> = C extends CategoriaConAnexo
+  ? { readonly enlace_anexo?: string }
+  : { readonly enlace_anexo?: never }
+
 /**
  * POST /solicitudes. Fase 7 · 7B.4 (ADR-007 SE10): unión discriminada por la categoría, igual
  * que la regla del backend. Una solicitud de espacio físico SIN lugar (CA-12) o un servicio
  * CON lugar (400 del servidor) no compilan: el servidor nunca elige por el solicitante, y el
- * cliente nunca envía una elección que el servidor rechazaría.
+ * cliente nunca envía una elección que el servidor rechazaría. Fase 9 · K2: una variante por
+ * categoría, que suma la regla del anexo (AN2b) a la del lugar.
  */
-export type CuerpoCrearSolicitud =
-  | (RadicacionComun & { readonly categoria: CategoriaQueElige; readonly sub_espacio: SubEspacio })
-  | (RadicacionComun & { readonly categoria: Exclude<Categoria, CategoriaQueElige>; readonly sub_espacio?: never })
+export type CuerpoCrearSolicitud = {
+  [C in Categoria]: RadicacionComun & { readonly categoria: C } & LugarDe<C> & AnexoDe<C>
+}[Categoria]
 
 /**
  * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9, desde la Fase 7 T10 y, desde la Fase 8, T11 y T12). Se DERIVAN de la
