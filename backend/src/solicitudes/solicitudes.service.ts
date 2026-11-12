@@ -41,6 +41,7 @@ import {
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
 } from './proyecciones/detalle-solicitud.proyeccion';
+import { datosDelLog, type EventoAuditoria } from './auditoria/evento-auditoria';
 
 /** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
 export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
@@ -218,8 +219,8 @@ interface OperacionCompareAndSet<T> {
   data: Prisma.SolicitudUpdateManyMutationInput;
   /** R1: si viene, los recursos se reemplazan dentro de la misma transacción. */
   recursos?: ReadonlyArray<{ id_recurso: number; cantidad: number }>;
-  /** CA-09: si viene, se registra el log en la misma transacción. */
-  log?: Omit<Prisma.Log_AuditoriaUncheckedCreateInput, 'radicado_solicitud'>;
+  /** CA-09 · ADR-012 EV6: si viene, su log se registra en la misma transacción. */
+  evento?: EventoAuditoria;
   /** Relectura dentro de la transacción (con la proyección que corresponda). */
   releer: (tx: Prisma.TransactionClient) => Promise<T>;
 }
@@ -586,20 +587,23 @@ export class SolicitudesService {
       data,
       recursos,
       // CA-09: hay log si y solo si cambió el estado.
-      log: cambiaEstado
+      evento: cambiaEstado
         ? {
-            estado_anterior: existente.estado,
-            estado_nuevo: estadoFinal,
-            modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
-            motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
-            // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
-            // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
-            ...(accion === 'APROBAR' && cambiaSubEspacio
-              ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
-              : {}),
-            ...(accion === 'APROBAR' && cambiaFranja
-              ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
-              : {}),
+            tipo: 'TRANSICION',
+            log: {
+              estado_anterior: existente.estado,
+              estado_nuevo: estadoFinal,
+              modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
+              motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+              // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
+              // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
+              ...(accion === 'APROBAR' && cambiaSubEspacio
+                ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
+                : {}),
+              ...(accion === 'APROBAR' && cambiaFranja
+                ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
+                : {}),
+            },
           }
         : undefined,
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
@@ -634,10 +638,13 @@ export class SolicitudesService {
       // G3: la propiedad también va en la ESCRITURA; el estado esperado es el leído.
       esperado: { id_usuario: usuario.id, estado: existente.estado },
       data: { estado: transicion.destino },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+        },
       },
       // G8: proyección mínima del solicitante (sin la identidad del Staff en los logs).
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
@@ -721,13 +728,16 @@ export class SolicitudesService {
         sub_espacio_propuesto: null,
         es_urgencia: false,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
-        // Fase 7 · SE7 y P-1 (Q-A12): T7 termina en "Validado", como exigen A3 y F3.
-        ...(cambiaSubEspacio ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioPropuesto } : {}),
-        ...(cambiaFranja ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin } : {}),
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
+          // Fase 7 · SE7 y P-1 (Q-A12): T7 termina en "Validado", como exigen A3 y F3.
+          ...(cambiaSubEspacio ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioPropuesto } : {}),
+          ...(cambiaFranja ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin } : {}),
+        },
       },
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
@@ -760,10 +770,13 @@ export class SolicitudesService {
         fecha_propuesta_fin: null,
         sub_espacio_propuesto: null,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+        },
       },
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
@@ -880,13 +893,16 @@ export class SolicitudesService {
         fecha_propuesta_fin: propuesta.fin,
         sub_espacio_propuesto: subEspacioPropuesto,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: resultado.transicion.destino,
-        modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
-        // K7 · Fase 6.1b: la justificación vive en el log de T5 (inmutable, sobrevive a
-        // T7 y T8). El motor exige que exista justo aquí (…_segun_estado_check).
-        motivo_reprogramacion: dto.motivo,
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: resultado.transicion.destino,
+          modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
+          // K7 · Fase 6.1b: la justificación vive en el log de T5 (inmutable, sobrevive a
+          // T7 y T8). El motor exige que exista justo aquí (…_segun_estado_check).
+          motivo_reprogramacion: dto.motivo,
+        },
       },
       // K8: proyección del Staff (franja oficial y propuesta), releída en la transacción.
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
@@ -955,9 +971,10 @@ export class SolicitudesService {
           });
         }
 
-        // CA-09: el log va en la MISMA transacción que el cambio de estado.
-        if (op.log !== undefined) {
-          await tx.log_Auditoria.create({ data: { radicado_solicitud: op.radicado, ...op.log } });
+        // CA-09: el log va en la MISMA transacción que el cambio de estado. ADR-012 EV6: datosDelLog
+        // arma los datos según el tipo de evento; los de una transición son exactamente los de siempre.
+        if (op.evento !== undefined) {
+          await tx.log_Auditoria.create({ data: datosDelLog(op.radicado, op.evento) });
         }
 
         return op.releer(tx);
