@@ -1,8 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
+import { CategoriaSolicitud, RolUsuario, SubEspacio } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MENSAJE_ENLACE_ANEXO } from '../src/solicitudes/dto/create-solicitude.dto';
+import { MENSAJE_ANEXO_NO_APLICA } from '../src/solicitudes/solicitudes.service';
 import { crearAppE2E, PrismaMockE2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
 
 /**
@@ -72,6 +73,17 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
     const respuesta = await radicar({ ...cuerpo, enlace_anexo: enlace }).expect(400);
 
     expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ENLACE_ANEXO);
+    expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+    expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ESPACIOS', { categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO }],
+    ['ASESORIAS', { categoria: CategoriaSolicitud.ASESORIAS }],
+  ])('A6. POST de %s con anexo → 400 del servicio (AN2b), sin consultar ni escribir', async (_caso, categoria) => {
+    const respuesta = await radicar({ ...cuerpo, ...categoria, enlace_anexo: ANEXO }).expect(400);
+
+    expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ANEXO_NO_APLICA);
     expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
     expect(prisma.solicitud.create).not.toHaveBeenCalled();
   });

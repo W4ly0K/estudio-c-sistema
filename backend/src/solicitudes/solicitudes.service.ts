@@ -137,6 +137,15 @@ export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
   'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
 
 /**
+ * Fase 9 · AN2b (ADR-009 §2.7, pregunta 5): solo PODCAST, VIDEO y STREAMING admiten anexo. En el
+ * motor lo exige Solicitud_enlace_anexo_segun_categoria_check (H1); en el servidor, create() lo
+ * valida antes de consultar la base (J0). Sin esta regla, el motor rechazaba el INSERT y la excepción
+ * de Prisma salía sin traducir (medido en I-38e el 2026-11-12, antes de la corrección).
+ */
+export const MENSAJE_ANEXO_NO_APLICA =
+  'Esta categoría no admite anexo: el guion solo se adjunta en solicitudes de pódcast, video o streaming.';
+
+/**
  * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
  * cambió entre la lectura y la escritura). Distinto de CA-06: no es un cruce de franjas.
  */
@@ -258,6 +267,14 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJES_SUBESPACIO_AL_RADICAR[lugar.error]);
     }
     const subEspacio = lugar.subEspacio;
+
+    // --- 0b. Fase 9 · AN2b: el anexo solo en las categorías que lo admiten. También es forma de la
+    // petición: va antes del horario y de CA-06, así que no consulta ni escribe nada. Ausente o null
+    // = sin anexo, válido en cualquier categoría (DTO ⊆ CHECK: el motor repite la regla en A3).
+    const tieneAnexo = (createSolicitudeDto.enlace_anexo ?? null) !== null;
+    if (tieneAnexo && !POLITICA_POR_CATEGORIA[createSolicitudeDto.categoria].admiteAnexo) {
+      throw new BadRequestException(MENSAJE_ANEXO_NO_APLICA);
+    }
 
     // --- 1. Reglas de horario puras (Fase 3): CA-04, pasado, mismo día, día
     // hábil y urgencia por 5 días hábiles. Van ANTES de CA-06: una entrada

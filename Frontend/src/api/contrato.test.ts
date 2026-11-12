@@ -115,7 +115,10 @@ describe('Contrato con el backend: la copia del frontend no se desvía (DC4)', (
 
   it('Fase 8 · las categorías que exigen enlace son las OBLIGATORIO de POLITICA_POR_CATEGORIA del backend', () => {
     const filas = [
-      ...lf(fuenteCategorias).matchAll(/^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (?:true|false), enlaceAlEntregar: '(OBLIGATORIO|PROHIBIDO)' \}\),/gm),
+      // Fase 9 · AN2b: la fila puede seguir con admiteAnexo; esta prueba solo compara el enlace.
+      ...lf(fuenteCategorias).matchAll(
+        /^ {2}(\w+): Object\.freeze\(\{ pasaPorEdicion: (?:true|false), enlaceAlEntregar: '(OBLIGATORIO|PROHIBIDO)'(?:, admiteAnexo: (?:true|false))? \}\),/gm,
+      ),
     ]
     expect(filas).toHaveLength(CATEGORIAS.length)
     expect(Object.fromEntries(filas.map(([, categoria, regla]) => [categoria ?? '', regla === 'OBLIGATORIO']))).toEqual(REQUIERE_ENLACE)

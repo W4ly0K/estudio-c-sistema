@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud, SubEspacio } from '@prisma/client';
 import {
+  MENSAJE_ANEXO_NO_APLICA,
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
@@ -201,6 +202,61 @@ describe('SolicitudesService', () => {
       expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: null }) }),
       );
+    });
+
+    // Fase 9 · AN2b (J0): el anexo solo en PODCAST, VIDEO y STREAMING.
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con anexo → 400 antes de consultar o escribir', async (categoria, lugar) => {
+      const error = await rechazoDe(service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: ANEXO }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con enlace_anexo null radica normalmente (sin anexo)', async (categoria, lugar) => {
+      await service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: null as unknown as string }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: null }) }),
+      );
+    });
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'AN2b · %s con anexo radica y lo guarda',
+      async (categoria) => {
+        await service.create({ ...dtoServicio, categoria, enlace_anexo: ANEXO }, 'uuid-del-token');
+
+        expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: ANEXO }) }),
+        );
+      },
+    );
+
+    it('AN2b · la forma del sub-espacio (SE10) va antes que la del anexo', async () => {
+      const error = await rechazoDe(
+        service.create({ ...dtoServicio, categoria: CategoriaSolicitud.ESPACIOS, enlace_anexo: ANEXO }, 'uuid-del-token'),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).not.toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
     });
   });
 

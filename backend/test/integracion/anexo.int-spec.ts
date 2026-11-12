@@ -1,6 +1,7 @@
-import { CategoriaSolicitud, PrismaClient, SubEspacio } from '@prisma/client';
+import { HttpException } from '@nestjs/common';
+import { CategoriaSolicitud, Prisma, PrismaClient, SubEspacio } from '@prisma/client';
 import { ENLACE_MAXIMO } from '../../src/common/validadores/enlace-seguro.decorator';
-import { SolicitudesService } from '../../src/solicitudes/solicitudes.service';
+import { MENSAJE_ANEXO_NO_APLICA, SolicitudesService } from '../../src/solicitudes/solicitudes.service';
 import type { PrismaService } from '../../src/prisma/prisma.service';
 import {
   ENLACES_ACEPTADOS,
@@ -19,6 +20,10 @@ import { crearPrismaDeIntegracion, vaciarTablas } from './bd-integracion';
  *  - I-38c: el SERVICIO radica con y sin anexo.
  *  - I-38d: la CATEGORÍA (pregunta 5, AN2b · H1): el motor solo admite anexo en PODCAST, VIDEO y
  *    STREAMING, NULL en todas, y el motor conserva el anexo ante una actualización directa del estado.
+ *  - I-38e: el SERVICIO ante un anexo en una categoría que no lo admite (AN2b · J0): debe responder
+ *    400 sin escribir. Se escribió ANTES de corregir create(), para medir el comportamiento previo:
+ *    el 2026-11-12 (entorno local de desarrollo) dio PrismaClientUnknownRequestError, SQLSTATE 23514 por A3, ninguna
+ *    HttpException y cero filas, en ESPACIOS y en ASESORIAS.
  */
 const USUARIO = 'uuid-integracion-anexo';
 const RESTRICCION = 'Solicitud_enlace_anexo_formato_check';
@@ -197,4 +202,59 @@ describe('Anexo del solicitante contra PostgreSQL real (integración · Fase 9 �
       enlace_anexo: ANEXO,
     });
   });
+
+  /**
+   * Resumen del resultado de create(), sin copiar el error crudo (su texto trae SQL y valores).
+   * Distingue la EXCEPCIÓN del servicio del ESTADO HTTP: estadoHttp solo existe si el servicio lanzó
+   * una HttpException de Nest. Con cualquier otra excepción queda en null, porque el estado lo decidiría
+   * la capa HTTP y esta prueba no lo mide.
+   */
+  const resumir = async (operacion: Promise<unknown>) => {
+    let error: unknown = null;
+    try {
+      await operacion;
+    } catch (capturado: unknown) {
+      error = capturado;
+    }
+    const mensajeCrudo = error instanceof Error ? error.message : '';
+    return {
+      lanzoExcepcion: error !== null,
+      clase: error instanceof Error ? error.constructor.name : null,
+      esHttpException: error instanceof HttpException,
+      estadoHttp: error instanceof HttpException ? error.getStatus() : null,
+      mensajeHttp: error instanceof HttpException ? error.message : null,
+      codigoPrisma: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+      sqlstate23514: mensajeCrudo.includes('23514'),
+      restriccionDeCategoria: mensajeCrudo.includes(RESTRICCION_CATEGORIA),
+      solicitudesGuardadas: await prisma.solicitud.count(),
+    };
+  };
+
+  it.each(CATEGORIAS_SIN_ANEXO)(
+    'I-38e · %s: el servicio rechaza el anexo con 400 antes de escribir (AN2b · J0)',
+    async (categoria) => {
+      const service = new SolicitudesService(prisma as unknown as PrismaService, new RelojFijo(AHORA));
+      const pedido = {
+        categoria,
+        proposito: 'Anexo en una categoría que no lo admite (I-38e)',
+        fecha_inicio: new Date('2099-01-15T09:00:00-05:00'),
+        fecha_fin: new Date('2099-01-15T10:00:00-05:00'),
+        enlace_anexo: ANEXO,
+        // SE10: solo ESPACIOS elige sub-espacio; en las demás categorías se envía sin él.
+        ...(categoria === CategoriaSolicitud.ESPACIOS ? { sub_espacio: SubEspacio.CABINA_AUDIO } : {}),
+      };
+
+      expect(await resumir(service.create(pedido, USUARIO))).toEqual({
+        lanzoExcepcion: true,
+        clase: 'BadRequestException',
+        esHttpException: true,
+        estadoHttp: 400,
+        mensajeHttp: MENSAJE_ANEXO_NO_APLICA,
+        codigoPrisma: null,
+        sqlstate23514: false,
+        restriccionDeCategoria: false,
+        solicitudesGuardadas: 0,
+      });
+    },
+  );
 });
