@@ -6,6 +6,7 @@
 | **Fecha** | 2026-10-28 |
 | **Actualización** | 2026-11-10 · Fase 9 (propuesto; las columnas y restricciones del evento ENTREGA ya están en H1 y en el ADR-012 aceptado; el endpoint y el servicio sin implementar ese día): DA-4 resuelta por la pregunta 24 y corrección auditada del enlace del producto final (§2.7). Ver [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) |
 | **Actualización** | 2026-11-12 · Fase 9: §2.7 **aceptada** como base de diseño, con la enmienda DJ3-1 al orden de EN12, e **implementada en la rama** `feat/fase-9-anexo-solicitante` (lote J3, `e0bc0d7`). **Pendiente:** la interfaz (lote K) y la producción (paso 9.1.5). El estado de este ADR no cambia |
+| **Actualización** | 2026-11-12 · Fase 9 · K4 (`479c60c`): interfaz de la corrección (§2.7) e historial de enlaces del Staff, separado de las transiciones. C1 (entorno local de desarrollo, 2026-11-12; resultados ejecutados por el responsable del proyecto y reportados para revisión): frontend 849 pruebas, `test:tz` en 4 zonas, `tsc`, lint y `vite build` correctos; backend `tsc`, lint, 1.365 unitarias (1 omitida) y 126 e2e. La integración no se repitió en C1 (evidencia anterior: 16 suites y 212 pruebas al `e0bc0d7`). **Pendiente:** el paso 9.1.5 sobre la base principal. El estado de este ADR no cambia |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-8-ux-estados-entregables` (desde `develop` @ `ee86285`) |
 | **Complementa a** | [ADR-004](ADR-004-concurrencia-ca06.md) (AH: la fuente única de lo que libera la franja ahora depende también de la categoría) · [ADR-005](ADR-005-maquina-de-estados-ca10.md) (T11 y T12) · [ADR-006](ADR-006-frontend-contrato-tipado.md) (contrato Zod, `CambiosTablero`, acciones del Staff) · [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2: el `WHERE` de las dos exclusiones se recrea; SE10: la categoría ya gobernaba el lugar) |
@@ -138,7 +139,7 @@
   - El backend anterior, contra la base migrada, ofrece T9 a PODCAST y VIDEO. Además, su entrega de PODCAST, VIDEO o STREAMING sin enlace viola `Solicitud_entrega_con_enlace_check` y responde 500. Por eso, en esa ventana no se registran entregas.
   - El frontend nuevo exige `enlace_entrega` en el esquema Zod, así que contra un backend anterior rechazaría las respuestas.
 
-### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesta el 2026-11-10; aceptada el 2026-11-12 e implementada en la rama en J3, `e0bc0d7`; interfaz y producción pendientes)
+### 2.7 Corrección auditada del enlace del producto final (Fase 9 · EN6 a EN12; propuesta el 2026-11-10; aceptada el 2026-11-12 e implementada en la rama en J3, `e0bc0d7`; interfaz implementada en K4, `479c60c`; base principal pendiente, paso 9.1.5)
 
 **Origen.** La pregunta 24 del cuestionario firmado por el Responsable del Estudio C (2026-11-10) resuelve DA-4: el Staff corrige desde el sistema un enlace mal registrado, y la corrección queda en el registro de auditoría. Eso es lo institucional. El mecanismo de abajo, incluido el motivo opcional, sale de las decisiones del proyecto del 2026-11-10 (D2, D8, D9 y D10).
 
@@ -161,6 +162,13 @@
   - **Por qué cambia:** `sin_cambios: true` solo se responde cuando la corrección sería válida en ese estado; antes podía responder 200 en una solicitud que no está en `Entregado`. Es la misma regla de [ADR-012](ADR-012-eventos-de-auditoria-sin-transicion.md) D10 enmendada.
   - **Orden anterior (2026-11-10, sustituido; se conserva por trazabilidad):** … → 400 si la categoría no lleva enlace → 200 `sin_cambios` → 409 si no está en `Entregado` → 409 por EN8 → 409 por EN9 → … («La igualdad va antes del estado solo porque no escribe»).
 - **Pruebas de §2.7 (J3, `e0bc0d7`):** `corregir-enlace-entrega.dto.spec.ts`; `solicitudes.service.spec.ts` y `solicitudes.controller.spec.ts`; e2e `correccion-entrega.e2e-spec.ts`; integración I-43 (`correccion-entrega.int-spec.ts`). Ejecutadas en el entorno local de desarrollo; las cifras acumuladas **reportadas** por el responsable del proyecto al `e0bc0d7` son 1.365 unitarias, 126 e2e e integración 16 suites y 212 pruebas.
+- **Interfaz (K4, `479c60c`):** solo en el detalle del Staff. No es una transición: va fuera de `AccionesStaff` y de la máquina, y el cuerpo no lleva `estado` (no repite T9 ni T12).
+  - **Cuándo se ofrece:** «Corregir enlace» aparece solo en `Entregado`, en una categoría que exige enlace y con un enlace registrado. En EN8 se muestra la nota «Esta entrega no tiene enlace registrado; agregarlo no está disponible.».
+  - **Cuerpo:** el anterior es la foto exacta del enlace vigente al abrir el diálogo (EN9). El nuevo pasa por `esEnlaceSeguro`; vacío, inseguro o idéntico al vigente se bloquea. Sin motivo, la clave no viaja; con motivo, de 10 a 500 caracteres reales, recortado (EN10).
+  - **Advertencia (EN10):** como descripción visible y accesible del motivo: «El motivo queda en el registro de auditoría del Estudio C. No escribas datos personales, contraseñas, tokens ni otra información sensible. El solicitante verá el nuevo enlace en su solicitud.».
+  - **Respuestas:** `sin_cambios: true` es un éxito, sin eventos simulados; tras un éxito se anuncia el `mensaje` del servidor y se recargan el detalle y el historial. Si esa recarga falla, el aviso distingue la respuesta del servidor del fallo de la recarga. Un 409 bloquea la confirmación y recarga una sola vez al cerrar, sin reintento. 400, 403 y 404 muestran el mensaje del servidor.
+  - **Historial de enlaces (ADR-012 EV7):** una sección propia del detalle del Staff, aparte de la línea de vida, con los 7 campos validados por Zod en modo estricto. Los valores se muestran como texto, nunca como enlaces, y sin identificadores internos.
+  - **Pruebas del frontend:** `presentacion/enlaces-staff.test.ts`, `DetalleStaff.enlaces.test.tsx`, `api/esquemas.test.ts`, `api/solicitudes.test.ts` y `api/contrato.test.ts` (límites del motivo frente al DTO). Resultados en C1 (§7).
 - `Solicitud_entrega_con_enlace_check` (`NOT VALID`, EN4) no cambia: una corrección siempre deja un valor no nulo.
 
 ---
@@ -169,7 +177,7 @@
 
 | # | Tema | Resolución |
 |---|---|---|
-| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | Era deuda aceptada. **Resuelta funcionalmente** por la pregunta 24 (Responsable del Estudio C, 2026-11-10): el Staff lo corrige desde el sistema y la corrección queda en el log. Mecanismo en §2.7, aceptado el 2026-11-12 e **implementado en la rama** (J3, `e0bc0d7`). **Pendiente:** la interfaz (lote K) y la producción (9.1.5). Hasta el despliegue, en producción solo se corrige con una migración de datos auditada |
+| DA-4 | Un enlace mal escrito no se corrige: «Entregado» es final | Era deuda aceptada. **Resuelta funcionalmente** por la pregunta 24 (Responsable del Estudio C, 2026-11-10): el Staff lo corrige desde el sistema y la corrección queda en el log. Mecanismo en §2.7, aceptado el 2026-11-12 e **implementado en la rama** (J3, `e0bc0d7`). **Interfaz implementada en la rama** (K4, `479c60c`). **Pendiente:** la base principal (9.1.5); hasta entonces, allí solo se corrige con una migración de datos auditada. Estado previo a K4, conservado: «Pendiente: la interfaz (lote K) y la producción (9.1.5)» |
 | DA-5 | La entrega histórica de PODCAST no tiene enlace | Se muestra sin la fila «Producto final». La tolera el `NOT VALID` (EN4) |
 | DA-6 | El enlace se valida por forma, no por contenido | El sistema no visita el enlace (sin SSRF ni dependencia de terceros); el Staff responde por el destino |
 | DA-7 | Los alias son solo de presentación | La API, el log y cualquier exportación siguen diciendo `Validado`. Un reporte futuro debe usar `etiquetaEstado()` |
@@ -221,7 +229,7 @@
 
 ## 6. Pendiente
 
-- **DA-4:** backend implementado en la rama (J3, `e0bc0d7`). Falta la interfaz de corrección con la advertencia sobre datos personales (lote K) y el despliegue con la migración de la Fase 9 (paso 9.1.5). La pregunta al Responsable ya se respondió (pregunta 24).
+- **DA-4:** backend (J3, `e0bc0d7`) e interfaz con la advertencia sobre datos personales (K4, `479c60c`) implementados en la rama. **Pendiente:** el paso 9.1.5 sobre la base principal (aprobación propia, con precheck, respaldo, postcheck y recuperación). La pregunta al Responsable ya se respondió (pregunta 24). Texto previo a K4, conservado: «Falta la interfaz de corrección con la advertencia sobre datos personales (lote K) y el despliegue con la migración de la Fase 9 (paso 9.1.5).»
 - Heredados de ADR-007 §6: DA-2 (los ajustes en el historial), el texto de T10 y el retiro de una propuesta por el Staff.
 
 ---
@@ -240,3 +248,5 @@
 | — | 8.7 · Precheck (16 indicadores), `migrate status` (2 pendientes), `npm run db:migrate` y postcheck (19 indicadores) en producción, más la prueba visual de solo lectura |
 | — | 8.8 · Este ADR, las notas de ADR-005 y ADR-007, los README y el PRD v2.4 |
 | `e0bc0d7` | Fase 9 · J3 · Corrección auditada del enlace del producto final (`PATCH /solicitudes/:radicado/enlace-entrega`, evento ENTREGA), con el orden de EN12 enmendado (rama `feat/fase-9-anexo-solicitante`) |
+| `479c60c` | Fase 9 · K4 · Frontend: corrección del enlace de entrega (advertencia, EN8 y 409) e historial de enlaces separado de las transiciones |
+| — | Fase 9 · C1 (entorno local de desarrollo, 2026-11-12; resultados ejecutados por el responsable del proyecto y reportados para revisión): frontend 849 pruebas, `test:tz` en 4 zonas, `tsc`, lint y `vite build` correctos; backend `tsc`, lint, 1.365 unitarias (1 omitida) y 126 e2e. La integración no se repitió en C1 (evidencia anterior: 16 suites y 212 pruebas al `e0bc0d7`) |
