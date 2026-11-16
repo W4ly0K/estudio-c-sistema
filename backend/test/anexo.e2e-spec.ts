@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { CategoriaSolicitud, RolUsuario, SubEspacio } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { ENLACE_MAXIMO } from '../src/common/validadores/enlace-seguro.decorator';
 import { MENSAJE_ENLACE_ANEXO } from '../src/solicitudes/dto/create-solicitude.dto';
 import { MENSAJE_ANEXO_REVISADO_FORMA } from '../src/solicitudes/dto/update-solicitude.dto';
 import { MENSAJE_ANEXO_ANTERIOR_FORMA } from '../src/solicitudes/dto/editar-anexo.dto';
@@ -10,7 +11,9 @@ import {
   MENSAJE_ANEXO_REVISADO_NO_APLICA,
   MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  SolicitudesService,
 } from '../src/solicitudes/solicitudes.service';
+import { enlaceConEmojisDeUnidadesUtf16, enlaceConSelectoresDeVariacion } from './utils/casos-enlace';
 import { crearAppE2E, PrismaMockE2E, SOLICITUD_AJENA_E2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
 
 /**
@@ -25,6 +28,14 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
   let tokenStaff: string;
 
   const ANEXO = 'https://drive.google.com/file/d/xyz/view';
+
+  // Fase 9 · H8b-2 · Más de ENLACE_MAXIMO puntos de código con un selector de variación (el pipe rechaza solo por la
+  // longitud) y emojis que superan ENLACE_MAXIMO unidades UTF-16 sin superar los puntos de código (se acepta).
+  const SELECTORES_FUERA_DEL_LIMITE = [
+    ['U+FE0F', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0F')],
+    ['U+FE0E', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0E')],
+  ] as const;
+  const EMOJIS_DENTRO_DEL_LIMITE = enlaceConEmojisDeUnidadesUtf16(ENLACE_MAXIMO + 2);
 
   // Un servicio (sin sub-espacio) en una franja válida con el "ahora" de crearAppE2E.
   const cuerpo = {
@@ -82,6 +93,33 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
     expect(JSON.stringify(respuesta.body)).toContain(MENSAJE_ENLACE_ANEXO);
     expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
     expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  // Fase 9 · H8b-2 · el pipe rechaza por longitud ANTES del servicio: ni el servicio ni Prisma se invocan.
+  it.each(SELECTORES_FUERA_DEL_LIMITE)(
+    `H8b · POST con un anexo con selector %s de ${ENLACE_MAXIMO + 1} puntos de código → 400 del pipe, sin llegar al servicio`,
+    async (_selector, enlace) => {
+      const servicio = jest.spyOn(SolicitudesService.prototype, 'create');
+      try {
+        const respuesta = await radicar({ ...cuerpo, enlace_anexo: enlace }).expect(400);
+
+        expect(respuesta.body.message).toEqual([MENSAJE_ENLACE_ANEXO]);
+        expect(servicio).not.toHaveBeenCalled();
+        expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prisma.solicitud.create).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      } finally {
+        servicio.mockRestore();
+      }
+    },
+  );
+
+  it(`H8b · POST con un anexo de emojis (más de ${ENLACE_MAXIMO} unidades UTF-16, menos puntos de código) → 201 y se persiste tal cual`, async () => {
+    await radicar({ ...cuerpo, enlace_anexo: EMOJIS_DENTRO_DEL_LIMITE }).expect(201);
+
+    expect(prisma.solicitud.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: EMOJIS_DENTRO_DEL_LIMITE }) }),
+    );
   });
 
   it.each([
@@ -210,6 +248,35 @@ describe('Anexo del solicitante (e2e · Fase 9 · R9-1)', () => {
       expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ enlace_campo: 'ANEXO', enlace_anterior: null, enlace_nuevo: ANEXO, modificado_por: 'uuid-solicitante' }),
       });
+    });
+
+    // Fase 9 · H8b-2 · el pipe rechaza por longitud ANTES del servicio: ni el servicio ni Prisma se invocan.
+    it.each(SELECTORES_FUERA_DEL_LIMITE)(
+      `H8b · un anexo con selector %s de ${ENLACE_MAXIMO + 1} puntos de código → 400 del pipe, sin llegar al servicio`,
+      async (_selector, enlace) => {
+        const servicio = jest.spyOn(SolicitudesService.prototype, 'editarAnexo');
+        try {
+          const respuesta = await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: enlace }, tokenSolicitante).expect(400);
+
+          expect(respuesta.body.message).toEqual([MENSAJE_ENLACE_ANEXO]);
+          expect(servicio).not.toHaveBeenCalled();
+          expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+          expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+          expect(prisma.$transaction).not.toHaveBeenCalled();
+        } finally {
+          servicio.mockRestore();
+        }
+      },
+    );
+
+    it(`H8b · PODCAST propio: agregar un anexo de emojis (más de ${ENLACE_MAXIMO} unidades UTF-16) → 200 y se escribe tal cual`, async () => {
+      podcastSinAnexo();
+
+      await editar(SOLICITUD_E2E.radicado, { enlace_anexo_anterior: null, enlace_anexo: EMOJIS_DENTRO_DEL_LIMITE }, tokenSolicitante).expect(200);
+
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { enlace_anexo: EMOJIS_DENTRO_DEL_LIMITE } }),
+      );
     });
 
     it('PODCAST propio sin anexo con null y null → 200 sin_cambios, sin transacción', async () => {

@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { ENLACE_MAXIMO } from '../src/common/validadores/enlace-seguro.decorator';
 import { MENSAJE_ENLACE_ENTREGA } from '../src/solicitudes/dto/update-solicitude.dto';
 import { MENSAJE_ENTREGA_ANTERIOR_FORMA, MENSAJE_MOTIVO_CORRECCION } from '../src/solicitudes/dto/corregir-enlace-entrega.dto';
 import {
@@ -9,7 +10,9 @@ import {
   MENSAJE_ENLACE_SOLO_AL_ENTREGAR,
   MENSAJE_ENTREGA_SIN_ENLACE_PREVIO,
   MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  SolicitudesService,
 } from '../src/solicitudes/solicitudes.service';
+import { enlaceConEmojisDeUnidadesUtf16, enlaceConSelectoresDeVariacion } from './utils/casos-enlace';
 import { crearAppE2E, PrismaMockE2E, SOLICITUD_E2E } from './utils/crear-app-e2e';
 
 /**
@@ -26,6 +29,15 @@ describe('Corrección del enlace de entrega (e2e · Fase 9 · J3)', () => {
   const A = 'https://youtu.be/entrega-a';
   const B = 'https://youtu.be/entrega-b';
   const RUTA = `/solicitudes/${SOLICITUD_E2E.radicado}/enlace-entrega`;
+
+  // Fase 9 · H8b-2 · Más de ENLACE_MAXIMO puntos de código con un selector de variación (el pipe rechaza solo por la
+  // longitud) y emojis que superan ENLACE_MAXIMO unidades UTF-16 sin superar los puntos de código (se acepta).
+  const SELECTORES_FUERA_DEL_LIMITE = [
+    ['U+FE0F', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0F')],
+    ['U+FE0E', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0E')],
+  ] as const;
+  const EMOJIS_DENTRO_DEL_LIMITE = enlaceConEmojisDeUnidadesUtf16(ENLACE_MAXIMO + 2);
+
   const corregir = (body: object, token?: string, ruta = RUTA) => {
     const peticion = request(app.getHttpServer()).patch(ruta);
     return (token === undefined ? peticion : peticion.set('Authorization', `Bearer ${token}`)).send(body);
@@ -124,6 +136,37 @@ describe('Corrección del enlace de entrega (e2e · Fase 9 · J3)', () => {
         motivo_correccion: 'El enlace apuntaba a un borrador.',
         modificado_por: 'uuid-staff',
       }),
+    });
+  });
+
+  // Fase 9 · H8b-2 · el pipe rechaza por longitud ANTES del servicio: ni el servicio ni Prisma se invocan.
+  it.each(SELECTORES_FUERA_DEL_LIMITE)(
+    `H8b · un enlace nuevo con selector %s de ${ENLACE_MAXIMO + 1} puntos de código → 400 del pipe, sin llegar al servicio`,
+    async (_selector, enlace) => {
+      const servicio = jest.spyOn(SolicitudesService.prototype, 'corregirEnlaceEntrega');
+      try {
+        const respuesta = await corregir({ enlace_entrega_anterior: A, enlace_entrega: enlace }, staff()).expect(400);
+
+        expect(respuesta.body.message).toEqual([MENSAJE_ENLACE_ENTREGA]);
+        expect(servicio).not.toHaveBeenCalled();
+        expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+        expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+        expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      } finally {
+        servicio.mockRestore();
+      }
+    },
+  );
+
+  it(`H8b · corrección a un enlace de emojis (más de ${ENLACE_MAXIMO} unidades UTF-16) → 200 y se escribe tal cual`, async () => {
+    entregado(A);
+
+    await corregir({ enlace_entrega_anterior: A, enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE }, staff()).expect(200);
+
+    expect(prisma.solicitud.updateMany).toHaveBeenCalledWith({
+      where: { radicado: SOLICITUD_E2E.radicado, estado: 'Entregado', enlace_entrega: A },
+      data: { enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE },
     });
   });
 

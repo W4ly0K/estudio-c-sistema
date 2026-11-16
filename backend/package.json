@@ -21,6 +21,7 @@
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
     "test:tz": "node scripts/test-zonas-horarias.mjs",
     "test:integracion": "node --env-file=.env.integracion --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-integracion.json",
+    "test:integracion:h8b": "node --env-file=.env.integracion --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-integracion-h8b.json",
     "db:migrate": "prisma migrate deploy",
     "postinstall": "prisma generate"
   },

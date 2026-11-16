@@ -1,0 +1,12 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": "[/\\\\]integracion[/\\\\]longitud-enlaces\\.int-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "globalSetup": "<rootDir>/integracion/preparar-bd-sin-migrar.ts",
+  "testTimeout": 60000,
+  "maxWorkers": 1
+}
