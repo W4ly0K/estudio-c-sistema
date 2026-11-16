@@ -3,6 +3,7 @@
  * de los DTOs y de integración (una sola copia: lección 6 de la Fase 8). Las listas documentan la
  * dirección DTO ⊆ CHECK: lo que rechaza el motor también lo rechaza el pipe, pero no al revés.
  */
+import { ENLACE_MAXIMO } from '../../src/common/validadores/enlace-seguro.decorator';
 
 /**
  * Fase 9 · H0 · Caracteres de control. Evidencia del motor: P0 (precheck 9.1.0b, filas 28 y 29, producción,
@@ -100,17 +101,24 @@ const PREFIJO_LARGO = 'https://ejemplo.com/';
 export const enlaceDeLongitud = (longitud: number): string =>
   `${PREFIJO_LARGO}${'a'.repeat(longitud - PREFIJO_LARGO.length)}`;
 
+/** Los dos selectores de variación de texto y de emoji: un punto de código y una unidad UTF-16 cada uno. */
+export type SelectorDeVariacion = '\uFE0E' | '\uFE0F';
+
 /**
- * Fase 9 · H8 (caracterización) · Un enlace de exactamente `puntos` puntos de código (lo que cuenta char_length del
- * motor) que termina en `selectores` pares «b + U+FE0F». U+FE0F es un selector de variación: un punto de código y una
- * unidad UTF-16, pero isLength de validator (el de @MaxLength) lo DESCUENTA. Sirve para documentar el defecto H8b.
+ * Fase 9 · H8 · Un enlace de exactamente `puntos` puntos de código (lo que cuenta char_length del motor) que termina
+ * en `selectores` pares «b + selector» (U+FE0F por omisión). isLength de validator, el que usaba @MaxLength antes de
+ * H8b, DESCUENTA estos selectores; char_length los cuenta. Con ellos se caracterizó el defecto y se prueba H8b.
  */
-export const enlaceConSelectoresDeVariacion = (puntos: number, selectores: number): string => {
+export const enlaceConSelectoresDeVariacion = (
+  puntos: number,
+  selectores: number,
+  selector: SelectorDeVariacion = '\uFE0F',
+): string => {
   const relleno = puntos - PREFIJO_LARGO.length - 2 * selectores;
   if (!Number.isInteger(relleno) || relleno < 0 || selectores < 1) {
     throw new Error(`No se puede construir un enlace de ${puntos} puntos de código con ${selectores} selectores.`);
   }
-  return `${PREFIJO_LARGO}${'a'.repeat(relleno)}${'b\uFE0F'.repeat(selectores)}`;
+  return `${PREFIJO_LARGO}${'a'.repeat(relleno)}${`b${selector}`.repeat(selectores)}`;
 };
 
 /**
@@ -125,3 +133,26 @@ export const enlaceConEmojisDeUnidadesUtf16 = (unidades: number): string => {
   }
   return `${PREFIJO_LARGO}${emoji.repeat(emojis)}`;
 };
+
+/*
+ * Fase 9 · H8b-2 · Regresión de longitud para cada DTO que usa EnlaceSeguro. El límite es inclusivo y se mide en
+ * puntos de código, como char_length(<columna>) <= ENLACE_MAXIMO del CHECK. Todos los casos cumplen el patrón y @IsUrl
+ * (menos de 2084 unidades UTF-16), así que, si se rechazan, es solo por la longitud.
+ * Qué NO demuestran: lo que hace el motor (deducido de char_length, no medido; sería H8b-3).
+ */
+export const ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD: readonly (readonly [string, string])[] = [
+  [`${ENLACE_MAXIMO} caracteres ASCII`, enlaceDeLongitud(ENLACE_MAXIMO)],
+  [`${ENLACE_MAXIMO} puntos de código con un selector U+FE0F`, enlaceConSelectoresDeVariacion(ENLACE_MAXIMO, 1, '\uFE0F')],
+  [`${ENLACE_MAXIMO} puntos de código con un selector U+FE0E`, enlaceConSelectoresDeVariacion(ENLACE_MAXIMO, 1, '\uFE0E')],
+  [
+    `más de ${ENLACE_MAXIMO} unidades UTF-16 (emojis) con menos de ${ENLACE_MAXIMO} puntos de código`,
+    enlaceConEmojisDeUnidadesUtf16(ENLACE_MAXIMO + 2),
+  ],
+];
+
+export const ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD: readonly (readonly [string, string])[] = [
+  [`${ENLACE_MAXIMO + 1} caracteres ASCII`, enlaceDeLongitud(ENLACE_MAXIMO + 1)],
+  [`${ENLACE_MAXIMO + 1} puntos de código con un selector U+FE0F`, enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0F')],
+  [`${ENLACE_MAXIMO + 1} puntos de código con un selector U+FE0E`, enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0E')],
+  [`${ENLACE_MAXIMO + 12} puntos de código con 12 selectores U+FE0F`, enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 12, 12, '\uFE0F')],
+];

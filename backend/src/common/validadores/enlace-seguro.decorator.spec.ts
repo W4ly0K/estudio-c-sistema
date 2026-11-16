@@ -9,6 +9,8 @@ import {
   ENLACES_CON_CONTROL_SIN_EVIDENCIA_DEL_MOTOR,
   ENLACES_RECHAZADOS_POR_EL_MOTOR,
   ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
+  ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD,
+  ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD,
   enlaceConEmojisDeUnidadesUtf16,
   enlaceConSelectoresDeVariacion,
   enlaceDeLongitud,
@@ -106,14 +108,18 @@ describe('EnlaceSeguro: cada migración de enlaces repite la regla (DTO ⊆ CHEC
 });
 
 /*
- * Fase 9 · H8 · Longitud: cómo mide HOY el pipe frente a char_length del motor.
+ * Fase 9 · H8 y H8b · Longitud: el pipe mide en puntos de código, igual que char_length del motor.
  *
- * @MaxLength usa isLength de validator, que cuenta un par sustituto como 1 (igual que char_length) pero DESCUENTA
- * los selectores de variación U+FE0E y U+FE0F (char_length los cuenta). No cuenta unidades UTF-16, contra lo que
- * dice el comentario de enlace-seguro.decorator.ts (se corrige en H8b).
- * Lo que mide el motor aquí está DEDUCIDO de char_length, no medido: ningún caso de este bloque toca PostgreSQL.
+ * Antes de H8b la medía @MaxLength con isLength de validator, que cuenta un par sustituto como 1 (igual que
+ * char_length) pero DESCUENTA los selectores de variación U+FE0E y U+FE0F (char_length los cuenta). H8a caracterizó
+ * el defecto («DEFECTO PENDIENTE H8b»); H8b invirtió esas aserciones y mide con longitudReal().
+ * Qué demuestra: el pipe acepta y rechaza en el mismo punto que char_length(<columna>) <= ENLACE_MAXIMO.
+ * Qué NO demuestra: lo que mide el motor está DEDUCIDO de char_length, no medido; ningún caso de este bloque toca
+ * PostgreSQL (eso sería H8b-3, en la base desechable de integración).
  */
-describe('EnlaceSeguro · longitud frente a char_length (H8)', () => {
+const LIMITE_DE_IS_URL = 2084; // max_allowed_length por omisión de isURL (validator 13): unidades UTF-16
+
+describe('EnlaceSeguro · longitud en puntos de código, igual que char_length (H8b)', () => {
   // Corrige la hipótesis de H8a: más de ENLACE_MAXIMO unidades UTF-16 NO excede el límite del motor si los puntos de
   // código no lo exceden. Aceptarlo es CORRECTO (DTO ⊆ CHECK se cumple).
   it(`acepta un enlace de más de ${ENLACE_MAXIMO} unidades UTF-16 con menos de ${ENLACE_MAXIMO} puntos de código (correcto)`, async () => {
@@ -124,26 +130,44 @@ describe('EnlaceSeguro · longitud frente a char_length (H8)', () => {
     expect(await erroresDe({ enlace })).toEqual([]);
   });
 
-  // CARACTERIZACIÓN DE UN DEFECTO PENDIENTE (H8b). Esto NO es el comportamiento deseado: el pipe acepta un enlace que
-  // char_length cuenta en más de ENLACE_MAXIMO, así que el CHECK lo rechazaría (DTO ⊆ CHECK no se cumple). Cuando H8b
-  // corrija EnlaceSeguro, estas aserciones deben INVERTIRSE (esperar el rechazo), no borrarse. La respuesta HTTP que
-  // daría el motor (previsiblemente un 500) no está medida.
+  // H8b · Antes era «DEFECTO PENDIENTE H8b»: el pipe aceptaba estos enlaces y el CHECK los rechazaría. La aserción se
+  // INVIRTIÓ, no se borró. Un solo mensaje: el patrón y @IsUrl los aceptan, solo falla la longitud.
   it.each([
-    [1, ENLACE_MAXIMO + 1],
-    [12, ENLACE_MAXIMO + 12],
-  ])(
-    `DEFECTO PENDIENTE H8b · hoy acepta un enlace con %i selector(es) U+FE0F de %i puntos de código (más de ${ENLACE_MAXIMO})`,
-    async (selectores, puntos) => {
-      const enlace = enlaceConSelectoresDeVariacion(puntos, selectores);
+    ['U+FE0F', 1, ENLACE_MAXIMO + 1, '\uFE0F'],
+    ['U+FE0F', 12, ENLACE_MAXIMO + 12, '\uFE0F'],
+    ['U+FE0E', 1, ENLACE_MAXIMO + 1, '\uFE0E'],
+    ['U+FE0E', 12, ENLACE_MAXIMO + 12, '\uFE0E'],
+  ] as const)(
+    `H8b · rechaza un enlace con selectores %s (%i) de %i puntos de código (más de ${ENLACE_MAXIMO})`,
+    async (_nombre, selectores, puntos, selector) => {
+      const enlace = enlaceConSelectoresDeVariacion(puntos, selectores, selector);
       expect(longitudReal(enlace)).toBe(puntos);
-      expect(longitudReal(enlace)).toBeGreaterThan(ENLACE_MAXIMO);
+      expect(enlace.length).toBeLessThanOrEqual(LIMITE_DE_IS_URL);
 
-      expect(await erroresDe({ enlace })).toEqual([]);
+      expect(await erroresDe({ enlace })).toEqual([MENSAJE]);
     },
   );
 
+  it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s (límite inclusivo)', async (_caso, enlace) => {
+    expect(await erroresDe({ enlace })).toEqual([]);
+  });
+
+  it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+    expect(await erroresDe({ enlace })).toEqual([MENSAJE]);
+  });
+
   it('control: el mismo enlace sin selectores, con los mismos puntos de código, se rechaza', async () => {
     expect(await erroresDe({ enlace: enlaceDeLongitud(ENLACE_MAXIMO + 1) })).toEqual([MENSAJE]);
+  });
+
+  // No cambia con H8b: @IsUrl rechaza por su cuenta más de LIMITE_DE_IS_URL unidades UTF-16, aunque los puntos de
+  // código quepan en ENLACE_MAXIMO. Es más estricto que el CHECK, lo que DTO ⊆ CHECK permite.
+  it(`@IsUrl rechaza más de ${LIMITE_DE_IS_URL} unidades UTF-16 aunque los puntos de código quepan (más estricto que el CHECK)`, async () => {
+    const enlace = enlaceConEmojisDeUnidadesUtf16(LIMITE_DE_IS_URL + 2);
+    expect(enlace.length).toBeGreaterThan(LIMITE_DE_IS_URL);
+    expect(longitudReal(enlace)).toBeLessThanOrEqual(ENLACE_MAXIMO);
+
+    expect(await erroresDe({ enlace })).toEqual([MENSAJE]);
   });
 });
 

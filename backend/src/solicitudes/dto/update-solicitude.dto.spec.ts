@@ -6,6 +6,8 @@ import {
   ENLACES_ACEPTADOS,
   ENLACES_RECHAZADOS_POR_EL_MOTOR,
   ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
+  ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD,
+  ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD,
   enlaceDeLongitud,
 } from '../../../test/utils/casos-enlace';
 import {
@@ -137,6 +139,15 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     it(`rechaza un anexo de ${ENLACE_MAXIMO + 1} caracteres`, async () => {
       expect(await conAnexo(enlaceDeLongitud(ENLACE_MAXIMO + 1))).toContain(MENSAJE_ENLACE_ANEXO);
     });
+
+    // Fase 9 · H8b-2 · Radicación: longitud en puntos de código, como char_length (fixtures compartidas).
+    it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s', async (_caso, enlace) => {
+      expect(await conAnexo(enlace)).toEqual([]);
+    });
+
+    it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+      expect(await conAnexo(enlace)).toEqual([MENSAJE_ENLACE_ANEXO]);
+    });
   });
 
   describe('UpdateSolicitudeDto · enlace del producto final (Fase 8 · requisito 4)', () => {
@@ -172,6 +183,15 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
 
     it('sin enlace el pipe no exige nada: si hace falta lo decide el servicio con la categoría', async () => {
       expect(await erroresDe({ estado: 'Entregado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    // Fase 9 · H8b-2 · PATCH del tablero (Fase 8): longitud en puntos de código, como char_length (fixtures compartidas).
+    it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s', async (_caso, enlace) => {
+      expect(await conEnlace(enlace)).toEqual([]);
+    });
+
+    it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+      expect(await conEnlace(enlace)).toEqual([MENSAJE_ENLACE_ENTREGA]);
     });
   });
 

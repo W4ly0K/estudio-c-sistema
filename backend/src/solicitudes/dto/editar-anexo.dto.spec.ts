@@ -6,6 +6,8 @@ import {
   ENLACES_CON_ESPACIO_UNICODE_RECHAZADOS_POR_EL_DTO,
   ENLACES_RECHAZADOS_POR_EL_MOTOR,
   ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
+  ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD,
+  ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD,
   enlaceConSelectoresDeVariacion,
 } from '../../../test/utils/casos-enlace';
 import { longitudReal } from '../../common/validadores/texto-con-longitud-real.decorator';
@@ -86,13 +88,22 @@ describe('EditarAnexoDto (Fase 9 · ADR-009 AN11)', () => {
       expect(await erroresDe({ enlace_anexo_anterior: null, enlace_anexo: enlace })).toContain(MENSAJE_ENLACE_ANEXO);
     });
 
-    // CARACTERIZACIÓN DE UN DEFECTO PENDIENTE (H8b), no el comportamiento deseado: este DTO acepta hoy un enlace que
-    // char_length cuenta en ENLACE_MAXIMO + 1 (el CHECK lo rechazaría). Al corregir H8b se invierte la aserción.
-    it(`DEFECTO PENDIENTE H8b · hoy acepta un enlace con un selector U+FE0F de ${ENLACE_MAXIMO + 1} puntos de código`, async () => {
+    // H8b · Antes era «DEFECTO PENDIENTE H8b»: este DTO aceptaba un enlace que char_length cuenta en ENLACE_MAXIMO + 1
+    // (el CHECK lo rechazaría). EnlaceSeguro ya mide en puntos de código: la aserción se INVIRTIÓ, no se borró.
+    it(`H8b · rechaza un enlace con un selector U+FE0F de ${ENLACE_MAXIMO + 1} puntos de código`, async () => {
       const enlace = enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1);
       expect(longitudReal(enlace)).toBe(ENLACE_MAXIMO + 1);
 
+      expect(await erroresDe({ enlace_anexo_anterior: null, enlace_anexo: enlace })).toEqual([MENSAJE_ENLACE_ANEXO]);
+    });
+
+    // H8b-2 · Regresión de longitud (fixtures compartidas): límite inclusivo en puntos de código, como char_length.
+    it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s', async (_caso, enlace) => {
       expect(await erroresDe({ enlace_anexo_anterior: null, enlace_anexo: enlace })).toEqual([]);
+    });
+
+    it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+      expect(await erroresDe({ enlace_anexo_anterior: null, enlace_anexo: enlace })).toEqual([MENSAJE_ENLACE_ANEXO]);
     });
   });
 
