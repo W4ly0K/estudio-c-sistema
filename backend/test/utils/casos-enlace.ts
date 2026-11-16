@@ -81,8 +81,47 @@ export const ENLACES_RECHAZADOS_SOLO_POR_EL_DTO: readonly (readonly [string, str
   ['U+FEFF en la ruta (P0, fila 29: el motor lo acepta)', 'https://ejemplo.com/a\uFEFFb'],
 ];
 
+/**
+ * Fase 9 · H8a (L3) · Espacios Unicode que \s de JavaScript reconoce y que no son ASCII: el pipe los rechaza antes
+ * de que lleguen al motor. Solo se prueban contra el DTO, nunca en integración: esta lista no afirma nada sobre el
+ * motor. Son tres casos elegidos (el plan de ADR-012 §6), no una prueba exhaustiva de Unicode.
+ */
+export const ENLACES_CON_ESPACIO_UNICODE_RECHAZADOS_POR_EL_DTO: readonly (readonly [string, string])[] = (
+  [
+    ['U+00A0 (espacio de no separación)', '\u00A0'],
+    ['U+2028 (separador de línea)', '\u2028'],
+    ['U+3000 (espacio ideográfico)', '\u3000'],
+  ] as const
+).flatMap(([nombre, caracter]) => enCadaPosicion(nombre, caracter));
+
 const PREFIJO_LARGO = 'https://ejemplo.com/';
 
 /** Un enlace válido de exactamente `longitud` caracteres (longitud > largo del prefijo). */
 export const enlaceDeLongitud = (longitud: number): string =>
   `${PREFIJO_LARGO}${'a'.repeat(longitud - PREFIJO_LARGO.length)}`;
+
+/**
+ * Fase 9 · H8 (caracterización) · Un enlace de exactamente `puntos` puntos de código (lo que cuenta char_length del
+ * motor) que termina en `selectores` pares «b + U+FE0F». U+FE0F es un selector de variación: un punto de código y una
+ * unidad UTF-16, pero isLength de validator (el de @MaxLength) lo DESCUENTA. Sirve para documentar el defecto H8b.
+ */
+export const enlaceConSelectoresDeVariacion = (puntos: number, selectores: number): string => {
+  const relleno = puntos - PREFIJO_LARGO.length - 2 * selectores;
+  if (!Number.isInteger(relleno) || relleno < 0 || selectores < 1) {
+    throw new Error(`No se puede construir un enlace de ${puntos} puntos de código con ${selectores} selectores.`);
+  }
+  return `${PREFIJO_LARGO}${'a'.repeat(relleno)}${'b\uFE0F'.repeat(selectores)}`;
+};
+
+/**
+ * Fase 9 · H8 · Un enlace con emojis (U+1F3AC: un punto de código, dos unidades UTF-16) de exactamente `unidades`
+ * unidades UTF-16. Tiene MENOS puntos de código que unidades: el límite del motor (char_length) lo admite.
+ */
+export const enlaceConEmojisDeUnidadesUtf16 = (unidades: number): string => {
+  const emoji = '🎬';
+  const emojis = (unidades - PREFIJO_LARGO.length) / emoji.length;
+  if (!Number.isInteger(emojis) || emojis < 1) {
+    throw new Error(`No se puede construir un enlace con emojis de ${unidades} unidades UTF-16.`);
+  }
+  return `${PREFIJO_LARGO}${emoji.repeat(emojis)}`;
+};
