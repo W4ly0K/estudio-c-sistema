@@ -65,5 +65,5 @@ La depuración de los documentos históricos sigue como pendiente independiente.
 | Publicación | 2026-11-17. Según la respuesta de publicación: `replaced: false` y versión `ebc95363663ba124c027d68c1f3ce462bec1305940ac233139e78e4cce5a6d71` |
 | Maestro en Git | Ninguno. Su contenido no se incorpora a este repositorio |
 | Copias locales | Primera versión publicada: SHA-256 `7c5129a5881dbeec51875fe3838c4d1dc83d694d8b39cae81cbed28c14371474` (CRLF). Existe una revisión local posterior no publicada, conservada fuera de Git |
-| Estado | `vigente con reservas` |
+| Estado | Complemento histórico publicado; conserva las reservas documentadas en la fila siguiente. No está sujeto a los estados de publicación definidos para los nuevos maestros G0 |
 | Reservas | Dos frases administrativas del documento describen el estado anterior a su publicación. No se corrigieron por sobrescritura porque no fue posible verificar la versión vigente del documento publicado |
