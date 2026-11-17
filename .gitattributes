@@ -9,3 +9,7 @@ backend/Dockerfile text eol=lf
 # .dockerignore en LF: evita depender de que Docker recorte el \r de cada patron
 # (con CRLF, ".env\r" podria no excluir .env del contexto de build).
 backend/.dockerignore text eol=lf
+
+# Documentos maestros de seguimiento (G0) siempre en LF: el SHA-256 del archivo
+# coincide con la version que informa la publicacion de su copia de consulta.
+docs/seguimiento/**/*.md text eol=lf
