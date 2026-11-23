@@ -1,0 +1,362 @@
+import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
+import {
+  ACCIONES,
+  ESTADO_INICIAL,
+  ESTADOS,
+  ESTADOS_FINALES,
+  TRANSICIONES,
+  esEstado,
+  esEstadoFinal,
+  evaluarAccion,
+  evaluarTransicion,
+  type Accion,
+  type Estado,
+  type IdTransicion,
+  type ResultadoTransicion,
+} from './maquina-estados';
+import { ESTADOS_QUE_LIBERAN_FRANJA, ocupaFranja } from './estados';
+import { transicionAplicaALaCategoria } from './categorias';
+
+const { STAFF, SOLICITANTE } = RolUsuario;
+const ROLES = [STAFF, SOLICITANTE] as const;
+
+/**
+ * ORÁCULO: transcripción independiente del diagrama "Modelado de la Máquina de
+ * Estados" y del PRD §5.5/§8. Las pruebas comparan contra esta lista, nunca
+ * contra TRANSICIONES (eso sería una tautología).
+ */
+const DIAGRAMA: ReadonlyArray<readonly [IdTransicion, Accion, Estado, Estado, RolUsuario]> = [
+  ['T1', 'APROBAR', 'Recibido', 'Validado', STAFF],
+  ['T2', 'RECHAZAR', 'Recibido', 'Rechazado', STAFF],
+  ['T3', 'CANCELAR', 'Recibido', 'Cancelado por el Usuario', SOLICITANTE],
+  ['T4', 'INICIAR_PRODUCCION', 'Validado', 'En Producción', STAFF],
+  ['T5', 'PROPONER_REPROGRAMACION', 'Validado', 'Pendiente de Reprogramación', STAFF],
+  ['T6', 'CANCELAR', 'Validado', 'Cancelado por el Usuario', SOLICITANTE],
+  ['T7', 'ACEPTAR_REPROGRAMACION', 'Pendiente de Reprogramación', 'Validado', SOLICITANTE],
+  ['T8', 'RECHAZAR_REPROGRAMACION', 'Pendiente de Reprogramación', 'Cancelado por el Usuario', SOLICITANTE],
+  ['T9', 'FINALIZAR', 'En Producción', 'Entregado', STAFF],
+  // Fase 7 · PRD v2.2 §8.3 y ADR-007 NA2 (Q-B1): cierre de una solicitud vencida sin atender.
+  ['T10', 'CERRAR_NO_ATENDIDA', 'Recibido', 'No atendida', STAFF],
+  // Fase 8 · requisito 3 (directriz del tutor): la etapa de edición de PODCAST y VIDEO. Qué
+  // categoría puede usar cada una lo decide categorias.ts (transicionAplicaALaCategoria).
+  ['T11', 'INICIAR_EDICION', 'En Producción', 'Edición y postproducción', STAFF],
+  ['T12', 'FINALIZAR', 'Edición y postproducción', 'Entregado', STAFF],
+];
+
+const CATEGORIAS = Object.values(CategoriaSolicitud);
+
+/** Finales según el diagrama (estados que solo conducen al nodo final). */
+const FINALES_ESPERADOS: readonly Estado[] = ['Entregado', 'Rechazado', 'Cancelado por el Usuario', 'No atendida'];
+
+type Esperado = { permitida: true; id: IdTransicion } | { permitida: false; motivo: string };
+
+/** Lo que el diagrama dice que debe responder evaluarTransicion. */
+function esperadoTransicion(origen: Estado, destino: Estado, rol: RolUsuario): Esperado {
+  if (origen === destino) return { permitida: false, motivo: 'MISMO_ESTADO' };
+  if (FINALES_ESPERADOS.includes(origen)) return { permitida: false, motivo: 'ESTADO_FINAL' };
+  const delPar = DIAGRAMA.filter(([, , o, d]) => o === origen && d === destino);
+  if (delPar.length === 0) return { permitida: false, motivo: 'TRANSICION_NO_DEFINIDA' };
+  const delRol = delPar.find(([, , , , r]) => r === rol);
+  return delRol ? { permitida: true, id: delRol[0] } : { permitida: false, motivo: 'ROL_NO_AUTORIZADO' };
+}
+
+/** Lo que el diagrama dice que debe responder evaluarAccion. */
+function esperadoAccion(accion: Accion, origen: Estado, rol: RolUsuario): Esperado {
+  if (FINALES_ESPERADOS.includes(origen)) return { permitida: false, motivo: 'ESTADO_FINAL' };
+  const deLaAccion = DIAGRAMA.filter(([, a, o]) => a === accion && o === origen);
+  if (deLaAccion.length === 0) return { permitida: false, motivo: 'TRANSICION_NO_DEFINIDA' };
+  const delRol = deLaAccion.find(([, , , , r]) => r === rol);
+  return delRol ? { permitida: true, id: delRol[0] } : { permitida: false, motivo: 'ROL_NO_AUTORIZADO' };
+}
+
+/** Reduce el resultado real a la forma del oráculo para compararlos con toEqual. */
+function resumir(resultado: ResultadoTransicion): Esperado {
+  return resultado.permitida
+    ? { permitida: true, id: resultado.transicion.id }
+    : { permitida: false, motivo: resultado.motivo };
+}
+
+const COMBINACIONES_TRANSICION: Array<[Estado, Estado, RolUsuario]> = ESTADOS.flatMap((origen) =>
+  ESTADOS.flatMap((destino) => ROLES.map((rol): [Estado, Estado, RolUsuario] => [origen, destino, rol])),
+);
+
+const COMBINACIONES_ACCION: Array<[Accion, Estado, RolUsuario]> = ACCIONES.flatMap((accion) =>
+  ESTADOS.flatMap((origen) => ROLES.map((rol): [Accion, Estado, RolUsuario] => [accion, origen, rol])),
+);
+
+describe('maquina-estados: la tabla coincide con el diagrama', () => {
+  it('TRANSICIONES es exactamente T1–T12 del diagrama, en orden', () => {
+    expect(TRANSICIONES.map((t) => [t.id, t.accion, t.origen, t.destino, t.rol])).toEqual(DIAGRAMA);
+  });
+
+  it('declara los 9 estados (PRD v2.2 y Fase 8) y las 10 acciones, sin duplicados', () => {
+    expect(new Set(ESTADOS)).toEqual(
+      new Set([
+        'Recibido',
+        'Validado',
+        'En Producción',
+        'Edición y postproducción',
+        'Entregado',
+        'Rechazado',
+        'Cancelado por el Usuario',
+        'Pendiente de Reprogramación',
+        'No atendida',
+      ]),
+    );
+    expect(new Set(ESTADOS).size).toBe(9);
+    expect(new Set(ACCIONES).size).toBe(10);
+  });
+
+  it('los estados finales son Entregado, Rechazado, Cancelado por el Usuario y No atendida (D1: sin reactivación)', () => {
+    expect(new Set(ESTADOS_FINALES)).toEqual(new Set(FINALES_ESPERADOS));
+  });
+
+  it('el estado inicial es Recibido', () => {
+    expect(ESTADO_INICIAL).toBe('Recibido');
+  });
+});
+
+describe('maquina-estados: invariantes estructurales', () => {
+  it('ningún par (origen, destino) ni (acción, origen) está repetido: la búsqueda es inequívoca', () => {
+    const pares = TRANSICIONES.map((t) => `${t.origen}→${t.destino}`);
+    const accionesPorOrigen = TRANSICIONES.map((t) => `${t.accion}@${t.origen}`);
+    expect(new Set(pares).size).toBe(TRANSICIONES.length);
+    expect(new Set(accionesPorOrigen).size).toBe(TRANSICIONES.length);
+  });
+
+  it('ninguna transición es un bucle (origen ≠ destino)', () => {
+    expect(TRANSICIONES.filter((t) => t.origen === t.destino)).toEqual([]);
+  });
+
+  it('todos los estados son alcanzables desde Recibido', () => {
+    const alcanzados = new Set<Estado>([ESTADO_INICIAL]);
+    const pendientes: Estado[] = [ESTADO_INICIAL];
+    for (let actual = pendientes.pop(); actual !== undefined; actual = pendientes.pop()) {
+      for (const t of TRANSICIONES.filter((x) => x.origen === actual)) {
+        if (!alcanzados.has(t.destino)) {
+          alcanzados.add(t.destino);
+          pendientes.push(t.destino);
+        }
+      }
+    }
+    expect(alcanzados).toEqual(new Set(ESTADOS));
+  });
+
+  it('cada acción del catálogo se usa en al menos una transición', () => {
+    expect(new Set(TRANSICIONES.map((t) => t.accion))).toEqual(new Set(ACCIONES));
+  });
+
+  it('reparto de roles: 8 transiciones del STAFF y 4 del SOLICITANTE (PRD §4, v2.2 §8.3 y Fase 8)', () => {
+    expect(TRANSICIONES.filter((t) => t.rol === STAFF).map((t) => t.id)).toEqual([
+      'T1',
+      'T2',
+      'T4',
+      'T5',
+      'T9',
+      'T10',
+      'T11',
+      'T12',
+    ]);
+    expect(TRANSICIONES.filter((t) => t.rol === SOLICITANTE).map((t) => t.id)).toEqual(['T3', 'T6', 'T7', 'T8']);
+  });
+
+  it('PRD §5.5: el STAFF nunca puede llevar una solicitud a "Cancelado por el Usuario"', () => {
+    for (const origen of ESTADOS) {
+      const resultado = evaluarTransicion(origen, 'Cancelado por el Usuario', STAFF);
+      expect(resultado.permitida).toBe(false);
+    }
+  });
+
+  it('la tabla y sus filas están congeladas en tiempo de ejecución', () => {
+    expect(Object.isFrozen(ESTADOS)).toBe(true);
+    expect(Object.isFrozen(ACCIONES)).toBe(true);
+    expect(Object.isFrozen(TRANSICIONES)).toBe(true);
+    expect(Object.isFrozen(ESTADOS_FINALES)).toBe(true);
+    expect(TRANSICIONES.every((t) => Object.isFrozen(t))).toBe(true);
+  });
+});
+
+describe('maquina-estados: coherencia con CA-06 (estados.ts) por categoría', () => {
+  it('todo estado que libera la franja existe en la máquina', () => {
+    for (const estado of ESTADOS_QUE_LIBERAN_FRANJA) {
+      expect(esEstado(estado)).toBe(true);
+    }
+  });
+
+  it('Fase 8: "Edición y postproducción" es el único estado NO final que libera la franja', () => {
+    expect(ESTADOS_QUE_LIBERAN_FRANJA.filter((estado) => !esEstadoFinal(estado))).toEqual(['Edición y postproducción']);
+  });
+
+  // Fase 8 · H1: la regla que reemplaza a "solo los finales liberan". Si una transición aplicable
+  // llevara de un estado que no ocupa a uno que ocupa, podría fallar con 23P01 para siempre.
+  it.each(CATEGORIAS)('%s: liberar es irreversible (ninguna transición aplicable vuelve a ocupar la franja)', (categoria) => {
+    for (const t of TRANSICIONES) {
+      if (transicionAplicaALaCategoria(t.id, categoria) && !ocupaFranja(t.origen, categoria)) {
+        expect([t.id, ocupaFranja(t.destino, categoria)]).toEqual([t.id, false]);
+      }
+    }
+  });
+
+  it('D3: "Pendiente de Reprogramación" sigue ocupando su franja original', () => {
+    for (const categoria of CATEGORIAS) {
+      expect(ocupaFranja('Pendiente de Reprogramación', categoria)).toBe(true);
+    }
+  });
+});
+
+describe('evaluarTransicion: las 162 combinaciones (9 × 9 × 2 roles)', () => {
+  it('genera exactamente 162 casos y solo 12 permitidos', () => {
+    expect(COMBINACIONES_TRANSICION).toHaveLength(162);
+    const permitidas = COMBINACIONES_TRANSICION.filter(([o, d, r]) => evaluarTransicion(o, d, r).permitida);
+    expect(permitidas).toHaveLength(12);
+  });
+
+  it.each(COMBINACIONES_TRANSICION)('%s → %s como %s', (origen, destino, rol) => {
+    expect(resumir(evaluarTransicion(origen, destino, rol))).toEqual(esperadoTransicion(origen, destino, rol));
+  });
+});
+
+describe('evaluarAccion: las 180 combinaciones (10 acciones × 9 estados × 2 roles)', () => {
+  it('genera exactamente 180 casos y solo 12 permitidos', () => {
+    expect(COMBINACIONES_ACCION).toHaveLength(180);
+    const permitidas = COMBINACIONES_ACCION.filter(([a, o, r]) => evaluarAccion(a, o, r).permitida);
+    expect(permitidas).toHaveLength(12);
+  });
+
+  it.each(COMBINACIONES_ACCION)('%s desde %s como %s', (accion, origen, rol) => {
+    expect(resumir(evaluarAccion(accion, origen, rol))).toEqual(esperadoAccion(accion, origen, rol));
+  });
+
+  it('cada acción permitida lleva al mismo destino que su transición (las dos vistas no divergen)', () => {
+    for (const [id, accion, origen, destino, rol] of DIAGRAMA) {
+      const porAccion = evaluarAccion(accion, origen, rol);
+      const porPar = evaluarTransicion(origen, destino, rol);
+      expect(porAccion).toEqual(porPar);
+      expect(resumir(porAccion)).toEqual({ permitida: true, id });
+    }
+  });
+});
+
+describe('fail-closed: estados que no pertenecen a la máquina', () => {
+  // Variantes realistas de datos sucios: mayúsculas, sin tilde, espacios, nombres parciales,
+  // cadenas vacías y claves del prototipo de Object.
+  const DESCONOCIDOS = [
+    '',
+    'recibido',
+    'RECIBIDO',
+    'Recibido ',
+    ' Recibido',
+    'En Produccion',
+    'Cancelado',
+    'Pendiente',
+    'toString',
+    '__proto__',
+    'constructor',
+  ];
+
+  it.each(DESCONOCIDOS)('origen desconocido %j → ESTADO_DESCONOCIDO (transición y acción)', (valor) => {
+    for (const rol of ROLES) {
+      expect(evaluarTransicion(valor, 'Validado', rol)).toEqual({ permitida: false, motivo: 'ESTADO_DESCONOCIDO' });
+      expect(evaluarAccion('APROBAR', valor, rol)).toEqual({ permitida: false, motivo: 'ESTADO_DESCONOCIDO' });
+    }
+  });
+
+  it.each(DESCONOCIDOS)('destino desconocido %j → ESTADO_DESCONOCIDO', (valor) => {
+    for (const rol of ROLES) {
+      expect(evaluarTransicion('Recibido', valor, rol)).toEqual({ permitida: false, motivo: 'ESTADO_DESCONOCIDO' });
+    }
+  });
+
+  it('esEstado acepta solo los 9 nombres exactos', () => {
+    expect(ESTADOS.every((estado) => esEstado(estado))).toBe(true);
+    expect(DESCONOCIDOS.some((valor) => esEstado(valor))).toBe(false);
+  });
+});
+
+describe('casos de negocio nombrados (lectura humana de la tabla)', () => {
+  it('D1: no existe la reactivación desde Rechazado, Cancelado por el Usuario ni No atendida', () => {
+    for (const final of ['Rechazado', 'Cancelado por el Usuario', 'No atendida'] as const) {
+      for (const destino of ESTADOS.filter((e) => e !== final)) {
+        for (const rol of ROLES) {
+          expect(evaluarTransicion(final, destino, rol)).toEqual({ permitida: false, motivo: 'ESTADO_FINAL' });
+        }
+      }
+    }
+  });
+
+  it('dato heredado de producción: Rechazado → En Producción queda prohibido', () => {
+    expect(evaluarTransicion('Rechazado', 'En Producción', STAFF)).toEqual({
+      permitida: false,
+      motivo: 'ESTADO_FINAL',
+    });
+  });
+
+  it('desde "En Producción" la máquina conoce dos salidas del STAFF, T11 y T9 (cuál aplica lo decide la categoría)', () => {
+    const salidas = ESTADOS.filter((destino) => evaluarTransicion('En Producción', destino, STAFF).permitida);
+    expect(salidas).toEqual(['Edición y postproducción', 'Entregado']);
+  });
+
+  it('Fase 8 · T12 reutiliza FINALIZAR: "entregar" es la misma acción desde producción o desde edición', () => {
+    expect(resumir(evaluarAccion('FINALIZAR', 'En Producción', STAFF))).toEqual({ permitida: true, id: 'T9' });
+    expect(resumir(evaluarAccion('FINALIZAR', 'Edición y postproducción', STAFF))).toEqual({ permitida: true, id: 'T12' });
+  });
+
+  it('Fase 8 · desde "Edición y postproducción" solo se entrega (T12), y el solicitante ya no puede cancelar', () => {
+    const salidasStaff = ESTADOS.filter((destino) => evaluarTransicion('Edición y postproducción', destino, STAFF).permitida);
+    expect(salidasStaff).toEqual(['Entregado']);
+    expect(evaluarAccion('CANCELAR', 'Edición y postproducción', SOLICITANTE)).toEqual({
+      permitida: false,
+      motivo: 'TRANSICION_NO_DEFINIDA',
+    });
+  });
+
+  it('CA-10: el SOLICITANTE no puede proponer reprogramaciones ni el STAFF aceptarlas', () => {
+    expect(evaluarAccion('PROPONER_REPROGRAMACION', 'Validado', SOLICITANTE)).toEqual({
+      permitida: false,
+      motivo: 'ROL_NO_AUTORIZADO',
+    });
+    expect(evaluarAccion('ACEPTAR_REPROGRAMACION', 'Pendiente de Reprogramación', STAFF)).toEqual({
+      permitida: false,
+      motivo: 'ROL_NO_AUTORIZADO',
+    });
+  });
+
+  it('CA-10: "Pendiente de Reprogramación" queda congelada para el STAFF (sin salidas propias)', () => {
+    const salidasStaff = ESTADOS.filter(
+      (destino) => evaluarTransicion('Pendiente de Reprogramación', destino, STAFF).permitida,
+    );
+    expect(salidasStaff).toEqual([]);
+  });
+
+  it('el solicitante no puede cancelar una vez iniciada la producción (PRD §4)', () => {
+    expect(evaluarAccion('CANCELAR', 'En Producción', SOLICITANTE)).toEqual({
+      permitida: false,
+      motivo: 'TRANSICION_NO_DEFINIDA',
+    });
+  });
+
+  it('T10 (Fase 7 · NA2): solo el STAFF cierra como "No atendida", y solo desde Recibido', () => {
+    expect(evaluarAccion('CERRAR_NO_ATENDIDA', 'Recibido', SOLICITANTE)).toEqual({
+      permitida: false,
+      motivo: 'ROL_NO_AUTORIZADO',
+    });
+    const origenes = ESTADOS.filter((origen) => evaluarTransicion(origen, 'No atendida', STAFF).permitida);
+    expect(origenes).toEqual(['Recibido']);
+  });
+
+  it('T10 no reemplaza a T2: desde Recibido el STAFF conserva el rechazo con motivo', () => {
+    const salidasStaff = ESTADOS.filter((destino) => evaluarTransicion('Recibido', destino, STAFF).permitida);
+    expect(salidasStaff).toEqual(['Validado', 'Rechazado', 'No atendida']);
+  });
+
+  it('no se puede saltar etapas: Recibido → En Producción ni Validado → Entregado', () => {
+    expect(evaluarTransicion('Recibido', 'En Producción', STAFF)).toEqual({
+      permitida: false,
+      motivo: 'TRANSICION_NO_DEFINIDA',
+    });
+    expect(evaluarTransicion('Validado', 'Entregado', STAFF)).toEqual({
+      permitida: false,
+      motivo: 'TRANSICION_NO_DEFINIDA',
+    });
+  });
+});

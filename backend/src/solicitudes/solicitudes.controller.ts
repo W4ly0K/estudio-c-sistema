@@ -1,0 +1,128 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { CategoriaSolicitud, RolUsuario } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UsuarioActual } from '../auth/decorators/usuario-actual.decorator';
+import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
+import { SolicitudesService } from './solicitudes.service';
+import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
+import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import { EditarAnexoDto } from './dto/editar-anexo.dto';
+import { CorregirEnlaceEntregaDto } from './dto/corregir-enlace-entrega.dto';
+
+// Autenticación: APP_GUARD global. Autorización: @Roles por endpoint.
+@Controller('solicitudes')
+export class SolicitudesController {
+  constructor(private readonly solicitudesService: SolicitudesService) {}
+
+  @Post()
+  create(@Body() dto: CreateSolicitudeDto, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.create(dto, usuario.id);
+  }
+
+  // ⚠️ Debe declararse ANTES de ':radicado': Express evalúa las rutas en orden de
+  // declaración y ':radicado' capturaría "mis-solicitudes" como si fuera un radicado.
+  @Get('mis-solicitudes')
+  findMisSolicitudes(@UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.findMisSolicitudes(usuario.id);
+  }
+
+  @Roles(RolUsuario.STAFF)
+  @Get()
+  findAll(@Query('estado') estado?: string, @Query('categoria') categoria?: CategoriaSolicitud) {
+    return this.solicitudesService.findAll(estado, categoria);
+  }
+
+  // Abierto a cualquier autenticado: la PROPIEDAD se aplica en el servicio
+  // (filtroDeAcceso en el WHERE) y ajenos/inexistentes responden 404 idéntico (ADR-002).
+  @Get(':radicado')
+  findOne(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.findOne(radicado, usuario);
+  }
+
+  // Fase 9 · ADR-012 EV7 y D7 (lote J2b): historial de enlaces (cambios del anexo y correcciones de la
+  // entrega), solo para el STAFF. El servicio repite la comprobación del rol antes de consultar.
+  @Roles(RolUsuario.STAFF)
+  @Get(':radicado/historial-enlaces')
+  historialDeEnlaces(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.historialDeEnlaces(radicado, usuario);
+  }
+
+  @Roles(RolUsuario.STAFF)
+  @Patch(':radicado')
+  update(
+    @Param('radicado') radicado: string,
+    @Body() dto: UpdateSolicitudeDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.update(radicado, dto, usuario.id);
+  }
+
+  // Fase 5.4 · CA-10 · T5 (K1): solo el STAFF propone una nueva franja; la solicitud queda
+  // "Pendiente de Reprogramación" hasta que el solicitante acepte o rechace (paso 5.5).
+  @Roles(RolUsuario.STAFF)
+  @Post(':radicado/reprogramacion')
+  @HttpCode(HttpStatus.OK)
+  proponerReprogramacion(
+    @Param('radicado') radicado: string,
+    @Body() dto: ProponerReprogramacionDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.proponerReprogramacion(radicado, dto, usuario.id);
+  }
+
+  // Fase 5.3 · T3/T6 (G1): solo el DUEÑO cancela; el Staff nunca cancela por el usuario
+  // (PRD §5.5). Sin cuerpo: la identidad sale del JWT. 200 y no 201: no se crea nada.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/cancelar')
+  @HttpCode(HttpStatus.OK)
+  cancelar(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.cancelar(radicado, usuario);
+  }
+
+  // Fase 5.5a · CA-10 · T7 (L1): el DUEÑO acepta la propuesta guardada; no envía fechas.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/aceptar')
+  @HttpCode(HttpStatus.OK)
+  aceptarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.aceptarReprogramacion(radicado, usuario);
+  }
+
+  // Fase 5.5a · CA-10 · T8 (L1): el DUEÑO rechaza la propuesta; la solicitud se cancela (PRD §5.5).
+  @Roles(RolUsuario.SOLICITANTE)
+  @Post(':radicado/reprogramacion/rechazar')
+  @HttpCode(HttpStatus.OK)
+  rechazarReprogramacion(@Param('radicado') radicado: string, @UsuarioActual() usuario: UsuarioAutenticado) {
+    return this.solicitudesService.rechazarReprogramacion(radicado, usuario);
+  }
+
+  // Fase 9 · ADR-009 AN10 (lote J2): solo el DUEÑO agrega, cambia o retira su anexo, en «Recibido».
+  // Separado del PATCH del tablero (que sigue rechazando enlace_anexo). 200 por defecto en PATCH.
+  @Roles(RolUsuario.SOLICITANTE)
+  @Patch(':radicado/anexo')
+  editarAnexo(
+    @Param('radicado') radicado: string,
+    @Body() dto: EditarAnexoDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.editarAnexo(radicado, usuario, dto);
+  }
+
+  // Fase 9 · ADR-008 EN6 (lote J3): el STAFF corrige el enlace del producto final de una entrega. No es
+  // el PATCH del tablero (que solo escribe el enlace al entregar). El servicio repite la comprobación del rol.
+  @Roles(RolUsuario.STAFF)
+  @Patch(':radicado/enlace-entrega')
+  corregirEnlaceEntrega(
+    @Param('radicado') radicado: string,
+    @Body() dto: CorregirEnlaceEntregaDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ) {
+    return this.solicitudesService.corregirEnlaceEntrega(radicado, usuario, dto);
+  }
+
+  @Roles(RolUsuario.STAFF)
+  @Delete(':radicado')
+  remove(@Param('radicado') radicado: string) {
+    return this.solicitudesService.remove(radicado);
+  }
+}

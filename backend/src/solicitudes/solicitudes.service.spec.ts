@@ -1,0 +1,2938 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { CategoriaSolicitud, Log_Auditoria, Solicitud, SubEspacio } from '@prisma/client';
+import {
+  MENSAJE_ANEXO_ACTUALIZADO,
+  MENSAJE_ANEXO_CAMBIO_EN_REVISION,
+  MENSAJE_ANEXO_DESACTUALIZADO,
+  MENSAJE_ANEXO_NO_APLICA,
+  MENSAJE_ANEXO_RETIRADO,
+  MENSAJE_ANEXO_SIN_CAMBIOS,
+  MENSAJE_ANEXO_SOLO_EN_RECIBIDO,
+  MENSAJE_ANEXO_REVISADO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
+  MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_HISTORIAL_SOLO_STAFF,
+  MENSAJE_CORRECCION_NO_APLICA,
+  MENSAJE_CORRECCION_SOLO_EN_ENTREGADO,
+  MENSAJE_CORRECCION_SOLO_STAFF,
+  MENSAJE_ENLACE_DESACTUALIZADO,
+  MENSAJE_ENLACE_ENTREGA_CORREGIDO,
+  MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS,
+  MENSAJE_ENTREGA_SIN_ENLACE_PREVIO,
+  MENSAJE_CAMBIO_CONCURRENTE,
+  MENSAJE_CANCELAR_CON_PROPUESTA,
+  MENSAJE_CANCELAR_EN_PRODUCCION,
+  MENSAJE_EDICION_NO_APLICA,
+  MENSAJE_EDICION_OBLIGATORIA,
+  MENSAJE_ENLACE_NO_APLICA,
+  MENSAJE_ENLACE_OBLIGATORIO,
+  MENSAJE_ENLACE_SOLO_AL_ENTREGAR,
+  MENSAJE_FRANJA_VENCIDA,
+  MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
+  MENSAJE_NO_ATENDIDA_FRANJA_FUTURA,
+  MENSAJE_NO_ATENDIDA_SIN_FECHAS,
+  MENSAJE_PROPUESTA_SIN_CAMBIOS,
+  MENSAJE_PROPUESTA_YA_PENDIENTE,
+  MENSAJE_REPROGRAMACION_PROPUESTA,
+  MENSAJE_REPROGRAMAR_EN_RECIBIDO,
+  MENSAJE_PROPUESTA_NO_DISPONIBLE,
+  MENSAJE_PROPUESTA_VENCIDA,
+  MENSAJE_REPROGRAMACION_ACEPTADA,
+  MENSAJE_REPROGRAMACION_RECHAZADA,
+  MENSAJE_SIN_PROPUESTA_PENDIENTE,
+  MENSAJE_SOLICITUD_CANCELADA,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_SUBESPACIO_SOLO_AL_APROBAR,
+  MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
+  MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO,
+  MENSAJE_USAR_REPROGRAMACION,
+  MENSAJES_TRANSICION_INVALIDA,
+  SELECT_COMANDO_SOLICITANTE,
+  SolicitudesService,
+} from './solicitudes.service';
+import {
+  DetalleSolicitudSolicitante,
+  SELECT_DETALLE_SOLICITANTE,
+  SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
+} from './proyecciones/detalle-solicitud.proyeccion';
+import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/create-solicitude.dto';
+import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
+import type { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import { type ErrorHorario, MENSAJES_ERROR_HORARIO } from './reglas/horario.validator';
+import { RelojFijo } from '../../test/utils/reloj-fijo';
+import { MENSAJE_CA06 } from './errores/traslape-ca06';
+import {
+  errorDesconocidoDePrisma,
+  MENSAJE_23514_CHECK,
+  MENSAJE_23P01_CREATE,
+  MENSAJE_23P01_TX_INTERACTIVA,
+} from '../../test/utils/errores-postgres.fixture';
+
+/** "Ahora" fijo: lunes 5 de octubre de 2026, 10:00 en Bogotá. Mínima sin urgencia: miércoles 14. */
+const AHORA = new Date('2026-10-05T10:00:00-05:00');
+
+const solicitudBase: Solicitud = {
+  radicado: 'EC-2099-0001',
+  id_usuario: 'uuid-solicitante',
+  categoria: CategoriaSolicitud.ESPACIOS,
+  proposito: 'Grabación de clase magistral',
+  num_participantes: null,
+  // Fase 3: instantes con zona horaria explícita (jueves 15 de enero de 2099, 9:00–10:00 en Bogotá)
+  fecha_inicio: new Date('2099-01-15T09:00:00-05:00'),
+  fecha_fin: new Date('2099-01-15T10:00:00-05:00'),
+  fecha_propuesta_inicio: null,
+  fecha_propuesta_fin: null,
+  estado: 'Recibido',
+  es_urgencia: false,
+  // Fase 7: lo histórico quedó en el completo (SE8); en "Recibido" no hay propuesta (M4).
+  sub_espacio: 'ESTUDIO_COMPLETO',
+  sub_espacio_propuesto: null,
+  // Fase 8 · requisito 4: sin enlace salvo en una entrega que lo exige.
+  enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
+};
+
+// Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
+// solicitante, esta línea deja de ser un error de tipos → @ts-expect-error queda sin usar → tsc falla.
+// @ts-expect-error — el solicitante no debe recibir la identidad del Staff
+type _SinAutorStaff = DetalleSolicitudSolicitante['logs'][number]['modificado_por'];
+
+const logBase: Log_Auditoria = {
+  id_log: 'uuid-log',
+  radicado_solicitud: 'EC-2099-0001',
+  estado_anterior: 'Recibido',
+  estado_nuevo: 'Rechazado',
+  modificado_por: 'uuid-staff',
+  fecha_modificacion: new Date(),
+  motivo_rechazo: 'Equipo en mantenimiento preventivo',
+  // ... las demás propiedades
+  motivo_reprogramacion: null,
+  // Fase 7 · 7A.3: auditoría del ajuste de sub-espacio y de franja (ADR-007 SE7 y P-1).
+  sub_espacio_anterior: null,
+  sub_espacio_nuevo: null,
+  fecha_inicio_anterior: null,
+  fecha_fin_anterior: null,
+  // Fase 9 (ADR-012): una transición no es un evento de enlace; los cuatro campos van en null.
+  enlace_campo: null,
+  enlace_anterior: null,
+  enlace_nuevo: null,
+  motivo_correccion: null,
+};
+
+describe('SolicitudesService', () => {
+  const prismaMock = {
+    solicitud: {
+      findFirst: jest.fn<Promise<Solicitud | null>, [unknown]>(),
+      findUnique: jest.fn<Promise<Solicitud | null>, [unknown]>(),
+      findMany: jest.fn<Promise<Solicitud[]>, [unknown]>(),
+      create: jest.fn<Promise<Solicitud>, [unknown]>(),
+      updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+      findUniqueOrThrow: jest.fn<Promise<Solicitud>, [unknown]>(),
+      findFirstOrThrow: jest.fn<Promise<unknown>, [unknown]>(),
+    },
+    solicitud_Recurso: {
+      deleteMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+      createMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+    },
+    log_Auditoria: { create: jest.fn<Promise<Log_Auditoria>, [unknown]>() },
+    // F4: transacción interactiva; el callback recibe este mismo mock como `tx`.
+    $transaction: jest.fn<Promise<unknown>, [(tx: unknown) => Promise<unknown>]>(),
+  };
+
+  let service: SolicitudesService;
+  let reloj: RelojFijo;
+
+  beforeEach(() => {
+    prismaMock.solicitud.findFirst.mockReset();
+    prismaMock.solicitud.findUnique.mockReset();
+    prismaMock.solicitud.findMany.mockReset();
+    prismaMock.solicitud.create.mockReset();
+    prismaMock.solicitud.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.solicitud.findUniqueOrThrow.mockReset().mockResolvedValue(solicitudBase);
+    prismaMock.solicitud.findFirstOrThrow.mockReset();
+    prismaMock.solicitud_Recurso.deleteMany.mockReset().mockResolvedValue({ count: 0 });
+    prismaMock.solicitud_Recurso.createMany.mockReset().mockResolvedValue({ count: 0 });
+    prismaMock.log_Auditoria.create.mockReset();
+    prismaMock.$transaction.mockReset().mockImplementation((operacion) => operacion(prismaMock));
+    reloj = new RelojFijo(AHORA);
+    service = new SolicitudesService(prismaMock as unknown as PrismaService, reloj);
+  });
+
+  it('create() persiste como id_usuario el identificador recibido del token', async () => {
+    // Fase 7 · SE10: un servicio (sin sub-espacio); el espacio físico tiene sus propias pruebas.
+    const dto: CreateSolicitudeDto = {
+      categoria: CategoriaSolicitud.VIDEO,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+    };
+    prismaMock.solicitud.findFirst.mockResolvedValue(null);
+    prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+    await service.create(dto, 'uuid-del-token');
+
+    expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ id_usuario: 'uuid-del-token', estado: 'Recibido' }),
+      }),
+    );
+  });
+
+  describe('create() — anexo del solicitante (Fase 9 · R9-1)', () => {
+    // Objeto plano verificado con `satisfies` (no anotado con la clase): el spread de cada prueba
+    // no pierde ningún prototipo (typescript/no-misused-spread) y tsc sigue exigiendo la forma del DTO.
+    const dtoServicio = {
+      categoria: CategoriaSolicitud.PODCAST,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+    } satisfies CreateSolicitudeDto;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+    });
+
+    it('guarda el anexo que validó el pipe, tal cual', async () => {
+      const anexo = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+
+      await service.create({ ...dtoServicio, enlace_anexo: anexo }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: anexo }) }),
+      );
+    });
+
+    it('sin anexo escribe NULL explícito', async () => {
+      await service.create(dtoServicio, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: null }) }),
+      );
+    });
+
+    // Fase 9 · AN2b (J0): el anexo solo en PODCAST, VIDEO y STREAMING.
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con anexo → 400 antes de consultar o escribir', async (categoria, lugar) => {
+      const error = await rechazoDe(service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: ANEXO }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con enlace_anexo null radica normalmente (sin anexo)', async (categoria, lugar) => {
+      await service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: null as unknown as string }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: null }) }),
+      );
+    });
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'AN2b · %s con anexo radica y lo guarda',
+      async (categoria) => {
+        await service.create({ ...dtoServicio, categoria, enlace_anexo: ANEXO }, 'uuid-del-token');
+
+        expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: ANEXO }) }),
+        );
+      },
+    );
+
+    it('AN2b · la forma del sub-espacio (SE10) va antes que la del anexo', async () => {
+      const error = await rechazoDe(
+        service.create({ ...dtoServicio, categoria: CategoriaSolicitud.ESPACIOS, enlace_anexo: ANEXO }, 'uuid-del-token'),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).not.toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create() — reglas de horario integradas (Fase 3)', () => {
+    const dtoEntre = (inicio: string, fin: string): CreateSolicitudeDto => ({
+      categoria: CategoriaSolicitud.VIDEO, // Fase 7 · SE10: un servicio, sin sub-espacio
+      proposito: solicitudBase.proposito,
+      fecha_inicio: new Date(inicio),
+      fecha_fin: new Date(fin),
+    });
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+    });
+
+    /**
+     * Record sobre la unión: si se agrega un código de error y no se le da un
+     * caso aquí, tsc falla (la misma idea que la Decisión D-Q).
+     */
+    const CASO_POR_ERROR: Record<ErrorHorario, readonly [string, string]> = {
+      FIN_NO_POSTERIOR: ['2026-10-27T10:00:00-05:00', '2026-10-27T09:00:00-05:00'],
+      EN_EL_PASADO: ['2026-10-05T09:00:00-05:00', '2026-10-05T11:00:00-05:00'],
+      MULTIPLES_DIAS: ['2026-10-27T17:00:00-05:00', '2026-10-28T09:00:00-05:00'],
+      DIA_NO_HABIL: ['2026-10-12T09:00:00-05:00', '2026-10-12T10:00:00-05:00'],
+      FUERA_DE_BLOQUE: ['2026-10-27T08:00:00Z', '2026-10-27T10:00:00Z'], // 03:00–05:00 en Bogotá
+    };
+
+    it.each(Object.entries(CASO_POR_ERROR) as [ErrorHorario, readonly [string, string]][])(
+      '%s → 400 con su mensaje, SIN consultar la BD (CA-04 antes que CA-06)',
+      async (codigo, [inicio, fin]) => {
+        const intento = service.create(dtoEntre(inicio, fin), 'uuid-del-token');
+
+        await expect(intento).rejects.toBeInstanceOf(BadRequestException);
+        await expect(intento).rejects.toThrow(MENSAJES_ERROR_HORARIO[codigo]);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['martes 13: último día urgente', '2026-10-13', true],
+      ['miércoles 14: fecha mínima sin urgencia', '2026-10-14', false],
+    ])('es_urgencia según el Reloj inyectado: %s → %s', async (_caso, dia, urgente) => {
+      await service.create(
+        dtoEntre(`${dia}T14:00:00-05:00`, `${dia}T15:00:00-05:00`),
+        'uuid-del-token',
+      );
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ es_urgencia: urgente }) }),
+      );
+    });
+
+    it('consulta el Reloj UNA sola vez por petición (D-U)', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await service.create(
+        dtoEntre('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+        'uuid-del-token',
+      );
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+
+    it('el año del radicado es el de Bogotá: 31/12 a las 20:00 ya es 2027 en UTC', async () => {
+      reloj.fijar(new Date('2026-12-31T20:00:00-05:00'));
+
+      await service.create(
+        dtoEntre('2027-01-12T09:00:00-05:00', '2027-01-12T10:00:00-05:00'),
+        'uuid-del-token',
+      );
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ radicado: expect.stringMatching(/^EC-2026-\d{4}$/) }),
+        }),
+      );
+    });
+  });
+
+  describe('create() — CA-06 sin condición de carrera (Fase 4)', () => {
+    // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
+    // Fase 7 · SE10: un servicio (sin sub-espacio). El espacio físico lo cubren 4 y SE10-a a SE10-c.
+    const dtoValido: Pick<CreateSolicitudeDto, 'categoria' | 'proposito' | 'fecha_inicio' | 'fecha_fin'> = {
+      categoria: CategoriaSolicitud.VIDEO,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+    };
+    let avisos: jest.SpyInstance;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    /** Devuelve lo que rechazó la operación; si se resolviera, la prueba falla. */
+    const capturarRechazo = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('la operación debía rechazar');
+    };
+
+    /** Ejecuta create() y devuelve lo que rechazó; si se resolviera, la prueba falla. */
+    const rechazo = async (): Promise<unknown> => {
+      try {
+        await service.create(dtoValido, 'uuid-del-token');
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('create() debía rechazar');
+    };
+
+    it('1 · la consulta previa encuentra un cruce → 409 con MENSAJE_CA06 exacto, sin el radicado ajeno', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const conflicto = error as ConflictException;
+      expect(conflicto.getStatus()).toBe(409);
+      expect(conflicto.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(conflicto.getResponse())).not.toContain(solicitudBase.radicado);
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    // ── Fase 7 · 7A.4 · CA-06 por sub-espacio en la creación (ADR-007 SE4 y SE5) ──
+
+    it('4 · espacio físico con sub-espacio: la consulta previa solo mira los sub-espacios en conflicto y lo guarda', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create(
+        { ...dtoValido, categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO },
+        'uuid-del-token',
+      );
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] } }),
+        }),
+      );
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: 'CABINA_AUDIO' }) }),
+      );
+    });
+
+    it('5 · SE10: un servicio sin sub-espacio reserva el completo EXPLÍCITO y choca con los tres', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create(dtoValido, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO' }) }),
+      );
+    });
+
+    // ── Fase 7 · 7B.4 · el sub-espacio según la categoría (ADR-007 SE10) ──
+
+    it('SE10-a · espacio físico sin sub-espacio → 400 (CA-12) sin consultar la base', async () => {
+      const error = await capturarRechazo(service.create({ ...dtoValido, categoria: CategoriaSolicitud.ESPACIOS }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_DE_CREACION);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [CategoriaSolicitud.PODCAST, SubEspacio.CABINA_AUDIO],
+      [CategoriaSolicitud.VIDEO, SubEspacio.ESTUDIO_GRABACION],
+      [CategoriaSolicitud.STREAMING, SubEspacio.ESTUDIO_COMPLETO],
+      [CategoriaSolicitud.ASESORIAS, SubEspacio.CABINA_AUDIO],
+    ])('SE10-b · %s con sub-espacio (%s) → 400: no se ignora en silencio, y no se escribe nada', async (categoria, subEspacio) => {
+      const error = await capturarRechazo(service.create({ ...dtoValido, categoria, sub_espacio: subEspacio }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('SE10-c · la forma va primero: un servicio con sub-espacio Y una franja inválida responde el 400 de SE10', async () => {
+      const error = await capturarRechazo(
+        service.create(
+          {
+            ...dtoValido,
+            sub_espacio: SubEspacio.CABINA_AUDIO,
+            fecha_inicio: new Date('2026-10-27T10:00:00-05:00'),
+            fecha_fin: new Date('2026-10-27T09:00:00-05:00'),
+          },
+          'uuid-del-token',
+        ),
+      );
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
+    });
+
+    it('2 · la consulta previa solo pide el radicado (minimización)', async () => {
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+
+      await service.create(dtoValido, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { radicado: true } }),
+      );
+    });
+
+    it('3 · el motor rechaza con el 23P01 real (carrera) → el MISMO 409, sin nada del DETAIL', async () => {
+      prismaMock.solicitud.create.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const conflicto = error as ConflictException;
+      expect(conflicto.getStatus()).toBe(409);
+      expect(conflicto.message).toBe(MENSAJE_CA06);
+      const respuesta = JSON.stringify(conflicto.getResponse());
+      for (const fuga of ['23P01', 'Solicitud_sin_traslape', '2026-10-14', 'tsrange']) {
+        expect(respuesta).not.toContain(fuga);
+      }
+    });
+
+    it('4 · registra la carrera una vez, con el radicado propio y sin el mensaje del motor', async () => {
+      prismaMock.solicitud.create.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+      await rechazo();
+
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toMatch(/EC-2026-\d{4}/);
+      expect(texto).not.toContain('2026-10-14');
+      expect(texto).not.toContain('23P01');
+    });
+
+    it.each<[string, () => Error]>([
+      ['5 · 23514 real del CHECK de fechas', () => errorDesconocidoDePrisma(MENSAJE_23514_CHECK)],
+      ['6 · error genérico (p. ej. sin conexión)', () => new Error("Can't reach database server")],
+    ])('%s → se relanza la MISMA instancia (no es un 409)', async (_caso, crearError) => {
+      const original = crearError();
+      prismaMock.solicitud.create.mockRejectedValue(original);
+
+      expect(await rechazo()).toBe(original);
+      expect(avisos).not.toHaveBeenCalled();
+    });
+  });
+
+  it('findMisSolicitudes() filtra por el identificador del token (aislamiento de datos)', async () => {
+    prismaMock.solicitud.findMany.mockResolvedValue([solicitudBase]);
+
+    await service.findMisSolicitudes('uuid-del-token');
+
+    expect(prismaMock.solicitud.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id_usuario: 'uuid-del-token' } }),
+    );
+  });
+
+  describe('update() con cambio de estado (auditoría CA-09)', () => {
+    beforeEach(() => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(solicitudBase);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue({ ...solicitudBase, estado: 'Rechazado' });
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+    });
+
+    it('registra como autor el idStaff verificado, con estados y motivo correctos', async () => {
+      const dto: UpdateSolicitudeDto = {
+        estado: 'Rechazado',
+        motivo_rechazo: 'Equipo en mantenimiento preventivo',
+      };
+
+      await service.update('EC-2099-0001', dto, 'uuid-staff');
+
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'Rechazado',
+          modificado_por: 'uuid-staff',
+          motivo_rechazo: 'Equipo en mantenimiento preventivo',
+        },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('defensa en profundidad: ignora un autor inyectado aunque el DTO se haya saltado el pipe', async () => {
+      const dtoContaminado = {
+        estado: 'Validado',
+        modificado_por: 'uuid-atacante',
+      } as unknown as UpdateSolicitudeDto;
+
+      await service.update('EC-2099-0001', dtoContaminado, 'uuid-staff');
+
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ modificado_por: 'uuid-staff' }),
+      });
+      expect(JSON.stringify(prismaMock.log_Auditoria.create.mock.calls)).not.toContain(
+        'uuid-atacante',
+      );
+    });
+
+    it('Fase 8 · H2 · defensa en profundidad: una categoría que se saltó el pipe nunca se escribe', async () => {
+      const dtoContaminado = {
+        estado: 'Validado',
+        categoria: CategoriaSolicitud.PODCAST,
+      } as unknown as UpdateSolicitudeDto;
+
+      await service.update('EC-2099-0001', dtoContaminado, 'uuid-staff');
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(prismaMock.solicitud.updateMany.mock.calls)).not.toContain('PODCAST');
+    });
+  });
+
+  describe('update() — E7 · anexo revisado al aprobar T1 (Fase 9 · ADR-005 E7)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/guion/view';
+    const OTRO = 'https://drive.google.com/file/d/otro/view';
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      estado?: string;
+      anexo_revisado?: string | null;
+      motivo_rechazo?: string;
+      proposito?: string;
+      fecha_inicio?: Date;
+      fecha_fin?: Date;
+    }
+    const conCategoria = (categoria: CategoriaSolicitud, enlace_anexo: string | null = null, estado = 'Recibido'): Solicitud => ({
+      ...solicitudBase,
+      categoria,
+      enlace_anexo,
+      estado,
+    });
+    const pedir = (cuerpo: Cuerpo) => service.update('EC-2099-0001', { estado: 'Validado', ...cuerpo }, 'uuid-staff');
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    /** Las condiciones del único compare-and-set de la prueba: exige que exista antes de leerlo. */
+    const whereDelCompareAndSet = (): Record<string, unknown> => {
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      const [llamada] = prismaMock.solicitud.updateMany.mock.calls;
+      if (llamada === undefined) throw new Error('El compare-and-set no se ejecutó');
+      return (llamada[0] as { where: Record<string, unknown> }).where;
+    };
+    const PREDICADOS_DE_SIEMPRE = {
+      radicado: 'EC-2099-0001',
+      estado: 'Recibido',
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+      sub_espacio: solicitudBase.sub_espacio,
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue({ ...solicitudBase, estado: 'Validado' });
+    });
+
+    describe.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      '%s (admite anexo)',
+      (categoria) => {
+        it('sin anexo_revisado → 400 OBLIGATORIO, sin escribir', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          const error = await rechazoDe(pedir({}));
+
+          expect(error).toBeInstanceOf(BadRequestException);
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          sinEscribir();
+        });
+
+        it('null con la solicitud sin anexo → aprueba; el compare-and-set suma enlace_anexo: null', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({ anexo_revisado: null });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+          expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+        });
+
+        it('la URL vista igual a la guardada → aprueba; el compare-and-set suma esa URL', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          await pedir({ anexo_revisado: ANEXO });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: ANEXO });
+        });
+
+        it.each([
+          ['vio null pero hay anexo', null, ANEXO],
+          ['vio un anexo pero ya no hay', ANEXO, null],
+          ['vio otro anexo', OTRO, ANEXO],
+          ['la misma URL con un espacio final (comparación exacta)', `${ANEXO} `, ANEXO],
+        ])('%s → 409 CAMBIO_EN_REVISION, sin escribir ni consultar CA-06', async (_caso, visto, guardado) => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, guardado));
+
+          const error = await rechazoDe(pedir({ anexo_revisado: visto }));
+
+          expect(error).toBeInstanceOf(ConflictException);
+          expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja también lo exige (400 antes de horario y CA-06)', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          const error = await rechazoDe(
+            pedir({ fecha_inicio: new Date('2099-01-16T09:00:00-05:00'), fecha_fin: new Date('2099-01-16T10:00:00-05:00') }),
+          );
+
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja y anexo_revisado correcto aprueba con enlace_anexo en el compare-and-set', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({
+            anexo_revisado: null,
+            fecha_inicio: new Date('2099-01-16T09:00:00-05:00'),
+            fecha_fin: new Date('2099-01-16T10:00:00-05:00'),
+          });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+        });
+
+        it('otra transición (En Producción) con anexo_revisado → 400 NO_APLICA; sin él, su compare-and-set no cambia', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO, 'Validado'));
+
+          const error = await rechazoDe(pedir({ estado: 'En Producción', anexo_revisado: ANEXO }));
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+          sinEscribir();
+
+          await pedir({ estado: 'En Producción' });
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, estado: 'Validado' });
+        });
+      },
+    );
+
+    describe.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s (no admite anexo)', (categoria) => {
+      it('aprobar sin el campo funciona como siempre: compare-and-set sin enlace_anexo', async () => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        await pedir({});
+
+        expect(whereDelCompareAndSet()).toEqual(PREDICADOS_DE_SIEMPRE);
+      });
+
+      it.each([
+        ['null', null],
+        ['una URL', ANEXO],
+      ])('aprobar con anexo_revisado %s → 400 NO_APLICA, sin escribir', async (_caso, valor) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        const error = await rechazoDe(pedir({ anexo_revisado: valor }));
+
+        expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+        sinEscribir();
+      });
+    });
+
+    it('RECHAZAR (T2) con anexo_revisado → 400 NO_APLICA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(
+        pedir({ estado: 'Rechazado', motivo_rechazo: 'El guion no corresponde a la actividad.', anexo_revisado: ANEXO }),
+      );
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('un PATCH sin cambio de estado con anexo_revisado → 400 NO_APLICA (no se ignora en silencio)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Recibido', anexo_revisado: ANEXO }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('orden: una transición ilegal responde primero el 409 de la máquina', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Entregado', anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+    });
+
+    it('orden: el 409 de E7 va antes de la franja vencida (D7)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue({
+        ...conCategoria(CategoriaSolicitud.PODCAST, ANEXO),
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+      });
+
+      const error = await rechazoDe(pedir({ anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+    });
+
+    it('la categoría sale de la base, no del cuerpo: un PODCAST no se aprueba sin anexo_revisado aunque el cuerpo diga ESPACIOS', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, null));
+      const dtoContaminado = { estado: 'Validado', categoria: CategoriaSolicitud.ESPACIOS } as unknown as UpdateSolicitudeDto;
+
+      const error = await rechazoDe(service.update('EC-2099-0001', dtoContaminado, 'uuid-staff'));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      sinEscribir();
+    });
+  });
+
+  describe('editarAnexo() — el dueño cambia o retira su anexo (Fase 9 · ADR-009 AN10 a AN14)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/guion/view';
+    const OTRO = 'https://drive.google.com/file/d/otro/view';
+    const PROPIA = { radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id };
+    const DETALLE = { radicado: 'EC-2099-0001', estado: 'Recibido', logs: [] };
+    /** Lo que lee el comando (estado, categoría y anexo vigente). */
+    const lectura = (enlace_anexo: string | null, estado = 'Recibido', categoria: CategoriaSolicitud = CategoriaSolicitud.PODCAST) => ({
+      estado,
+      categoria,
+      enlace_anexo,
+    });
+    const editar = (enlace_anexo_anterior: string | null, enlace_anexo: string | null) =>
+      service.editarAnexo('EC-2099-0001', USUARIO_SOLICITANTE, { enlace_anexo_anterior, enlace_anexo });
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+    /** La primera lectura del comando (la segunda, si existe, es la proyección del dueño). */
+    const primeraLectura = (estado: ReturnType<typeof lectura> | null) =>
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(estado as unknown as Solicitud | null);
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue(DETALLE);
+    });
+
+    it('lee con la propiedad en el WHERE y solo lo mínimo', async () => {
+      primeraLectura(lectura(null));
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      await editar(null, null);
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(1, {
+        where: PROPIA,
+        select: { estado: true, categoria: true, enlace_anexo: true },
+      });
+    });
+
+    it('ajena o inexistente → el mismo 404, sin revelar nada ni escribir', async () => {
+      primeraLectura(null);
+
+      const error = await rechazoDe(editar(null, ANEXO));
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscribir();
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s → 400 (no admite anexo), sin escribir', async (categoria) => {
+      primeraLectura(lectura(null, 'Recibido', categoria));
+
+      const error = await rechazoDe(editar(null, ANEXO));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it.each(['Validado', 'En Producción', 'Pendiente de Reprogramación', 'Cancelado por el Usuario', 'Rechazado'])(
+      'en «%s» → 409 aunque el valor pedido sea el vigente (sin_cambios nunca da éxito fuera de Recibido)',
+      async (estado) => {
+        primeraLectura(lectura(ANEXO, estado));
+
+        const error = await rechazoDe(editar(ANEXO, ANEXO));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_SOLO_EN_RECIBIDO);
+        expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+        sinEscribir();
+      },
+    );
+
+    it.each([
+      ['la misma URL', ANEXO, ANEXO, ANEXO],
+      ['null y null', null, null, null],
+      ['el valor pedido ya es el vigente aunque el anterior observado difiera', OTRO, ANEXO, ANEXO],
+      ['retirar algo que ya no está, con el anterior observado desactualizado', ANEXO, null, null],
+    ])('sin_cambios: %s → 200 con la proyección del dueño, sin escritura ni evento', async (_caso, anterior, nuevo, vigente) => {
+      primeraLectura(lectura(vigente));
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      const respuesta = await editar(anterior, nuevo);
+
+      expect(respuesta).toEqual({ mensaje: MENSAJE_ANEXO_SIN_CAMBIOS, sin_cambios: true, solicitud: DETALLE });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(2, { where: PROPIA, select: SELECT_DETALLE_SOLICITANTE });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      sinEscribir();
+    });
+
+    it.each([
+      ['vio null pero hay anexo', null, ANEXO],
+      ['vio un anexo pero ya no hay', ANEXO, null],
+      ['vio otro anexo', OTRO, ANEXO],
+      ['la misma URL con un espacio final (comparación exacta)', `${ANEXO} `, ANEXO],
+    ])('%s → 409 DESACTUALIZADO, sin escribir', async (_caso, anterior, vigente) => {
+      primeraLectura(lectura(vigente));
+
+      const error = await rechazoDe(editar(anterior, 'https://drive.google.com/file/d/nuevo/view'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_DESACTUALIZADO);
+      sinEscribir();
+    });
+
+    it.each([
+      ['agregar', null, ANEXO, MENSAJE_ANEXO_ACTUALIZADO],
+      ['cambiar', ANEXO, OTRO, MENSAJE_ANEXO_ACTUALIZADO],
+      ['retirar', ANEXO, null, MENSAJE_ANEXO_RETIRADO],
+    ])('%s: compare-and-set con dueño, estado y anexo observado, y evento ENLACE_ANEXO en la misma transacción', async (_caso, vigente, nuevo, mensaje) => {
+      primeraLectura(lectura(vigente));
+
+      const respuesta = await editar(vigente, nuevo);
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id, estado: 'Recibido', enlace_anexo: vigente },
+        data: { enlace_anexo: nuevo },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'Recibido',
+          modificado_por: USUARIO_SOLICITANTE.id,
+          enlace_campo: 'ANEXO',
+          enlace_anterior: vigente,
+          enlace_nuevo: nuevo,
+        },
+      });
+      expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({ where: PROPIA, select: SELECT_DETALLE_SOLICITANTE });
+      expect(respuesta).toEqual({ mensaje, sin_cambios: false, solicitud: DETALLE });
+    });
+
+    it('compare-and-set perdido (el anexo cambió entre la lectura y la escritura) → 409, sin evento', async () => {
+      primeraLectura(lectura(ANEXO));
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazoDe(editar(ANEXO, OTRO));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('corregirEnlaceEntrega() — el Staff corrige el enlace de una entrega (Fase 9 · ADR-008 EN6 a EN12)', () => {
+    const A = 'https://youtu.be/entrega-a';
+    const B = 'https://youtu.be/entrega-b';
+    const MOTIVO = 'El enlace apuntaba a un borrador.';
+    const DETALLE = { radicado: 'EC-2099-0001', estado: 'Entregado', logs: [] };
+    const lectura = (enlace_entrega: string | null, estado = 'Entregado', categoria: CategoriaSolicitud = CategoriaSolicitud.PODCAST) =>
+      ({ estado, categoria, enlace_entrega }) as unknown as Solicitud;
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      enlace_entrega_anterior: string;
+      enlace_entrega: string;
+      motivo_correccion?: string;
+    }
+    const corregir = (cuerpo: Cuerpo, usuario = USUARIO_STAFF) => service.corregirEnlaceEntrega('EC-2099-0001', usuario, cuerpo);
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }, USUARIO_SOLICITANTE));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_CORRECCION_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('lee por radicado solo lo mínimo; inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(null);
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { estado: true, categoria: true, enlace_entrega: true },
+      });
+      sinEscribir();
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s → 400 (sin enlace que corregir)', async (categoria) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_CORRECCION_NO_APLICA);
+      sinEscribir();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción', 'Edición y postproducción', 'Cancelado por el Usuario'])(
+      'en «%s» → 409 aunque el enlace pedido sea el vigente (sin_cambios nunca da éxito fuera de Entregado)',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B, estado));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: B, enlace_entrega: B }));
+
+        expect((error as ConflictException).message).toBe(MENSAJE_CORRECCION_SOLO_EN_ENTREGADO);
+        expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+        sinEscribir();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'EN8 · %s entregado sin enlace previo → 409, sin escribir (agregarlo por primera vez queda fuera de alcance)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_ENTREGA_SIN_ENLACE_PREVIO);
+        sinEscribir();
+      },
+    );
+
+    it.each([
+      ['el mismo enlace', B],
+      ['el mismo enlace aunque el anterior observado difiera', A],
+    ])('sin_cambios: %s → 200 con la proyección del Staff, sin escribir ni guardar el motivo', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B)).mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      const respuesta = await corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B, motivo_correccion: MOTIVO });
+
+      expect(respuesta).toEqual({ mensaje: MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS, sin_cambios: true, solicitud: DETALLE });
+      expect(prismaMock.solicitud.findUnique).toHaveBeenNthCalledWith(2, {
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      sinEscribir();
+    });
+
+    it.each([
+      ['vio otro enlace', 'https://youtu.be/otro'],
+      ['el mismo enlace con un espacio final (comparación exacta)', `${A} `],
+    ])('%s → 409 DESACTUALIZADO, sin escribir', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ENLACE_DESACTUALIZADO);
+      sinEscribir();
+    });
+
+    it.each([
+      ['con motivo', { motivo_correccion: MOTIVO }, { motivo_correccion: MOTIVO }],
+      ['sin motivo (la propiedad no viaja)', {}, {}],
+    ])('corrección %s: compare-and-set sin estado y un solo evento ENLACE_ENTREGA, sin transición', async (_caso, extra, enEvento) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const respuesta = await corregir({ enlace_entrega_anterior: A, enlace_entrega: B, ...extra });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001', estado: 'Entregado', enlace_entrega: A },
+        data: { enlace_entrega: B },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Entregado',
+          estado_nuevo: 'Entregado',
+          modificado_por: USUARIO_STAFF.id,
+          enlace_campo: 'ENTREGA',
+          enlace_anterior: A,
+          enlace_nuevo: B,
+          ...enEvento,
+        },
+      });
+      // Sin motivo, la clave no llega a Prisma (ni siquiera con undefined): D8 y el criterio de J3.
+      const [escritura] = prismaMock.log_Auditoria.create.mock.calls;
+      if (escritura === undefined) throw new Error('No se escribió el evento');
+      expect(Object.keys((escritura[0] as { data: object }).data).includes('motivo_correccion')).toBe('motivo_correccion' in enEvento);
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      expect(respuesta).toMatchObject({ mensaje: MENSAJE_ENLACE_ENTREGA_CORREGIDO, sin_cambios: false });
+    });
+
+    it('compare-and-set perdido (el enlace cambió entre la lectura y la escritura) → 409, sin evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B, motivo_correccion: MOTIVO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('historialDeEnlaces() — solo el Staff (Fase 9 · ADR-012 EV7 · lote J2b)', () => {
+    const ANEXO_EVENTO = {
+      id_log: 'uuid-log-1',
+      enlace_campo: 'ANEXO',
+      enlace_anterior: null,
+      enlace_nuevo: 'https://drive.google.com/file/d/a/view',
+      motivo_correccion: null,
+      modificado_por: 'uuid-solicitante',
+      fecha_modificacion: new Date('2026-10-06T09:00:00-05:00'),
+    };
+    const ENTREGA_EVENTO = {
+      id_log: 'uuid-log-2',
+      enlace_campo: 'ENTREGA',
+      enlace_anterior: 'https://youtu.be/a',
+      enlace_nuevo: 'https://youtu.be/b',
+      motivo_correccion: 'El enlace apuntaba a un borrador.',
+      modificado_por: 'uuid-staff',
+      fecha_modificacion: new Date('2026-10-07T09:00:00-05:00'),
+    };
+    const fila = (logs: readonly object[]) =>
+      ({ radicado: 'EC-2099-0001', logs } as unknown as Solicitud);
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await service.historialDeEnlaces('EC-2099-0001', USUARIO_SOLICITANTE).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_HISTORIAL_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await service.historialDeEnlaces('EC-2099-9999', USUARIO_STAFF).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    });
+
+    it('una sola consulta: por radicado, con el filtro, el orden y las columnas del historial', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF);
+
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { radicado: true, logs: SELECT_HISTORIAL_ENLACES },
+      });
+    });
+
+    it('existente sin eventos → lista vacía', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [],
+      });
+    });
+
+    it('ANEXO y ENTREGA, en el orden de la base, con EXACTAMENTE los campos permitidos', async () => {
+      // La fila trae campos de más: la respuesta se construye campo por campo y no los deja pasar.
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        fila([
+          { ...ANEXO_EVENTO, estado_anterior: 'Recibido', radicado_solicitud: 'EC-2099-0001', motivo_rechazo: null },
+          { ...ENTREGA_EVENTO, estado_nuevo: 'Entregado', usuario: { correo: 'staff@unicesmag.edu.co' } },
+        ]),
+      );
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [ANEXO_EVENTO, ENTREGA_EVENTO],
+      });
+    });
+
+    it('fail-closed: un log sin enlace_campo (una transición) nunca se devuelve como evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([{ ...ANEXO_EVENTO, enlace_campo: null }]));
+
+      await expect(service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).rejects.toThrow(
+        'El historial de enlaces recibió un log que no es un evento de enlace.',
+      );
+    });
+  });
+
+  describe('update() — horario y CA-06 (Fase 4.5)', () => {
+    const RADICADO = 'EC-2099-0001';
+    /** Solicitud guardada: martes 27 de octubre de 2026, 9:00–10:00 en Bogotá. */
+    const guardada = (cambios: Partial<Solicitud> = {}): Solicitud => ({
+      ...solicitudBase,
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+      ...cambios,
+    });
+    let avisos: jest.SpyInstance;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada());
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(guardada());
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    const actualizar = (dto: UpdateSolicitudeDto) => service.update(RADICADO, dto, 'uuid-staff');
+
+    /** Ejecuta update() y devuelve lo que rechazó; si se resolviera, la prueba falla. */
+    const rechazo = async (dto: UpdateSolicitudeDto): Promise<unknown> => {
+      try {
+        await actualizar(dto);
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('update() debía rechazar');
+    };
+
+    /** El "data" que recibió el compare-and-set (updateMany dentro de la transacción). */
+    const dataDelUpdate = (): Record<string, unknown> =>
+      (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    // Pick (tipo de objeto) y no la clase del DTO: se usa con spread (lint: no-misused-spread).
+    const franjaDel = (
+      dia: string,
+      desde: string,
+      hasta: string,
+    ): Pick<UpdateSolicitudeDto, 'fecha_inicio' | 'fecha_fin'> => ({
+      fecha_inicio: new Date(`${dia}T${desde}:00-05:00`),
+      fecha_fin: new Date(`${dia}T${hasta}:00-05:00`),
+    });
+
+    const sinEscrituras = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    };
+
+    it('U-1 · solo fecha_inicio que invierte la franja guardada → 400 FIN_NO_POSTERIOR sin tocar la BD', async () => {
+      const error = await rechazo({ fecha_inicio: new Date('2026-10-27T11:00:00-05:00') });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJES_ERROR_HORARIO.FIN_NO_POSTERIOR);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    /** Record sobre la unión: un código de error nuevo sin caso aquí rompe tsc. */
+    const REPROGRAMACION_INVALIDA: Record<ErrorHorario, readonly [string, string]> = {
+      FIN_NO_POSTERIOR: ['2026-10-28T10:00:00-05:00', '2026-10-28T09:00:00-05:00'],
+      EN_EL_PASADO: ['2026-10-05T08:00:00-05:00', '2026-10-05T09:00:00-05:00'],
+      MULTIPLES_DIAS: ['2026-10-28T17:00:00-05:00', '2026-10-29T09:00:00-05:00'],
+      DIA_NO_HABIL: ['2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'],
+      FUERA_DE_BLOQUE: ['2026-10-28T12:30:00-05:00', '2026-10-28T13:30:00-05:00'],
+    };
+
+    it.each(Object.entries(REPROGRAMACION_INVALIDA) as [ErrorHorario, readonly [string, string]][])(
+      'U-2 · reprogramar con %s → 400 con su mensaje, sin tocar la BD',
+      async (codigo, [inicio, fin]) => {
+        const error = await rechazo({ fecha_inicio: new Date(inicio), fecha_fin: new Date(fin) });
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).message).toBe(MENSAJES_ERROR_HORARIO[codigo]);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        sinEscrituras();
+      },
+    );
+
+    it('U-3 · marcar "Entregado" (T9) una reserva PASADA solo cambia el estado (sin reglas de horario)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          estado: 'En Producción',
+          fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+        }),
+      );
+
+      const resultado = await actualizar({ estado: 'Entregado' });
+
+      expect(resultado.mensaje).toBe('Estado actualizado y auditado correctamente en la bitácora');
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
+    });
+
+    // Fase 8 · requisito 3: el camino de entrega depende de la categoría GUARDADA.
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-1 · %s: el salto directo T9 (En Producción → Entregado) → 409 de edición obligatoria, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Entregado' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_OBLIGATORIA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-2 · %s: T11 (En Producción → Edición y postproducción) se escribe y se audita, sin consultar CA-06',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        await actualizar({ estado: 'Edición y postproducción' });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Edición y postproducción' });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ estado_anterior: 'En Producción', estado_nuevo: 'Edición y postproducción' }),
+        });
+      },
+    );
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.STREAMING, CategoriaSolicitud.ASESORIAS])(
+      'E-3 · %s: T11 no le aplica → 409, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Edición y postproducción' });
+
+        await expect(peticion).rejects.toBeInstanceOf(ConflictException);
+        await expect(peticion).rejects.toThrow(MENSAJE_EDICION_NO_APLICA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO])(
+      'E-4 · %s: T12 (Edición y postproducción → Entregado) entrega sin consultar CA-06 (no vuelve a ocupar la franja)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'Edición y postproducción' }));
+
+        await actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+
+        expect(dataDelUpdate()).toEqual({ estado: 'Entregado', enlace_entrega: ENLACE });
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      },
+    );
+
+    // Fase 8 · requisito 4: el enlace del producto final, según la categoría GUARDADA.
+    const ENLACE = 'https://youtu.be/abc123';
+    /** Desde dónde se entrega cada categoría: con edición, T12; sin ella, T9. */
+    const origenDeLaEntrega = (categoria: CategoriaSolicitud): string =>
+      categoria === CategoriaSolicitud.PODCAST || categoria === CategoriaSolicitud.VIDEO ? 'Edición y postproducción' : 'En Producción';
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'EN-1 · %s: entregar sin enlace → 400 obligatorio, sin escribir',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: origenDeLaEntrega(categoria) }));
+
+        const peticion = actualizar({ estado: 'Entregado' });
+
+        await expect(peticion).rejects.toBeInstanceOf(BadRequestException);
+        await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_OBLIGATORIO);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it('EN-2 · STREAMING: T9 con enlace lo escribe junto con el estado, en el mismo compare-and-set', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.STREAMING, estado: 'En Producción' }));
+
+      await actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+
+      expect(dataDelUpdate()).toEqual({ estado: 'Entregado', enlace_entrega: ENLACE });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])(
+      'EN-3 · %s: entregar con enlace → 400 (no tiene producto en línea); sin enlace, se entrega',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado: 'En Producción' }));
+
+        const peticion = actualizar({ estado: 'Entregado', enlace_entrega: ENLACE });
+        await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_NO_APLICA);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+
+        await actualizar({ estado: 'Entregado' });
+        expect(dataDelUpdate()).toEqual({ estado: 'Entregado' });
+      },
+    );
+
+    it.each([
+      ['T11 (pasar a edición)', CategoriaSolicitud.VIDEO, 'En Producción', 'Edición y postproducción'],
+      ['T4 (iniciar producción)', CategoriaSolicitud.PODCAST, 'Validado', 'En Producción'],
+    ])('EN-4 · un enlace con %s → 400: solo acompaña una entrega', async (_caso, categoria, estado, destino) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria, estado }));
+
+      const peticion = actualizar({ estado: destino, enlace_entrega: ENLACE });
+
+      await expect(peticion).rejects.toThrow(MENSAJE_ENLACE_SOLO_AL_ENTREGAR);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('EN-5 · un enlace `null` cuenta como ausente: en VIDEO responde el 400 de obligatorio, no un 500 del motor', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.VIDEO, estado: 'Edición y postproducción' }));
+      const dto = { estado: 'Entregado', enlace_entrega: null } as unknown as UpdateSolicitudeDto;
+
+      await expect(actualizar(dto)).rejects.toThrow(MENSAJE_ENLACE_OBLIGATORIO);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('EN-6 · un PODCAST que intenta T9 recibe primero el 409 de edición obligatoria (lo que de verdad le falta)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ categoria: CategoriaSolicitud.PODCAST, estado: 'En Producción' }));
+
+      await expect(actualizar({ estado: 'Entregado' })).rejects.toThrow(MENSAJE_EDICION_OBLIGATORIA);
+    });
+
+    it.each([
+      ['martes 13: aún urgente', '2026-10-13', true],
+      ['miércoles 14: ya sin urgencia', '2026-10-14', false],
+    ])('U-4 · reprogramar al %s (%s) recalcula es_urgencia = %s (Opción A)', async (_caso, dia, urgente) => {
+      await actualizar(franjaDel(dia, '14:00', '15:00'));
+
+      expect(dataDelUpdate()).toMatchObject({ es_urgencia: urgente });
+    });
+
+    it('U-5 · la consulta previa excluye la propia solicitud y solo pide el radicado', async () => {
+      await actualizar(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ NOT: { radicado: RADICADO } }),
+          select: { radicado: true },
+        }),
+      );
+    });
+
+    it('U-6 · la reprogramación se cruza con otra → 409 MENSAJE_CA06, sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('U-7 · D1: reactivar (Rechazado → Recibido) → 409 ESTADO_FINAL, sin consultar CA-06 ni escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Rechazado' }));
+
+      const error = await rechazo({ estado: 'Recibido' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it.each([
+      ['Recibido → Validado (sigue ocupando la misma franja)', 'Recibido', 'Validado'],
+      ['Recibido → Rechazado (libera la franja)', 'Recibido', 'Rechazado'],
+      ['Validado → En Producción (sigue ocupando la misma franja)', 'Validado', 'En Producción'],
+    ])('U-8 · %s no consulta CA-06', async (_caso, desde, hacia) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
+
+      await actualizar({
+        estado: hacia,
+        ...(hacia === 'Rechazado' ? { motivo_rechazo: 'Motivo suficientemente detallado' } : {}),
+      });
+
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('U-9 · rescate atómico (fechas + Validado): el motor rechaza dentro de la transacción interactiva (23P01 real) → 409 y un aviso', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
+
+      const error = await rechazo({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      expect(texto).not.toContain('23P01');
+    });
+
+    it('U-10 · el motor rechaza la reprogramación (23P01 real en updateMany) → el MISMO 409', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
+
+      const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const respuesta = JSON.stringify((error as ConflictException).getResponse());
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      for (const fuga of ['23P01', 'Solicitud_sin_traslape', 'tsrange']) {
+        expect(respuesta).not.toContain(fuga);
+      }
+    });
+
+    it('U-11 · un 23514 real se relanza como la MISMA instancia (no es un 409)', async () => {
+      const original = errorDesconocidoDePrisma(MENSAJE_23514_CHECK);
+      prismaMock.solicitud.updateMany.mockRejectedValue(original);
+
+      expect(await rechazo(franjaDel('2026-10-28', '09:00', '10:00'))).toBe(original);
+      expect(avisos).not.toHaveBeenCalled();
+    });
+
+    it('U-12 · estado y fechas en la misma petición se aplican JUNTOS (ya no se descartan)', async () => {
+      await actualizar({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(dataDelUpdate()).toMatchObject({
+        estado: 'Validado',
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+        es_urgencia: false,
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ estado_nuevo: 'Validado', modificado_por: 'uuid-staff' }),
+      });
+    });
+
+    it('U-13 · consulta el Reloj UNA sola vez por petición (D-U)', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await actualizar(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+
+    it('U-14 · editar solo el propósito no evalúa horario, no consulta CA-06 ni toca es_urgencia', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+        }),
+      );
+
+      const resultado = await actualizar({ proposito: 'Nuevo propósito de la grabación' });
+
+      expect(resultado.mensaje).toBe('Solicitud actualizada correctamente (sin cambio de estado)');
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      expect(dataDelUpdate()).toEqual({ proposito: 'Nuevo propósito de la grabación' });
+    });
+
+    // ── Fase 5.2a · máquina de estados en el tablero del STAFF (E1–E6, D1, D2, D7, H8) ──
+
+    it('U-15 · E1: Validado → Pendiente de Reprogramación desde el tablero → 409 que remite a /reprogramacion', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Validado' }));
+
+      const error = await rechazo({ estado: 'Pendiente de Reprogramación' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_USAR_REPROGRAMACION);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['Recibido', 'Cancelado por el Usuario'],
+      ['Validado', 'Cancelado por el Usuario'],
+      ['Pendiente de Reprogramación', 'Validado'],
+      ['Pendiente de Reprogramación', 'Cancelado por el Usuario'],
+    ])('U-16 · E2/PRD §5.5: el STAFF no ejecuta transiciones del solicitante (%s → %s) → 403', async (desde, hacia) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
+
+      const error = await rechazo({ estado: hacia });
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['Recibido', 'En Producción'],
+      ['Recibido', 'Entregado'],
+      ['Validado', 'Recibido'],
+      ['En Producción', 'Validado'],
+    ])('U-17 · E2: transición no definida (%s → %s) → 409', async (desde, hacia) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: desde }));
+
+      const error = await rechazo({ estado: hacia });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'U-18 · E2/D1: desde el estado final %s no hay salida → 409 ESTADO_FINAL',
+      async (final) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: final }));
+
+        const error = await rechazo({ estado: 'Validado' });
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('U-19 · E2 fail-closed: un estado GUARDADO fuera de la máquina (dato sucio) → 409 sin tocar la fila', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Aprobado' }));
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_DESCONOCIDO);
+      sinEscrituras();
+    });
+
+    it('U-20 · E2: pedir el estado actual no es una transición (sin escrituras, sin transacción)', async () => {
+      const resultado = await actualizar({ estado: 'Recibido' });
+
+      expect(resultado.mensaje).toBe('Solicitud actualizada correctamente (sin cambio de estado)');
+      expect(resultado.solicitud).toEqual(guardada());
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it.each(['Validado', 'En Producción', 'Pendiente de Reprogramación'])(
+      'U-21 · D2: mover fechas con la solicitud en %s → 409 sin evaluar CA-06 ni escribir',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado }));
+
+        const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        sinEscrituras();
+      },
+    );
+
+    it('U-22 · D7: aprobar una franja vencida → 409 sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_FRANJA_VENCIDA);
+      sinEscrituras();
+    });
+
+    it('U-23 · D7 frontera: una franja que comienza EXACTAMENTE ahora ya no se aprueba', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({ fecha_inicio: AHORA, fecha_fin: new Date(AHORA.getTime() + 60 * 60 * 1000) }),
+      );
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_FRANJA_VENCIDA);
+    });
+
+    it('U-24 · D2+D7 rescate: franja vencida + fechas nuevas + Validado en un solo PATCH → aprobada y auditada', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      await actualizar({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(dataDelUpdate()).toMatchObject({
+        estado: 'Validado',
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-28T10:00:00-05:00'),
+      });
+    });
+
+    it('U-25 · D7 solo aplica a la aprobación: rechazar una franja vencida sigue permitido', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({
+          fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+          fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        }),
+      );
+
+      await actualizar({ estado: 'Rechazado', motivo_rechazo: 'La fecha solicitada ya pasó sin respuesta' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    const MOTIVOS_HUERFANOS: Array<[string, UpdateSolicitudeDto]> = [
+      ['con un destino distinto de Rechazado', { estado: 'Validado', motivo_rechazo: 'Motivo suficientemente detallado' }],
+      ['sin cambio de estado', { motivo_rechazo: 'Motivo suficientemente detallado' }],
+    ];
+
+    it.each(MOTIVOS_HUERFANOS)('U-26 · E5: motivo_rechazo %s → 400 sin escribir', async (_caso, dto) => {
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+    });
+
+    // Fase 6.5b · X09: E5 exige un cambio REAL a Rechazado. Repetir el estado ya guardado no es
+    // una transición (no hay log que reciba el motivo): sin esta prueba, olvidar `cambiaEstado`
+    // respondería 200 y descartaría el motivo en silencio.
+    it('U-26 · E5: motivo_rechazo repitiendo el "Rechazado" ya guardado (sin cambio real) → 400 sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Rechazado' }));
+
+      const error = await rechazo({ estado: 'Rechazado', motivo_rechazo: 'Motivo suficientemente detallado' });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('U-27 · H8/ADR-002: radicado inexistente → 404 uniforme, sin eco del radicado', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    // ── Fase 5.2b · compare-and-set en una sola transacción interactiva (D5 · F1–F4 · R1) ──
+
+    it('U-28 · F1: el CAS exige el estado, la franja y el sub-espacio GUARDADOS (exactamente lo que se validó)', async () => {
+      await actualizar({ estado: 'Validado' });
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          estado: 'Recibido',
+          fecha_inicio: guardada().fecha_inicio,
+          fecha_fin: guardada().fecha_fin,
+          sub_espacio: guardada().sub_espacio,
+        },
+        data: { estado: 'Validado' },
+      });
+    });
+
+    it('U-29 · D5/F3: carrera perdida en una transición (0 filas) → 409 propio, sin log ni recursos, con aviso', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazo({ estado: 'Validado', recursos: [{ id_recurso: 7, cantidad: 2 }] });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud_Recurso.deleteMany).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud_Recurso.createMany).not.toHaveBeenCalled();
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+    });
+
+    it('U-30 · F2/R3: una edición SIN cambio de estado también pierde la carrera con 409 (las fechas no se pisan)', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazo(franjaDel('2026-10-28', '09:00', '10:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+    });
+
+    it('U-31 · R1: los recursos se reemplazan dentro de la misma transacción, después del CAS', async () => {
+      await actualizar({ recursos: [{ id_recurso: 7, cantidad: 2 }] });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud_Recurso.deleteMany).toHaveBeenCalledWith({ where: { radicado_solicitud: RADICADO } });
+      expect(prismaMock.solicitud_Recurso.createMany).toHaveBeenCalledWith({
+        data: [{ radicado_solicitud: RADICADO, id_recurso: 7, cantidad_solicitada: 2 }],
+      });
+      expect(prismaMock.solicitud.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.solicitud_Recurso.deleteMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('U-32 · el log va después del CAS ganado y la respuesta es la fila releída dentro de la transacción', async () => {
+      const releida = guardada({ estado: 'Validado' });
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(releida);
+
+      const resultado = await actualizar({ estado: 'Validado' });
+
+      expect(prismaMock.solicitud.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.log_Auditoria.create.mock.invocationCallOrder[0],
+      );
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({ where: { radicado: RADICADO } });
+      expect(resultado.solicitud).toBe(releida);
+    });
+
+    // ── Fase 7 · 7A.2 · T10 "No atendida" por el PATCH del tablero (ADR-007 NA1 a NA3) ──
+
+    /** Guardada con la franja del 1 de octubre, 9:00–10:00: ya pasó respecto de AHORA (5 de octubre). */
+    const vencida = (cambios: Partial<Solicitud> = {}): Solicitud =>
+      guardada({
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+        ...cambios,
+      });
+
+    it('U-33 · T10: una vencida en Recibido se cierra como "No atendida", con CAS sobre lo validado y log sin motivo', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      await actualizar({ estado: 'No atendida' });
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          estado: 'Recibido',
+          fecha_inicio: vencida().fecha_inicio,
+          fecha_fin: vencida().fecha_fin,
+          sub_espacio: vencida().sub_espacio,
+        },
+        data: { estado: 'No atendida' },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'No atendida',
+          modificado_por: 'uuid-staff', // Zero Trust: del JWT, nunca del cuerpo
+          motivo_rechazo: undefined,
+        },
+      });
+    });
+
+    it('U-34 · T10 frontera: una franja que comienza EXACTAMENTE ahora ya cuenta como iniciada (mismo criterio de D7)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        guardada({ fecha_inicio: AHORA, fecha_fin: new Date(AHORA.getTime() + 60 * 60 * 1000) }),
+      );
+
+      await actualizar({ estado: 'No atendida' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('U-35 · T10 con la franja por delante → 409 propio, sin escribir', async () => {
+      // guardada(): martes 27 de octubre, posterior a AHORA.
+      const error = await rechazo({ estado: 'No atendida' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_NO_ATENDIDA_FRANJA_FUTURA);
+      sinEscrituras();
+    });
+
+    it('U-36 · T10 con fechas nuevas → 400 propio, sin consultar CA-06 ni escribir (aunque la guardada esté vencida)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_NO_ATENDIDA_SIN_FECHAS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('U-37 · T10 con motivo_rechazo → 400 de E5 (el cierre no lleva motivo libre: NA3)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', motivo_rechazo: 'Motivo suficientemente detallado' });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      sinEscrituras();
+    });
+
+    it('U-38 · T10 solo sale de Recibido: desde Validado (aunque esté vencida) → 409 TRANSICION_NO_DEFINIDA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida({ estado: 'Validado' }));
+
+      const error = await rechazo({ estado: 'No atendida' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it('U-39 · "No atendida" es final (D1): no se reactiva a Validado → 409 ESTADO_FINAL', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida({ estado: 'No atendida' }));
+
+      const error = await rechazo({ estado: 'Validado' });
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+      sinEscrituras();
+    });
+
+    // ── Fase 7 · 7A.4 · el sub-espacio en el PATCH (ADR-007 SE5 · D-4, SE7 y P-1) ──
+
+    /** Lo que recibió el log de la transición (una sola escritura por petición). */
+    const dataDelLog = (): Record<string, unknown> =>
+      (prismaMock.log_Auditoria.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('U-40 · D-4: validar ajustando el sub-espacio → CA-06 en el sub-espacio NUEVO, se escribe y queda en el log de T1', async () => {
+      // guardada(): ESTUDIO_COMPLETO (el registro histórico de 7A.3).
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.CABINA_AUDIO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] },
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO' }),
+        data: { sub_espacio: 'CABINA_AUDIO', estado: 'Validado' },
+      });
+      expect(dataDelLog()).toMatchObject({
+        estado_anterior: 'Recibido',
+        estado_nuevo: 'Validado',
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'CABINA_AUDIO',
+      });
+      // La franja no se movió: no hay franja anterior que auditar.
+      expect(dataDelLog()).not.toHaveProperty('fecha_inicio_anterior');
+    });
+
+    it('U-41 · D-4 + rescate (Q-B2): vencida, fechas nuevas y otro sub-espacio en un solo PATCH → el log guarda lo anterior de los dos', async () => {
+      const original = guardada({
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+      });
+      prismaMock.solicitud.findUnique.mockResolvedValue(original);
+
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_GRABACION, ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(dataDelUpdate()).toMatchObject({
+        estado: 'Validado',
+        sub_espacio: 'ESTUDIO_GRABACION',
+        fecha_inicio: new Date('2026-10-28T09:00:00-05:00'),
+      });
+      expect(dataDelLog()).toMatchObject({
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'ESTUDIO_GRABACION',
+        fecha_inicio_anterior: original.fecha_inicio,
+        fecha_fin_anterior: original.fecha_fin,
+      });
+    });
+
+    it('U-42 · P-1: validar con fechas nuevas pero el mismo sub-espacio → solo la franja anterior en el log', async () => {
+      await actualizar({ estado: 'Validado', ...franjaDel('2026-10-28', '09:00', '10:00') });
+
+      expect(dataDelLog()).toMatchObject({
+        fecha_inicio_anterior: guardada().fecha_inicio,
+        fecha_fin_anterior: guardada().fecha_fin,
+      });
+      expect(dataDelLog()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it('U-43 · D-4: repetir el sub-espacio actual al validar no es un cambio: sin escribirlo, sin log de sub-espacio y sin CA-06', async () => {
+      await actualizar({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_COMPLETO });
+
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(dataDelUpdate()).toEqual({ estado: 'Validado' });
+      expect(dataDelLog()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it.each<[string, UpdateSolicitudeDto]>([
+      ['sin cambio de estado', { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['al rechazar', { estado: 'Rechazado', motivo_rechazo: 'Motivo suficientemente detallado', sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['repitiendo el actual sin validar', { sub_espacio: SubEspacio.ESTUDIO_COMPLETO }],
+    ])('U-44 · D-4: el sub-espacio %s → 400 propio, sin consultar CA-06 ni escribir', async (_caso, dto) => {
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('U-45 · D-4: al cerrar como "No atendida" (T10) tampoco se admite el sub-espacio → 400', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(vencida());
+
+      const error = await rechazo({ estado: 'No atendida', sub_espacio: SubEspacio.CABINA_AUDIO });
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_SUBESPACIO_SOLO_AL_APROBAR);
+      sinEscrituras();
+    });
+
+    it.each<[string, UpdateSolicitudeDto]>([
+      ['sin cambio de estado', { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      ['junto con una transición legal (T4)', { estado: 'En Producción', sub_espacio: SubEspacio.CABINA_AUDIO }],
+    ])('U-46 · D-4: en Validado, el sub-espacio %s → 409 (solo por CA-10), antes que el 400', async (_caso, dto) => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Validado' }));
+
+      const error = await rechazo(dto);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_RECIBIDO);
+      sinEscrituras();
+    });
+
+    it('U-47 · CA-06: validar pasando al completo choca con otra reserva SIN mover la hora → 409, sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ sub_espacio: 'CABINA_AUDIO' }));
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo({ estado: 'Validado', sub_espacio: SubEspacio.ESTUDIO_COMPLETO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('U-48 · F3 en el código: rechazar moviendo fechas (D2) NO registra franja anterior (el motor solo la admite en "Validado")', async () => {
+      await actualizar({
+        estado: 'Rechazado',
+        motivo_rechazo: 'Motivo suficientemente detallado',
+        ...franjaDel('2026-10-28', '09:00', '10:00'),
+      });
+
+      expect(dataDelLog()).toMatchObject({ estado_nuevo: 'Rechazado' });
+      expect(dataDelLog()).not.toHaveProperty('fecha_inicio_anterior');
+    });
+  });
+
+  describe('cancelar() — T3/T6 del SOLICITANTE (Fase 5.3 · G1–G8)', () => {
+    const RADICADO = 'EC-2099-0001';
+    const DETALLE = { radicado: RADICADO, estado: 'Cancelado por el Usuario' };
+    const PROPIA = { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id };
+    let avisos: jest.SpyInstance;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado: 'Recibido' });
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue(DETALLE);
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    /** Ejecuta cancelar() y devuelve lo que rechazó; si se resolviera, la prueba falla. */
+    const rechazo = async (usuario = USUARIO_SOLICITANTE): Promise<unknown> => {
+      try {
+        await service.cancelar(RADICADO, usuario);
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('cancelar() debía rechazar');
+    };
+
+    const sinEscrituras = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it.each(['Recibido', 'Validado'])(
+      'C-1 · T3/T6: el dueño cancela desde %s → CAS con su id y el estado leído, log con su id, respuesta mínima',
+      async (estado) => {
+        prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado });
+
+        const resultado = await service.cancelar(RADICADO, USUARIO_SOLICITANTE);
+
+        expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+          where: { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id, estado },
+          data: { estado: 'Cancelado por el Usuario' },
+        });
+        expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+          data: {
+            radicado_solicitud: RADICADO,
+            estado_anterior: estado,
+            estado_nuevo: 'Cancelado por el Usuario',
+            modificado_por: USUARIO_SOLICITANTE.id,
+          },
+        });
+        expect(resultado).toEqual({ mensaje: MENSAJE_SOLICITUD_CANCELADA, solicitud: DETALLE });
+      },
+    );
+
+    it('C-2 · G2/G8: lectura con la propiedad DENTRO del WHERE y relectura con la proyección del solicitante', async () => {
+      await service.cancelar(RADICADO, USUARIO_SOLICITANTE);
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith({ where: PROPIA, select: SELECT_COMANDO_SOLICITANTE });
+      expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({
+        where: PROPIA,
+        select: SELECT_DETALLE_SOLICITANTE,
+      });
+    });
+
+    it('C-3 · G2/ADR-002: ajeno o inexistente → 404 uniforme, sin eco del radicado y sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('C-4 · G2: un radicado AJENO en producción responde 404, nunca el 409 que revelaría su estado', async () => {
+      // La base solo "encuentra" la fila si el WHERE NO lleva el filtro de propiedad.
+      prismaMock.solicitud.findFirst.mockImplementation((args) =>
+        Promise.resolve(
+          (args as { where: { id_usuario?: string } }).where.id_usuario === undefined
+            ? { ...solicitudBase, estado: 'En Producción' }
+            : null,
+        ),
+      );
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      sinEscrituras();
+    });
+
+    it.each(['Rechazado', 'Cancelado por el Usuario', 'Entregado'])(
+      'C-5 · G6: desde el estado final %s → 409 ESTADO_FINAL (cancelar dos veces no es idempotente en silencio)',
+      async (estado) => {
+        prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado });
+
+        const error = await rechazo();
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('C-6 · G5: en producción → 409 con su mensaje propio', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado: 'En Producción' });
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CANCELAR_EN_PRODUCCION);
+      sinEscrituras();
+    });
+
+    it('C-7 · G5: con una propuesta de reprogramación pendiente → 409 que remite a aceptarla o rechazarla', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado: 'Pendiente de Reprogramación' });
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CANCELAR_CON_PROPUESTA);
+      sinEscrituras();
+    });
+
+    it('C-8 · fail-closed: estado guardado fuera de la máquina → 409 ESTADO_DESCONOCIDO', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, estado: 'Aprobado' });
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_DESCONOCIDO);
+      sinEscrituras();
+    });
+
+    it('C-9 · defensa en profundidad: el STAFF que llegue al servicio recibe 403 (PRD §5.5)', async () => {
+      const error = await rechazo(USUARIO_STAFF);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      sinEscrituras();
+    });
+
+    it('C-10 · D5: el Staff cambió la solicitud entre la lectura y la escritura → 409 sin log y con aviso', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+    });
+  });
+
+  describe('proponerReprogramacion() — CA-10 · T5 del STAFF (Fase 5.4 · K1–K9)', () => {
+    const RADICADO = 'EC-2099-0001';
+    /** Franja OFICIAL: martes 27 de octubre de 2026, 9:00–10:00 en Bogotá. */
+    const OFICIAL = {
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+    };
+    const guardada = (cambios: Partial<Solicitud> = {}): Solicitud => ({
+      ...solicitudBase,
+      ...OFICIAL,
+      estado: 'Validado',
+      ...cambios,
+    });
+    /** K7 · Fase 6.1b: el DTO ya llega recortado y validado por el pipe. */
+    const MOTIVO = 'Mantenimiento preventivo del set de grabación';
+    /** Fase 7 · SE6: por defecto, el MISMO lugar (la guardada es ESTUDIO_COMPLETO): solo cambia la hora. */
+    const franja = (inicio: string, fin: string, subEspacio: SubEspacio = SubEspacio.ESTUDIO_COMPLETO): ProponerReprogramacionDto => ({
+      fecha_inicio: new Date(inicio),
+      fecha_fin: new Date(fin),
+      sub_espacio: subEspacio,
+      motivo: MOTIVO,
+    });
+    /** Propuesta válida: miércoles 28 de octubre de 2026, 9:00–10:00. */
+    const PROPUESTA = franja('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00');
+    const DETALLE = { radicado: RADICADO, estado: 'Pendiente de Reprogramación' };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada());
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue(DETALLE as unknown as Solicitud);
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+    });
+
+    const proponer = (dto: ProponerReprogramacionDto = PROPUESTA) =>
+      service.proponerReprogramacion(RADICADO, dto, 'uuid-staff');
+
+    /** Ejecuta proponerReprogramacion() y devuelve lo que rechazó; si se resolviera, falla. */
+    const rechazo = async (dto: ProponerReprogramacionDto = PROPUESTA): Promise<unknown> => {
+      try {
+        await proponer(dto);
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('proponerReprogramacion() debía rechazar');
+    };
+
+    const sinEscrituras = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it('R-1 · K6: Validado → Pendiente con la propuesta; franja oficial y es_urgencia intactas; log del Staff', async () => {
+      const resultado = await proponer();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: RADICADO, estado: 'Validado', ...OFICIAL, sub_espacio: 'ESTUDIO_COMPLETO' },
+        data: {
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: PROPUESTA.fecha_inicio,
+          fecha_propuesta_fin: PROPUESTA.fecha_fin,
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+        },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Validado',
+          estado_nuevo: 'Pendiente de Reprogramación',
+          modificado_por: 'uuid-staff',
+          motivo_reprogramacion: MOTIVO, // K7 · Fase 6.1b
+        },
+      });
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { radicado: RADICADO },
+        select: SELECT_DETALLE_STAFF,
+      });
+      expect(resultado).toEqual({ mensaje: MENSAJE_REPROGRAMACION_PROPUESTA, solicitud: DETALLE });
+    });
+
+    it('R-2 · H8: radicado inexistente → 404 uniforme sin escribir', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it('R-3 · K3: en Recibido → 409 que remite al PATCH (D2), sin consultar CA-06', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Recibido' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('R-4 · K3: con una propuesta ya pendiente → 409 (la solicitud está congelada)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Pendiente de Reprogramación' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_YA_PENDIENTE);
+      sinEscrituras();
+    });
+
+    it('R-5 · en producción → 409 TRANSICION_NO_DEFINIDA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'En Producción' }));
+
+      const error = await rechazo();
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+      sinEscrituras();
+    });
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'R-6 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado }));
+
+        const error = await rechazo();
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    /** Record sobre la unión: un código de error nuevo sin caso aquí rompe tsc. */
+    const PROPUESTA_INVALIDA: Record<ErrorHorario, readonly [string, string]> = {
+      FIN_NO_POSTERIOR: ['2026-10-28T10:00:00-05:00', '2026-10-28T09:00:00-05:00'],
+      EN_EL_PASADO: ['2026-10-05T08:00:00-05:00', '2026-10-05T09:00:00-05:00'],
+      MULTIPLES_DIAS: ['2026-10-28T17:00:00-05:00', '2026-10-29T09:00:00-05:00'],
+      DIA_NO_HABIL: ['2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'],
+      FUERA_DE_BLOQUE: ['2026-10-28T12:30:00-05:00', '2026-10-28T13:30:00-05:00'],
+    };
+
+    it.each(Object.entries(PROPUESTA_INVALIDA) as [ErrorHorario, readonly [string, string]][])(
+      'R-7 · K4: propuesta con %s → 400 con su mensaje, sin consultar CA-06 ni escribir',
+      async (codigo, [inicio, fin]) => {
+        const error = await rechazo(franja(inicio, fin));
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).message).toBe(MENSAJES_ERROR_HORARIO[codigo]);
+        expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+        sinEscrituras();
+      },
+    );
+
+    it('R-8 · K4 (D-2): proponer la franja Y el sub-espacio actuales → 400 sin evaluar nada más', async () => {
+      const error = await rechazo({ ...OFICIAL, sub_espacio: SubEspacio.ESTUDIO_COMPLETO, motivo: MOTIVO });
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_PROPUESTA_SIN_CAMBIOS);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      sinEscrituras();
+    });
+
+    it('R-13 · K5 · Fase 7: la consulta previa de la propuesta va en el sub-espacio PROPUESTO (aquí, el mismo: el completo)', async () => {
+      await proponer();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+    });
+
+    it('R-14 · K4 (D-2): cambiar SOLO el lugar, en la misma franja, es una reprogramación válida; CA-06 en el lugar propuesto', async () => {
+      await proponer({ ...OFICIAL, sub_espacio: SubEspacio.CABINA_AUDIO, motivo: MOTIVO });
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] },
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            estado: 'Pendiente de Reprogramación',
+            fecha_propuesta_inicio: OFICIAL.fecha_inicio,
+            fecha_propuesta_fin: OFICIAL.fecha_fin,
+            sub_espacio_propuesto: 'CABINA_AUDIO',
+          },
+        }),
+      );
+    });
+
+    it('R-15 · Q-A6: cambiar la franja Y el lugar a la vez también es válido', async () => {
+      await proponer(franja('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00', SubEspacio.ESTUDIO_GRABACION));
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fecha_propuesta_inicio: new Date('2026-10-28T09:00:00-05:00'),
+            sub_espacio_propuesto: 'ESTUDIO_GRABACION',
+          }),
+        }),
+      );
+    });
+
+    it('R-16 · K6: proponer otro lugar NO mueve el sub-espacio oficial (sigue ocupado hasta que el solicitante acepte)', async () => {
+      await proponer({ ...OFICIAL, sub_espacio: SubEspacio.CABINA_AUDIO, motivo: MOTIVO });
+
+      const data = (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).not.toHaveProperty('sub_espacio');
+      expect(data).not.toHaveProperty('fecha_inicio');
+    });
+
+    it('R-17 · K5: la propuesta de lugar choca con otra reserva → 409 de CA-06, sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo({ ...OFICIAL, sub_espacio: SubEspacio.ESTUDIO_GRABACION, motivo: MOTIVO });
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      sinEscrituras();
+    });
+
+    it('R-9 · K5: CA-06 se evalúa sobre la PROPUESTA, excluyendo la propia solicitud → 409 sin fugas', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await rechazo();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [{ fecha_inicio: { lt: PROPUESTA.fecha_fin } }, { fecha_fin: { gt: PROPUESTA.fecha_inicio } }],
+            NOT: { radicado: RADICADO },
+          }),
+        }),
+      );
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('R-10 · K2: en Recibido con una propuesta inválida gana el 409 del estado (orden de validación)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(guardada({ estado: 'Recibido' }));
+
+      const error = await rechazo(franja('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+    });
+
+    it('R-11 · D5: el solicitante canceló entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const error = await rechazo();
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+        expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('R-12 · D-U: consulta el Reloj UNA sola vez por petición', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await proponer();
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('aceptar/rechazar la reprogramación — T7/T8 del SOLICITANTE (Fase 5.5a · L1–L9)', () => {
+    const RADICADO = 'EC-2099-0001';
+    const PROPIA = { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id };
+    /** Propuesta guardada: miércoles 28 de octubre de 2026, 9:00–10:00 en Bogotá. */
+    const PROPUESTA = { inicio: new Date('2026-10-28T09:00:00-05:00'), fin: new Date('2026-10-28T10:00:00-05:00') };
+    const DETALLE = { radicado: RADICADO, estado: 'Validado' };
+    const pendiente = (cambios: Partial<Solicitud> = {}): Solicitud => ({
+      ...solicitudBase,
+      estado: 'Pendiente de Reprogramación',
+      fecha_inicio: new Date('2026-10-27T09:00:00-05:00'),
+      fecha_fin: new Date('2026-10-27T10:00:00-05:00'),
+      fecha_propuesta_inicio: PROPUESTA.inicio,
+      fecha_propuesta_fin: PROPUESTA.fin,
+      // Fase 7 · M4 (contract 7A.8): la propuesta tiene franja Y lugar; por defecto, el mismo.
+      sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+      es_urgencia: true, // L6: aceptar debe dejarla en false
+      ...cambios,
+    });
+    let avisos: jest.SpyInstance;
+
+    /** La 1.ª lectura (propiedad) devuelve `fila`; las siguientes (consulta de CA-06), null. */
+    const leer = (fila: Solicitud | null) => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(fila).mockResolvedValue(null);
+    };
+
+    beforeEach(() => {
+      leer(pendiente());
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue(DETALLE);
+      prismaMock.log_Auditoria.create.mockResolvedValue(logBase);
+      avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      avisos.mockRestore();
+    });
+
+    const aceptar = (usuario = USUARIO_SOLICITANTE) => service.aceptarReprogramacion(RADICADO, usuario);
+    const rechazar = (usuario = USUARIO_SOLICITANTE) => service.rechazarReprogramacion(RADICADO, usuario);
+
+    /** Devuelve lo que rechazó la operación; si se resolviera, la prueba falla. */
+    const capturar = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('La operación debía rechazar');
+    };
+
+    const sinEscrituras = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    // ── T7 · aceptar ──
+
+    it('A-1 · T7 · L6/L7/L8: acepta EXACTAMENTE la propuesta validada, que pasa a ser la franja oficial; urgencia en false', async () => {
+      const resultado = await aceptar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: {
+          radicado: RADICADO,
+          id_usuario: USUARIO_SOLICITANTE.id,
+          estado: 'Pendiente de Reprogramación',
+          fecha_propuesta_inicio: PROPUESTA.inicio,
+          fecha_propuesta_fin: PROPUESTA.fin,
+          // Fase 7 · L7: el lugar vigente y el propuesto (aquí, el mismo).
+          sub_espacio: 'ESTUDIO_COMPLETO',
+          sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+        },
+        data: {
+          estado: 'Validado',
+          fecha_inicio: PROPUESTA.inicio,
+          fecha_fin: PROPUESTA.fin,
+          fecha_propuesta_inicio: null,
+          fecha_propuesta_fin: null,
+          sub_espacio_propuesto: null,
+          es_urgencia: false,
+        },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Pendiente de Reprogramación',
+          estado_nuevo: 'Validado',
+          modificado_por: USUARIO_SOLICITANTE.id,
+          // Fase 7 · P-1: T7 movió la franja; el lugar no cambió (propuesta sin sub-espacio = mismo lugar).
+          fecha_inicio_anterior: new Date('2026-10-27T09:00:00-05:00'),
+          fecha_fin_anterior: new Date('2026-10-27T10:00:00-05:00'),
+        },
+      });
+      expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({
+        where: PROPIA,
+        select: SELECT_DETALLE_SOLICITANTE,
+      });
+      expect(resultado).toEqual({ mensaje: MENSAJE_REPROGRAMACION_ACEPTADA, solicitud: DETALLE });
+    });
+
+    it('A-2 · L3/L4: lee con la propiedad en el WHERE y consulta CA-06 sobre la PROPUESTA sin auto-colisión', async () => {
+      await aceptar();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(1, {
+        where: PROPIA,
+        select: SELECT_COMANDO_SOLICITANTE,
+      });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [{ fecha_inicio: { lt: PROPUESTA.fin } }, { fecha_fin: { gt: PROPUESTA.inicio } }],
+            NOT: { radicado: RADICADO },
+            // Fase 7: en el sub-espacio de la solicitud, leído con la propiedad (SELECT_COMANDO_SOLICITANTE).
+            sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_GRABACION', 'ESTUDIO_COMPLETO'] },
+          }),
+        }),
+      );
+    });
+
+    // ── Fase 7 · 7A.5 · T7 con sub-espacio (ADR-007 SE6 y SE7, P-1) ──
+
+    /** Lo que recibió el log de T7. */
+    const dataDelLogT7 = (): Record<string, unknown> =>
+      (prismaMock.log_Auditoria.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('A-14 · SE6: acepta otra franja Y otro lugar → CA-06 en el lugar propuesto, lo traslada, limpia la propuesta y lo audita', async () => {
+      leer(pendiente({ sub_espacio_propuesto: 'CABINA_AUDIO' }));
+
+      await aceptar();
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ where: expect.objectContaining({ sub_espacio: { in: ['CABINA_AUDIO', 'ESTUDIO_COMPLETO'] } }) }),
+      );
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ sub_espacio: 'ESTUDIO_COMPLETO', sub_espacio_propuesto: 'CABINA_AUDIO' }),
+        data: expect.objectContaining({ sub_espacio: 'CABINA_AUDIO', sub_espacio_propuesto: null, fecha_inicio: PROPUESTA.inicio }),
+      });
+      expect(dataDelLogT7()).toMatchObject({
+        estado_nuevo: 'Validado',
+        sub_espacio_anterior: 'ESTUDIO_COMPLETO',
+        sub_espacio_nuevo: 'CABINA_AUDIO',
+        fecha_inicio_anterior: new Date('2026-10-27T09:00:00-05:00'),
+      });
+    });
+
+    it('A-15 · Q-A6: acepta SOLO otro lugar (la misma franja) → el log tiene el sub-espacio y NO una franja anterior', async () => {
+      leer(
+        pendiente({
+          fecha_propuesta_inicio: new Date('2026-10-27T09:00:00-05:00'),
+          fecha_propuesta_fin: new Date('2026-10-27T10:00:00-05:00'),
+          sub_espacio_propuesto: 'ESTUDIO_GRABACION',
+        }),
+      );
+
+      await aceptar();
+
+      expect(dataDelLogT7()).toMatchObject({ sub_espacio_anterior: 'ESTUDIO_COMPLETO', sub_espacio_nuevo: 'ESTUDIO_GRABACION' });
+      expect(dataDelLogT7()).not.toHaveProperty('fecha_inicio_anterior');
+    });
+
+    it('A-16 · SE6: proponer el MISMO lugar explícito equivale a no cambiarlo: no se escribe sub_espacio ni se audita', async () => {
+      leer(pendiente({ sub_espacio_propuesto: 'ESTUDIO_COMPLETO' }));
+
+      await aceptar();
+
+      const data = (prismaMock.solicitud.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).not.toHaveProperty('sub_espacio');
+      expect(data).toMatchObject({ sub_espacio_propuesto: null });
+      expect(dataDelLogT7()).not.toHaveProperty('sub_espacio_anterior');
+    });
+
+    it('A-17 · L4/L5: el lugar propuesto se ocupó mientras esperaba → 409 de CA-06, sin escribir', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst
+        .mockResolvedValueOnce(pendiente({ sub_espacio_propuesto: 'ESTUDIO_GRABACION' }))
+        .mockResolvedValue({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await capturar(aceptar());
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      sinEscrituras();
+    });
+
+    it('A-3 · G2/ADR-002: ajeno o inexistente → 404 uniforme sin escribir', async () => {
+      leer(null);
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it('A-4 · G2: una propuesta AJENA pendiente responde 404, nunca un 409 que revelaría su estado', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst.mockImplementation((args) =>
+        Promise.resolve(
+          (args as { where: { id_usuario?: string } }).where.id_usuario === undefined ? pendiente() : null,
+        ),
+      );
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      sinEscrituras();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción'])(
+      'A-5 · L5: desde %s no hay propuesta que aceptar → 409',
+      async (estado) => {
+        leer(pendiente({ estado, fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+        const error = await capturar(aceptar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+        sinEscrituras();
+      },
+    );
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'A-6 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        leer(pendiente({ estado }));
+
+        const error = await capturar(aceptar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('A-7 · defensa en profundidad: el STAFF que llegue al servicio recibe 403', async () => {
+      const error = await capturar(aceptar(USUARIO_STAFF));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      sinEscrituras();
+    });
+
+    it.each([
+      ['ya inició (lunes 5, 8:00, antes de "ahora")', '2026-10-05T08:00:00-05:00', '2026-10-05T09:00:00-05:00'],
+      ['cae en sábado', '2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'],
+    ])('A-8 · L4/L5: la propuesta %s → 409 "ya no es válida", sin consultar CA-06 ni escribir', async (_caso, inicio, fin) => {
+      leer(pendiente({ fecha_propuesta_inicio: new Date(inicio), fecha_propuesta_fin: new Date(fin) }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_VENCIDA);
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+      sinEscrituras();
+    });
+
+    it('A-9 · L4: la propuesta ya fue ocupada (consulta previa) → 409 de CA-06 sin fugas', async () => {
+      prismaMock.solicitud.findFirst.mockReset();
+      prismaMock.solicitud.findFirst
+        .mockResolvedValueOnce(pendiente())
+        .mockResolvedValueOnce({ ...solicitudBase, radicado: 'EC-2099-0777' });
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify((error as ConflictException).getResponse())).not.toContain('EC-2099-0777');
+      sinEscrituras();
+    });
+
+    it('A-10 · L4: la ocupó una carrera (23P01 real del motor) → el MISMO 409 y un aviso', async () => {
+      prismaMock.solicitud.updateMany.mockRejectedValue(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CA06);
+      expect(avisos).toHaveBeenCalledTimes(1);
+    });
+
+    it('A-11 · L4 fail-closed: "Pendiente" sin propuesta guardada → 409 y aviso, sin escribir', async () => {
+      leer(pendiente({ fecha_propuesta_inicio: null }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('A-11b · C-4 fail-closed: propuesta con franja y SIN lugar → 409 y aviso, sin suponer un lugar ni escribir', async () => {
+      leer(pendiente({ sub_espacio_propuesto: null }));
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_PROPUESTA_NO_DISPONIBLE);
+      expect(avisos).toHaveBeenCalledTimes(1);
+      const [texto] = avisos.mock.calls[0] as [string];
+      expect(texto).toContain(RADICADO);
+      sinEscrituras();
+    });
+
+    it('A-12 · D5: el estado cambió entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await capturar(aceptar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('A-13 · D-U: consulta el Reloj UNA sola vez por petición', async () => {
+      const espia = jest.spyOn(reloj, 'ahora');
+
+      await aceptar();
+
+      expect(espia).toHaveBeenCalledTimes(1);
+    });
+
+    // ── T8 · rechazar ──
+
+    it('X-1 · T8 · L9: cancela, limpia la propuesta, conserva la franja oficial y no consulta CA-06', async () => {
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue({ radicado: RADICADO, estado: 'Cancelado por el Usuario' });
+
+      const resultado = await rechazar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: RADICADO, id_usuario: USUARIO_SOLICITANTE.id, estado: 'Pendiente de Reprogramación' },
+        data: {
+          estado: 'Cancelado por el Usuario',
+          fecha_propuesta_inicio: null,
+          fecha_propuesta_fin: null,
+          sub_espacio_propuesto: null,
+        },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: RADICADO,
+          estado_anterior: 'Pendiente de Reprogramación',
+          estado_nuevo: 'Cancelado por el Usuario',
+          modificado_por: USUARIO_SOLICITANTE.id,
+        },
+      });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+      expect(resultado.mensaje).toBe(MENSAJE_REPROGRAMACION_RECHAZADA);
+    });
+
+    it('X-2 · G2/ADR-002: ajeno o inexistente → 404 uniforme sin escribir', async () => {
+      leer(null);
+
+      const error = await capturar(rechazar());
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscrituras();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción'])(
+      'X-3 · L5: desde %s no hay propuesta que rechazar → 409',
+      async (estado) => {
+        leer(pendiente({ estado, fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+        const error = await capturar(rechazar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_SIN_PROPUESTA_PENDIENTE);
+        sinEscrituras();
+      },
+    );
+
+    it.each(['Entregado', 'Rechazado', 'Cancelado por el Usuario'])(
+      'X-4 · desde el estado final %s → 409 ESTADO_FINAL',
+      async (estado) => {
+        leer(pendiente({ estado }));
+
+        const error = await capturar(rechazar());
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.ESTADO_FINAL);
+        sinEscrituras();
+      },
+    );
+
+    it('X-5 · defensa en profundidad: el STAFF que llegue al servicio recibe 403', async () => {
+      const error = await capturar(rechazar(USUARIO_STAFF));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      sinEscrituras();
+    });
+
+    it('X-6 · rechazar no necesita la propuesta: "Pendiente" sin propuesta guardada igual se cancela', async () => {
+      leer(pendiente({ fecha_propuesta_inicio: null, fecha_propuesta_fin: null }));
+
+      await rechazar();
+
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('X-7 · D5: el estado cambió entre la lectura y la escritura → 409 sin log', async () => {
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await capturar(rechazar());
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findOne() — propiedad, proyección por rol y 404 uniforme (Fase 2)', () => {
+    interface ArgsFindFirst {
+      where: unknown;
+      select: unknown;
+    }
+    const argsDeFindFirst = (): ArgsFindFirst =>
+      prismaMock.solicitud.findFirst.mock.calls[0][0] as ArgsFindFirst;
+
+    it('SOLICITANTE: filtra por su id en el WHERE y usa la proyección mínima', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      await service.findOne('EC-2099-0001', USUARIO_SOLICITANTE);
+
+      const args = argsDeFindFirst();
+      expect(args.where).toEqual({ radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id });
+      expect(args.select).toBe(SELECT_DETALLE_SOLICITANTE);
+    });
+
+    it('STAFF: consulta sin filtro de propiedad y usa la proyección completa', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(solicitudBase);
+
+      await service.findOne('EC-2099-0001', USUARIO_STAFF);
+
+      const args = argsDeFindFirst();
+      expect(args.where).toEqual({ radicado: 'EC-2099-0001' });
+      expect(args.select).toBe(SELECT_DETALLE_STAFF);
+    });
+
+    it('sin resultado responde 404 con mensaje genérico, sin reflejar el radicado', async () => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+
+      const error: unknown = await service
+        .findOne('EC-2099-9999', USUARIO_SOLICITANTE)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect((error as NotFoundException).message).not.toContain('EC-2099-9999');
+    });
+
+    it('la proyección del solicitante no expone identidades internas ni inventario', () => {
+      expect(SELECT_DETALLE_SOLICITANTE).not.toHaveProperty('usuario');
+      expect(SELECT_DETALLE_SOLICITANTE).not.toHaveProperty('id_usuario');
+      expect(SELECT_DETALLE_SOLICITANTE.logs.select).not.toHaveProperty('modificado_por');
+      expect(SELECT_DETALLE_SOLICITANTE.logs.select).not.toHaveProperty('id_log');
+      expect(SELECT_DETALLE_SOLICITANTE.recursos.select.recurso.select).not.toHaveProperty(
+        'cantidad_total',
+      );
+    });
+
+    it('Fase 9 · R9-1: las dos proyecciones exponen el anexo (Staff y dueño)', () => {
+      expect(SELECT_DETALLE_SOLICITANTE).toHaveProperty('enlace_anexo', true);
+      expect(SELECT_DETALLE_STAFF).toHaveProperty('enlace_anexo', true);
+    });
+  });
+});

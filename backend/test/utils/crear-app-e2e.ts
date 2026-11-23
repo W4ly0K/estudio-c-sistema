@@ -1,0 +1,209 @@
+import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import { CategoriaSolicitud, Log_Auditoria, Recurso, RolUsuario, Solicitud } from '@prisma/client';
+import type { App } from 'supertest/types';
+import { AppModule } from '../../src/app.module';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { crearValidationPipe } from '../../src/common/pipes/crear-validation-pipe';
+import { aplicarCors } from '../../src/common/cors/configurar-cors';
+import { Reloj } from '../../src/common/reloj/reloj';
+import { RelojFijo } from './reloj-fijo';
+
+/** "Ahora" de los e2e: lunes 5 de octubre de 2026, 10:00 en Bogotá (determinista). */
+export const AHORA_E2E = new Date('2026-10-05T10:00:00-05:00');
+
+/**
+ * Levanta el AppModule REAL (APP_GUARD globales, rutas y pipe de producción)
+ * con PrismaService simulado: los e2e NUNCA tocan Supabase.
+ */
+
+export const JWT_SECRET_E2E = 'secreto-e2e-solo-pruebas';
+
+/** Origen del frontend permitido en los e2e (el servidor de desarrollo de Vite). */
+export const ORIGEN_FRONTEND_E2E = 'http://localhost:5173';
+
+export interface UsuarioBD {
+  id_usuario: string;
+  nombre: string;
+  correo: string;
+  rol: RolUsuario;
+}
+
+// "Base de datos" de usuarios. 'uuid-borrado' NO existe a propósito.
+export const USUARIOS_BD: Readonly<Record<string, UsuarioBD>> = {
+  'uuid-staff': { id_usuario: 'uuid-staff', nombre: 'Staff Estudio C', correo: 'staff@unicesmag.edu.co', rol: RolUsuario.STAFF },
+  'uuid-solicitante': {
+    id_usuario: 'uuid-solicitante',
+    nombre: 'Estudiante de Prueba',
+    correo: 'estudiante@unicesmag.edu.co',
+    rol: RolUsuario.SOLICITANTE,
+  },
+  // Fue STAFF (así lo dice su token), pero en la BD ya es SOLICITANTE
+  'uuid-degradado': {
+    id_usuario: 'uuid-degradado',
+    nombre: 'Ex Staff',
+    correo: 'exstaff@unicesmag.edu.co',
+    rol: RolUsuario.SOLICITANTE,
+  },
+};
+
+export const SOLICITUD_E2E: Solicitud = {
+  radicado: 'EC-2099-0001',
+  id_usuario: 'uuid-solicitante',
+  categoria: CategoriaSolicitud.ESPACIOS,
+  proposito: 'Grabación de clase magistral',
+  num_participantes: null,
+  fecha_inicio: new Date('2099-01-15T09:00:00-05:00'),
+  fecha_fin: new Date('2099-01-15T10:00:00-05:00'),
+  fecha_propuesta_inicio: null,
+  fecha_propuesta_fin: null,
+  estado: 'Recibido',
+  es_urgencia: false,
+  // Fase 7 · 7A.3: lo que la base guarda hoy por el DEFAULT temporal (ADR-007 SE1).
+  sub_espacio: 'ESTUDIO_COMPLETO',
+  sub_espacio_propuesto: null,
+  enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
+};
+
+/** Solicitud de OTRO usuario: la que el solicitante de prueba jamás debe poder leer. */
+export const SOLICITUD_AJENA_E2E: Solicitud = {
+  ...SOLICITUD_E2E,
+  radicado: 'EC-2099-0002',
+  id_usuario: 'uuid-otro',
+};
+
+const SOLICITUDES_BD: readonly Solicitud[] = [SOLICITUD_E2E, SOLICITUD_AJENA_E2E];
+
+interface ArgsFindFirstSolicitud {
+  where?: { radicado?: string; id_usuario?: string };
+}
+
+const LOG_E2E: Log_Auditoria = {
+  id_log: 'uuid-log',
+  radicado_solicitud: 'EC-2099-0001',
+  estado_anterior: 'Recibido',
+  estado_nuevo: 'Validado',
+  modificado_por: 'uuid-staff',
+  fecha_modificacion: new Date(),
+  motivo_rechazo: null,
+  // ... las demás propiedades
+  motivo_reprogramacion: null,
+  // Fase 7 · 7A.3: auditoría del ajuste de sub-espacio y de franja (ADR-007 SE7 y P-1).
+  sub_espacio_anterior: null,
+  sub_espacio_nuevo: null,
+  fecha_inicio_anterior: null,
+  fecha_fin_anterior: null,
+  // Fase 9 (ADR-012): una transición no es un evento de enlace; los cuatro campos van en null.
+  enlace_campo: null,
+  enlace_anterior: null,
+  enlace_nuevo: null,
+  motivo_correccion: null,
+};
+
+interface ArgsCreateSolicitud {
+  data: Pick<Solicitud, 'radicado' | 'fecha_inicio' | 'fecha_fin' | 'es_urgencia'>;
+}
+
+interface ArgsFindUniqueUsuario {
+  where: { id_usuario: string };
+}
+
+function crearPrismaMock() {
+  const mock = {
+    usuario: {
+      findUnique: jest.fn(
+        async (args: ArgsFindUniqueUsuario): Promise<UsuarioBD | null> =>
+          USUARIOS_BD[args.where.id_usuario] ?? null,
+      ),
+      findMany: jest.fn(async (): Promise<UsuarioBD[]> => Object.values(USUARIOS_BD)),
+    },
+    recurso: {
+      findMany: jest.fn(async (): Promise<Recurso[]> => []),
+    },
+    solicitud: {
+      findMany: jest.fn(async (): Promise<Solicitud[]> => [SOLICITUD_E2E]),
+      // Filtra SOLO por lo que el servicio le pide: si el servicio olvidara el filtro de
+      // propiedad, devolvería la solicitud ajena y los e2e de Fase 2 fallarían.
+      findFirst: jest.fn(async (args: ArgsFindFirstSolicitud): Promise<Solicitud | null> => {
+        const filtro = args.where ?? {};
+        if (filtro.radicado === undefined) return null; // consulta anti-traslape CA-06: sin conflictos
+        return (
+          SOLICITUDES_BD.find(
+            (s) =>
+              s.radicado === filtro.radicado &&
+              (filtro.id_usuario === undefined || s.id_usuario === filtro.id_usuario),
+          ) ?? null
+        );
+      }),
+      findUnique: jest.fn(async (): Promise<Solicitud | null> => SOLICITUD_E2E),
+      // Devuelve lo que el servicio decidió persistir (radicado, fechas y urgencia)
+      create: jest.fn(
+        async (args: ArgsCreateSolicitud): Promise<Solicitud> => ({
+          ...SOLICITUD_E2E,
+          radicado: args.data.radicado,
+          fecha_inicio: args.data.fecha_inicio,
+          fecha_fin: args.data.fecha_fin,
+          es_urgencia: args.data.es_urgencia,
+        }),
+      ),
+      // Compare-and-set de update() (Fase 5.2b): por defecto gana (1 fila).
+      updateMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 1 })),
+      // Relectura dentro de la transacción: lo que el servicio devuelve tras escribir.
+      findUniqueOrThrow: jest.fn(async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Validado' })),
+      // Relectura con proyección dentro de la transacción (cancelar, Fase 5.3).
+      findFirstOrThrow: jest.fn(
+        async (): Promise<Solicitud> => ({ ...SOLICITUD_E2E, estado: 'Cancelado por el Usuario' }),
+      ),
+    },
+    solicitud_Recurso: {
+      deleteMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 0 })),
+      createMany: jest.fn(async (): Promise<{ count: number }> => ({ count: 0 })),
+    },
+    log_Auditoria: {
+      create: jest.fn(async (): Promise<Log_Auditoria> => LOG_E2E),
+    },
+    // Transacción interactiva: el callback recibe este mismo mock como `tx`.
+    $transaction: jest.fn(
+      async (operacion: (tx: unknown) => Promise<unknown>): Promise<unknown> => operacion(mock),
+    ),
+  };
+  return mock;
+}
+
+export type PrismaMockE2E = ReturnType<typeof crearPrismaMock>;
+
+export interface ContextoE2E {
+  app: INestApplication<App>;
+  prisma: PrismaMockE2E;
+  /** Reloj de la app: fijo en AHORA_E2E; cada suite puede moverlo con fijar(). */
+  reloj: RelojFijo;
+  /** Firma un JWT válido con el JwtService REAL del módulo (mismo secreto y expiración). */
+  firmar: (sub: string, rol: RolUsuario) => string;
+}
+
+export async function crearAppE2E(): Promise<ContextoE2E> {
+  process.env.JWT_SECRET = JWT_SECRET_E2E;
+  const prisma = crearPrismaMock();
+  const reloj = new RelojFijo(AHORA_E2E);
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PrismaService)
+    .useValue(prisma)
+    .overrideProvider(Reloj)
+    .useValue(reloj)
+    .compile();
+
+  const app = moduleRef.createNestApplication<INestApplication<App>>();
+  app.useGlobalPipes(crearValidationPipe()); // Misma configuración que main.ts (Decisión F)
+  aplicarCors(app, ORIGEN_FRONTEND_E2E); // Misma función que main.ts (Fase 6.2 · DS2)
+  await app.init();
+
+  const jwt = moduleRef.get(JwtService);
+  const firmar = (sub: string, rol: RolUsuario): string =>
+    jwt.sign({ sub, correo: `${sub}@unicesmag.edu.co`, rol });
+
+  return { app, prisma, reloj, firmar };
+}

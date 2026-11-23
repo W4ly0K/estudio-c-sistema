@@ -1,0 +1,56 @@
+import type { Categoria } from './esquemas'
+import type { IdTransicion } from './maquina-estados'
+
+/**
+ * Copia, SOLO PARA LA VISTA, de backend/src/solicitudes/reglas/categorias.ts (Fase 8 ·
+ * requisito 3). La vista la usa para no ofrecer un paso que el servidor rechazaría; la
+ * legalidad la decide el servidor. contrato.test.ts compara esta copia con la del backend.
+ */
+export const PASA_POR_EDICION: Readonly<Record<Categoria, boolean>> = {
+  PODCAST: true,
+  VIDEO: true,
+  ESPACIOS: false,
+  STREAMING: false,
+  ASESORIAS: false,
+}
+
+/** Fase 8 · requisito 4: la entrega exige el enlace del producto final (enlaceAlEntregar). */
+export const REQUIERE_ENLACE: Readonly<Record<Categoria, boolean>> = {
+  PODCAST: true,
+  VIDEO: true,
+  ESPACIOS: false,
+  STREAMING: true,
+  ASESORIAS: false,
+}
+
+/**
+ * Fase 9 · AN2b (ADR-009 §2.7): las categorías que admiten anexo (admiteAnexo). En T1 de estas
+ * categorías el Staff confirma el anexo que vio (ADR-005 E7); en las demás, anexo_revisado no viaja.
+ * K2: literal (`as const`) para derivar CategoriaConAnexo; los valores no cambian.
+ */
+export const ADMITE_ANEXO = {
+  PODCAST: true,
+  VIDEO: true,
+  ESPACIOS: false,
+  STREAMING: true,
+  ASESORIAS: false,
+} as const satisfies Readonly<Record<Categoria, boolean>>
+
+/** Fase 9 · K2: las categorías con anexo, DERIVADAS de ADMITE_ANEXO (una sola fuente). */
+export type CategoriaConAnexo = { [C in Categoria]: (typeof ADMITE_ANEXO)[C] extends true ? C : never }[Categoria]
+
+/** Fase 9 · K2: la misma regla como guarda de tipo, para que el cuerpo de B2 se arme por rama. */
+export function admiteAnexo(categoria: Categoria): categoria is CategoriaConAnexo {
+  return ADMITE_ANEXO[categoria]
+}
+
+export const TRANSICIONES_SIN_EDICION: readonly IdTransicion[] = ['T9']
+export const TRANSICIONES_CON_EDICION: readonly IdTransicion[] = ['T11', 'T12']
+
+/** La máquina dice si el paso existe; la categoría, si le aplica (igual que en el backend). */
+export function transicionAplicaALaCategoria(id: IdTransicion, categoria: Categoria): boolean {
+  const pasaPorEdicion = PASA_POR_EDICION[categoria]
+  if (TRANSICIONES_CON_EDICION.includes(id)) return pasaPorEdicion
+  if (TRANSICIONES_SIN_EDICION.includes(id)) return !pasaPorEdicion
+  return true
+}

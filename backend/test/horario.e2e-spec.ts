@@ -1,0 +1,511 @@
+import { INestApplication, Logger } from '@nestjs/common';
+import { CategoriaSolicitud, RolUsuario, SubEspacio } from '@prisma/client';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
+import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
+import { MENSAJE_MOTIVO_REPROGRAMACION, MENSAJE_SUBESPACIO_PROPUESTO } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
+import { MENSAJE_ENLACE_ENTREGA, MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
+import { ENLACE_MAXIMO } from '../src/common/validadores/enlace-seguro.decorator';
+import { MENSAJE_SUBESPACIO_DE_CREACION } from '../src/solicitudes/dto/create-solicitude.dto';
+import {
+  MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_MOTIVO_SOLO_EN_RECHAZO,
+  MENSAJE_REPROGRAMACION_PROPUESTA,
+  MENSAJE_REPROGRAMAR_EN_RECIBIDO,
+  MENSAJE_SOLICITUD_NO_ENCONTRADA,
+  MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
+  MENSAJE_USAR_REPROGRAMACION,
+  MENSAJES_TRANSICION_INVALIDA,
+  SolicitudesService,
+} from '../src/solicitudes/solicitudes.service';
+import { enlaceConEmojisDeUnidadesUtf16, enlaceConSelectoresDeVariacion } from './utils/casos-enlace';
+import {
+  crearAppE2E,
+  PrismaMockE2E,
+  SOLICITUD_AJENA_E2E,
+  SOLICITUD_E2E,
+} from './utils/crear-app-e2e';
+import {
+  errorDesconocidoDePrisma,
+  MENSAJE_23514_CHECK,
+  MENSAJE_23P01_CREATE,
+  MENSAJE_23P01_TX_INTERACTIVA,
+} from './utils/errores-postgres.fixture';
+
+/**
+ * Reglas de horario por HTTP real (Fase 3): ValidationPipe → controlador →
+ * servicio → evaluarHorario, con el Reloj fijado por crearAppE2E en el lunes
+ * 5 de octubre de 2026 a las 10:00 (Bogotá). Fecha mínima sin urgencia: 14.
+ */
+describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
+  let app: INestApplication<App>;
+  let prisma: PrismaMockE2E;
+  let token: string;
+  let tokenStaff: string;
+
+  // Fase 7 · SE10: un servicio (sin sub-espacio). El espacio físico tiene su bloque (45).
+  const cuerpo = (fecha_inicio: string, fecha_fin: string) => ({
+    categoria: CategoriaSolicitud.VIDEO,
+    proposito: 'Grabación de clase magistral',
+    fecha_inicio,
+    fecha_fin,
+  });
+
+  const radicar = (body: object) =>
+    request(app.getHttpServer())
+      .post('/solicitudes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+
+  beforeAll(async () => {
+    let firmar: (sub: string, rol: RolUsuario) => string;
+    ({ app, prisma, firmar } = await crearAppE2E());
+    token = firmar('uuid-solicitante', RolUsuario.SOLICITANTE);
+    tokenStaff = firmar('uuid-staff', RolUsuario.STAFF);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('19. franja válida y con poca anticipación → 201 con es_urgencia = true', async () => {
+    const respuesta = await radicar(
+      cuerpo('2026-10-13T14:00:00-05:00', '2026-10-13T15:00:00-05:00'),
+    ).expect(201);
+
+    expect(respuesta.body).toMatchObject({ es_urgencia: true });
+    expect(prisma.solicitud.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('20. "08:00Z" son las 03:00 en Bogotá → 400 CA-04 sin consultar la BD', async () => {
+    const respuesta = await radicar(
+      cuerpo('2026-10-27T08:00:00Z', '2026-10-27T10:00:00Z'),
+    ).expect(400);
+
+    expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.FUERA_DE_BLOQUE);
+    expect(prisma.solicitud.findFirst).not.toHaveBeenCalled(); // CA-06 no se ejecuta
+    expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  it('21. fecha sin zona horaria → 400 en el pipe (D-W)', async () => {
+    const respuesta = await radicar(
+      cuerpo('2026-10-27T08:00:00', '2026-10-27T10:00:00'),
+    ).expect(400);
+
+    expect(JSON.stringify(respuesta.body)).toContain(
+      'fecha_inicio debe ser una fecha ISO 8601 real con zona horaria explícita',
+    );
+    expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  it('22. fecha pasada bien formada → 400 EN_EL_PASADO (la puerta del @MinDate sigue cerrada)', async () => {
+    const respuesta = await radicar(
+      cuerpo('2026-10-01T09:00:00-05:00', '2026-10-01T10:00:00-05:00'),
+    ).expect(400);
+
+    expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.EN_EL_PASADO);
+    expect(prisma.solicitud.create).not.toHaveBeenCalled();
+  });
+
+  describe('CA-06 · anti-traslape sin condición de carrera (Fase 4)', () => {
+    const franjaValida = () => cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00');
+
+    it('23. la consulta previa encuentra un cruce → 409 con el mensaje mínimo', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await radicar(franjaValida()).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('24. el motor rechaza con el 23P01 real (carrera) → el MISMO 409, sin datos del motor', async () => {
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.create.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_CREATE));
+
+        const respuesta = await radicar(franjaValida()).expect(409);
+
+        expect(respuesta.body.message).toBe(MENSAJE_CA06);
+        const cuerpoRespuesta = JSON.stringify(respuesta.body);
+        for (const fuga of ['23P01', 'Solicitud_sin_traslape', '2026-10-14']) {
+          expect(cuerpoRespuesta).not.toContain(fuga);
+        }
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('25. un 23514 no se disfraza de CA-06 → 500 genérico, sin el DETAIL', async () => {
+      const errores = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.create.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23514_CHECK));
+
+        const respuesta = await radicar(franjaValida()).expect(500);
+
+        expect(respuesta.body).toEqual({ statusCode: 500, message: 'Internal server error' });
+      } finally {
+        errores.mockRestore();
+      }
+    });
+  });
+
+  describe('PATCH /solicitudes/:radicado · CA-04 y CA-06 al reprogramar (Fase 4.5)', () => {
+    // Fase 9 · H8b-2 · Más de ENLACE_MAXIMO puntos de código con un selector de variación (el pipe rechaza solo por la
+    // longitud) y emojis que superan ENLACE_MAXIMO unidades UTF-16 sin superar los puntos de código (se acepta).
+    const SELECTORES_FUERA_DEL_LIMITE = [
+      ['U+FE0F', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0F')],
+      ['U+FE0E', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0E')],
+    ] as const;
+    const EMOJIS_DENTRO_DEL_LIMITE = enlaceConEmojisDeUnidadesUtf16(ENLACE_MAXIMO + 2);
+
+    const editar = (body: object) =>
+      request(app.getHttpServer())
+        .patch(`/solicitudes/${SOLICITUD_E2E.radicado}`)
+        .set('Authorization', `Bearer ${tokenStaff}`)
+        .send(body);
+
+    // Fase 8 · H2: el PATCH no admite la categoría (no cambia después de radicar). Para mover la
+    // franja se envían la franja y, como hasta ahora, el propósito; nunca el cuerpo de radicar.
+    const franjaNueva = (fecha_inicio: string, fecha_fin: string) => ({
+      proposito: 'Grabación de clase magistral',
+      fecha_inicio,
+      fecha_fin,
+    });
+
+    it.each([
+      ['javascript:', 'javascript:alert(1)'],
+      ['HTTPS en mayúsculas', 'HTTPS://youtu.be/abc123'],
+      ['http', 'http://youtu.be/abc123'],
+    ])('29b. Fase 8 · un enlace %s → 400 del pipe, sin leer ni escribir', async (_caso, enlace) => {
+      const respuesta = await editar({ estado: 'Entregado', enlace_entrega: enlace }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain('El enlace del producto final debe empezar por https://');
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    // Fase 9 · H8b-2 · el pipe rechaza por longitud ANTES del servicio: ni el servicio ni Prisma se invocan.
+    it.each(SELECTORES_FUERA_DEL_LIMITE)(
+      `29c. H8b · un enlace con selector %s de ${ENLACE_MAXIMO + 1} puntos de código → 400 del pipe, sin llegar al servicio`,
+      async (_selector, enlace) => {
+        const servicio = jest.spyOn(SolicitudesService.prototype, 'update');
+        try {
+          const respuesta = await editar({ estado: 'Entregado', enlace_entrega: enlace }).expect(400);
+
+          expect(respuesta.body.message).toEqual([MENSAJE_ENLACE_ENTREGA]);
+          expect(servicio).not.toHaveBeenCalled();
+          expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+          expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+          expect(prisma.$transaction).not.toHaveBeenCalled();
+        } finally {
+          servicio.mockRestore();
+        }
+      },
+    );
+
+    it(`29d. H8b · T12 de un VIDEO con un enlace de emojis (más de ${ENLACE_MAXIMO} unidades UTF-16) → 200 y se escribe tal cual`, async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({
+        ...SOLICITUD_E2E,
+        categoria: CategoriaSolicitud.VIDEO,
+        estado: 'Edición y postproducción',
+        fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+      });
+
+      await editar({ estado: 'Entregado', enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE }).expect(200);
+
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: 'Entregado', enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE }) }),
+      );
+    });
+
+    it('26. mover la reserva a un sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
+      const respuesta = await editar(
+        franjaNueva('2026-10-31T09:00:00-05:00', '2026-10-31T10:00:00-05:00'),
+      ).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('27. la reprogramación se cruza con otra → 409 con el mensaje mínimo', async () => {
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await editar(
+        franjaNueva('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00'),
+      ).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('28. rescate atómico (fechas + Validado): el motor rechaza en $transaction (23P01 real) → el MISMO 409', async () => {
+      const avisos = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        prisma.solicitud.updateMany.mockRejectedValueOnce(errorDesconocidoDePrisma(MENSAJE_23P01_TX_INTERACTIVA));
+
+        const respuesta = await editar({
+          estado: 'Validado',
+          ...franjaNueva('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+        }).expect(409);
+
+        expect(respuesta.body.message).toBe(MENSAJE_CA06);
+        expect(JSON.stringify(respuesta.body)).not.toContain('23P01');
+      } finally {
+        avisos.mockRestore();
+      }
+    });
+
+    it('29. marcar "Entregado" (T9) una reserva que ya ocurrió → 200 (sin reglas de horario)', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({
+        ...SOLICITUD_E2E,
+        estado: 'En Producción',
+        fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+      });
+
+      await editar({ estado: 'Entregado' }).expect(200);
+
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('30. PRD §5.5: el STAFF no puede cancelar en nombre del usuario → 403 sin escribir', async () => {
+      const respuesta = await editar({ estado: 'Cancelado por el Usuario' }).expect(403);
+
+      expect(respuesta.body.message).toBe(MENSAJES_TRANSICION_INVALIDA.ROL_NO_AUTORIZADO);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('31. E1: proponer reprogramación desde el tablero → 409 que remite a /reprogramacion', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+      const respuesta = await editar({ estado: 'Pendiente de Reprogramación' }).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_USAR_REPROGRAMACION);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('32. D2: mover las fechas de una solicitud Validada → 409 sin consultar CA-06', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+      const respuesta = await editar(
+        franjaNueva('2026-10-28T09:00:00-05:00', '2026-10-28T10:00:00-05:00'),
+      ).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_FECHAS_SOLO_EN_RECIBIDO);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('33. H8: radicado inexistente → 404 uniforme', async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce(null);
+
+      const respuesta = await editar({ estado: 'Validado' }).expect(404);
+
+      expect(respuesta.body.message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    });
+  });
+
+  describe('POST /solicitudes/:radicado/reprogramacion · CA-10 (Fase 5.4 · K1–K9)', () => {
+    const MOTIVO = 'Mantenimiento preventivo del set de grabación';
+    const PROPUESTA = {
+      fecha_inicio: '2026-10-28T09:00:00-05:00',
+      fecha_fin: '2026-10-28T10:00:00-05:00',
+      sub_espacio: 'ESTUDIO_COMPLETO', // Fase 7 · SE6: el mismo lugar (solo cambia la hora)
+      motivo: MOTIVO,
+    };
+    const proponer = (body: object, bearer: string = tokenStaff) =>
+      request(app.getHttpServer())
+        .post(`/solicitudes/${SOLICITUD_E2E.radicado}/reprogramacion`)
+        .set('Authorization', `Bearer ${bearer}`)
+        .send(body);
+    const validada = () => prisma.solicitud.findUnique.mockResolvedValueOnce({ ...SOLICITUD_E2E, estado: 'Validado' });
+
+    it('34. SOLICITANTE → 403: solo el Staff propone reprogramaciones', async () => {
+      await proponer(PROPUESTA, token).expect(403);
+
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('35. STAFF + Validada → 200: queda Pendiente con la propuesta y el log del token', async () => {
+      validada();
+
+      const respuesta = await proponer(PROPUESTA).expect(200);
+
+      expect(respuesta.body.mensaje).toBe(MENSAJE_REPROGRAMACION_PROPUESTA);
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            estado: 'Pendiente de Reprogramación',
+            fecha_propuesta_inicio: new Date(PROPUESTA.fecha_inicio),
+            fecha_propuesta_fin: new Date(PROPUESTA.fecha_fin),
+            sub_espacio_propuesto: 'ESTUDIO_COMPLETO',
+          },
+        }),
+      );
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estado_nuevo: 'Pendiente de Reprogramación',
+          modificado_por: 'uuid-staff',
+          motivo_reprogramacion: MOTIVO, // K7 · Fase 6.1b
+        }),
+      });
+    });
+
+    it('36. propuesta en sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {
+      validada();
+
+      const respuesta = await proponer({
+        fecha_inicio: '2026-10-31T09:00:00-05:00',
+        fecha_fin: '2026-10-31T10:00:00-05:00',
+        sub_espacio: 'ESTUDIO_COMPLETO',
+        motivo: MOTIVO,
+      }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJES_ERROR_HORARIO.DIA_NO_HABIL);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('37. K3: en Recibido → 409 que remite al PATCH', async () => {
+      const respuesta = await proponer(PROPUESTA).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_REPROGRAMAR_EN_RECIBIDO);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('38. K5: la propuesta choca con otra reserva → 409 con el mensaje mínimo', async () => {
+      validada();
+      prisma.solicitud.findFirst.mockResolvedValueOnce(SOLICITUD_AJENA_E2E);
+
+      const respuesta = await proponer(PROPUESTA).expect(409);
+
+      expect(respuesta.body.message).toBe(MENSAJE_CA06);
+      expect(JSON.stringify(respuesta.body)).not.toContain(SOLICITUD_AJENA_E2E.radicado);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('39. K1: un estado colado en el comando → 400 del pipe, sin llegar al servicio', async () => {
+      const respuesta = await proponer({ ...PROPUESTA, estado: 'Validado' }).expect(400);
+
+      expect(JSON.stringify(respuesta.body)).toContain('property estado should not exist');
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('40. K7: sin motivo → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async () => {
+      const sinMotivo = { fecha_inicio: PROPUESTA.fecha_inicio, fecha_fin: PROPUESTA.fecha_fin, sub_espacio: PROPUESTA.sub_espacio };
+
+      const respuesta = await proponer(sinMotivo).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_REPROGRAMACION]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['sin sub_espacio', undefined],
+      ['con un sub_espacio inventado', 'SALA_3'],
+    ])('40b. Fase 7 · SE6: %s → 400 del pipe con su mensaje, sin llegar al servicio', async (_caso, subEspacio) => {
+      const respuesta = await proponer({ ...PROPUESTA, sub_espacio: subEspacio }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_SUBESPACIO_PROPUESTO]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /solicitudes · el sub-espacio según la categoría (Fase 7 · 7B.4 · ADR-007 SE10)', () => {
+    const franja = cuerpo('2026-10-27T09:00:00-05:00', '2026-10-27T10:00:00-05:00');
+
+    it('45a. espacio físico sin sub-espacio → 400 del pipe con el mensaje de CA-12, sin llegar al servicio', async () => {
+      const respuesta = await radicar({ ...franja, categoria: CategoriaSolicitud.ESPACIOS }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_SUBESPACIO_DE_CREACION]);
+      expect(prisma.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('45b. espacio físico con la cabina → 201 y se guarda la cabina', async () => {
+      await radicar({ ...franja, categoria: CategoriaSolicitud.ESPACIOS, sub_espacio: SubEspacio.CABINA_AUDIO }).expect(201);
+
+      expect(prisma.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: SubEspacio.CABINA_AUDIO }) }),
+      );
+    });
+
+    it('45c. un servicio CON sub-espacio → 400 del servicio (no se ignora), sin escribir', async () => {
+      const respuesta = await radicar({ ...franja, categoria: CategoriaSolicitud.PODCAST, sub_espacio: SubEspacio.CABINA_AUDIO }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS);
+      expect(prisma.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it('45d. un servicio sin sub-espacio → 201 y el Estudio C reserva el completo', async () => {
+      await radicar({ ...franja, categoria: CategoriaSolicitud.PODCAST }).expect(201);
+
+      expect(prisma.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sub_espacio: SubEspacio.ESTUDIO_COMPLETO }) }),
+      );
+    });
+  });
+
+  describe('PATCH /solicitudes/:radicado · T2 con motivo de rechazo (Fase 6.5b · DE1)', () => {
+    /** autorizacion = null: sin cabecera (401). Por defecto, el Staff. */
+    const rechazar = (body: object, autorizacion: string | null = `Bearer ${tokenStaff}`) => {
+      const peticion = request(app.getHttpServer()).patch(`/solicitudes/${SOLICITUD_E2E.radicado}`);
+      return autorizacion === null ? peticion.send(body) : peticion.set('Authorization', autorizacion).send(body);
+    };
+
+    it.each([
+      ['solo espacios (antes pasaba @MinLength)', ' '.repeat(12)],
+      ['de 5 emojis (10 unidades de JavaScript: antes llegaba al CHECK y respondía 500)', '🎬'.repeat(5)],
+      ['de 501 caracteres', 'x'.repeat(501)],
+    ])('41. motivo %s → 400 del pipe con el mensaje del contrato, sin llegar al servicio', async (_caso, motivo_rechazo) => {
+      const respuesta = await rechazar({ estado: 'Rechazado', motivo_rechazo }).expect(400);
+
+      expect(respuesta.body.message).toEqual([MENSAJE_MOTIVO_RECHAZO]);
+      expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('42. motivo válido con espacios en los extremos → 200 y el log guarda el texto recortado con el Staff del token', async () => {
+      await rechazar({ estado: 'Rechazado', motivo_rechazo: '   El set está en mantenimiento esa semana   ' }).expect(200);
+
+      expect(prisma.log_Auditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'Rechazado',
+          modificado_por: 'uuid-staff',
+          motivo_rechazo: 'El set está en mantenimiento esa semana',
+        }),
+      });
+    });
+
+    it('43. E5 por HTTP: un motivo sin "Rechazado" pasa el pipe y lo rechaza el servicio, sin escribir', async () => {
+      const respuesta = await rechazar({ estado: 'Validado', motivo_rechazo: 'Motivo suficientemente detallado' }).expect(400);
+
+      expect(respuesta.body.message).toBe(MENSAJE_MOTIVO_SOLO_EN_RECHAZO);
+      expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('44. orden 401 → 403 → 400: la identidad y el rol se deciden antes que el cuerpo', async () => {
+      const invalido = { estado: 'Rechazado', motivo_rechazo: ' '.repeat(12) };
+
+      await rechazar(invalido, null).expect(401);
+      await rechazar(invalido, `Bearer ${token}`).expect(403);
+      await rechazar(invalido).expect(400);
+      expect(prisma.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+});
