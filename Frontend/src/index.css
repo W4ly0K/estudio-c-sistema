@@ -28,6 +28,17 @@
   --color-surface: #ffffff;
   --color-outline: #c6c6cd;
 
+  /* Fase 9 · R9-3 (ADR-010, D-R3-2): neutros propios, derivados del Azul 2 porque el manual no
+     define grises. Siempre en hex, para que tema.test.ts mida cada par de contraste.
+     outline y el placeholder gray-400 se sustituyen en el refactor mecánico (9.3.3). */
+  --color-texto-secundario: #545D7C;
+  --color-texto-terciario: #646C88;
+  --color-borde-control: #7C849F;
+  --color-borde-suave: #D5D9E5;
+  --color-superficie-suave: #F1F3F8;
+  /* D-R3-6: anillo de focus-visible (2 px, con desplazamiento blanco de 2 px). Es cesmag-azul-1. */
+  --color-foco: #1F5BA3;
+
   --font-sans: "Roboto", sans-serif;
 }
 

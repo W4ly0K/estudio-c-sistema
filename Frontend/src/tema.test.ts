@@ -38,3 +38,51 @@ describe('Tema · urgencia (Fase 8 · requisito 6)', () => {
     expect(contraste(color('urgencia'), color(fondo))).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+/**
+ * Fase 9 · R9-3 (ADR-010, D-R3-2): los tokens semánticos referencian los colores del manual, y
+ * cada par de primer plano y fondo que usa la interfaz se mide contra su umbral WCAG 2.x:
+ * texto 4,5:1 (1.4.3); bordes de controles y foco 3:1 (1.4.11).
+ */
+describe('Tema · invariantes de marca (R9-3)', () => {
+  it.each([
+    ['primary', 'cesmag-azul-2'],
+    ['primary-hover', 'cesmag-azul-1'],
+    ['accent', 'cesmag-rojo-2'],
+    ['urgencia', 'cesmag-rojo-1'],
+    ['surface', 'cesmag-blanco'],
+    ['foco', 'cesmag-azul-1'],
+  ])('%s es %s', (token, marca) => {
+    expect(color(token).toUpperCase()).toBe(color(marca).toUpperCase())
+  })
+
+  it.each(['texto-secundario', 'texto-terciario', 'borde-control', 'borde-suave', 'superficie-suave', 'foco'])(
+    'declara --color-%s en hex',
+    (token) => {
+      expect(color(token)).toMatch(/^#[0-9a-fA-F]{6}$/)
+    },
+  )
+})
+
+/** Fondos sobre los que se pinta texto y controles (D-R3-2). */
+const FONDOS = ['surface', 'background', 'superficie-suave'] as const
+
+type Par = [primerPlano: string, fondo: string, minimo: number]
+
+const PARES: Par[] = [
+  ...FONDOS.flatMap((fondo): Par[] => [
+    ['texto-secundario', fondo, 4.5],
+    ['texto-terciario', fondo, 4.5],
+    ['borde-control', fondo, 3],
+  ]),
+  // D-R3-6: el anillo siempre queda junto a su desplazamiento blanco, sobre cualquier fondo.
+  ['foco', 'surface', 3],
+  // D-R3-3: las cajas de error pasan a bg-surface con text-accent.
+  ['accent', 'surface', 4.5],
+]
+
+describe('Tema · contraste medido (R9-3)', () => {
+  it.each(PARES)('%s sobre %s alcanza %s:1', (primerPlano, fondo, minimo) => {
+    expect(contraste(color(primerPlano), color(fondo))).toBeGreaterThanOrEqual(minimo)
+  })
+})
