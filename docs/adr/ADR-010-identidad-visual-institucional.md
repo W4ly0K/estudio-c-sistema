@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 a 16 y el recurso oficial del escudo en una tinta (§3) |
+| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 y 15 y el recurso oficial del escudo en una tinta (§3); la pregunta 16 se resolvió el 2026-11-23 (§2.7) |
 | **Fecha** | 2026-11-09 · diagnóstico actualizado el 2026-11-23 |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-9-identidad-institucional`, creada desde `develop` @ `67a1fb2` (R9-1 integrado por el PR #17) |
@@ -80,6 +80,17 @@
 - El inventario (`Recurso` y `Solicitud_Recurso`, suspendido desde la Fase 7).
 - El backend y la base de datos: R9-3 es solo frontend.
 
+### 2.7 Registro de decisiones de implementación (2026-11-23)
+
+Decisiones tomadas por el responsable del proyecto durante 9.3.3, sobre la base de las secciones anteriores. No cambian el estado del documento.
+
+| Id | Decisión | Medición |
+|---|---|---|
+| I-1 | **`texto-principal` #3A4057** para el texto principal (reemplaza `gray-700`): tono del Azul 2 desaturado, con el mismo peso visual que el gris anterior | 10,24 sobre `surface`; 9,50 sobre `background`; 9,22 sobre `superficie-suave` |
+| I-2 | **`text-surface`** para el texto blanco sobre los botones institucionales (sin token nuevo) | 11,12 sobre `primary`; 4,89 sobre `accent` |
+| I-3 | **Trinquete de D-R3-7:** los usos pendientes se registran como inventario exacto de deuda técnica, por archivo y clase; no son excepciones permanentes y solo pueden reducirse | La guardia en `tema.test.ts` |
+| I-4 | **Pregunta 16 · insignias:** se conservan los 9 estados, las 5 columnas del tablero, los alias por rol, los símbolos y las diferencias de borde, con una **equivalencia neutra 1:1** de los grises (claro → `superficie-suave`/`surface`; bordes → `borde-control`/`borde-suave`; texto y bordes fuertes → `texto-principal`; «En Producción» sólido en `texto-principal` y «Edición y postproducción» en `texto-secundario`). Los estados en curso no usan el azul, reservado a las acciones, para que una insignia sólida no parezca un botón | Blanco sobre `texto-principal` 10,24 y sobre `texto-secundario` 6,49; bordes de forma ≥ 3,34 |
+
 ---
 
 ## 3. Preguntas abiertas
@@ -88,7 +99,7 @@
 |---|---|---|
 | **14** · ¿Escudo y logo del Estudio C juntos? ¿Cuál tiene más jerarquía? ¿Hace falta el visto bueno de Comunicaciones? | Escudo a la izquierda en el encabezado y logo del Estudio C como marca del sistema | Cambia la composición del encabezado y del login; si Comunicaciones debe aprobar, la integración de 9.3.4 espera su visto bueno |
 | **15** · ¿Los azules como marca y el rojo para el escudo y la urgencia? | Sí (H9-1) | — |
-| **16** · ¿Qué debe mantenerse sí o sí en el tablero? | Las 5 columnas, los alias por rol y las insignias | Se agrega como criterio de aceptación con su prueba |
+| **16** · ¿Qué debe mantenerse sí o sí en el tablero? | ✅ **Resuelta el 2026-11-23** (§2.7, I-4): las 5 columnas, los alias por rol y las insignias, con la equivalencia neutra 1:1 | Criterio de aceptación: pruebas de `TableroStaff`, `Insignias` y de los alias, sin cambios de comportamiento |
 | Recurso oficial del escudo en una tinta | Pendiente de verificar en los archivos | Si no existe: el escudo en positivo sobre una placa blanca dentro de la franja azul, respetando el área de seguridad |
 
 ---
@@ -139,9 +150,10 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | Commit | Paso |
 |---|---|
 | — | 9.3.0 · Revisión visual de unicesmag.edu.co y respuestas 14 a 16 ⏳ |
-| — | 9.3.1 · `@fontsource/roboto` con pesos acotados; `font-semibold` → 700 ⏳ |
-| — | 9.3.2 · Tokens neutros y `foco` en `index.css` + `tema.test.ts` con la tabla de pares ⏳ |
-| — | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7 ⏳ |
+| `fe012b3` · `21d295d` | 9.3.1 · `@fontsource/roboto` con pesos acotados; `font-semibold` → 700 ✅ |
+| `ef58c16` | 9.3.2 · Tokens neutros y `foco` en `index.css` + `tema.test.ts` con la tabla de pares ✅ |
+| `54dc57d` · `420b68d` · `2faafeb` · `c5095e8` · lote de insignias | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7 ⏳ |
+| `ddd30d7` | Fuera de los pasos de R9-3: actualización de `vite`, `undici` y `source-map-js` dentro de sus rangos (alertas altas de `npm audit`, solo de desarrollo) ✅ |
 | — | 9.3.4 · Marca: encabezado con escudo, acción principal en azul, errores sobre `surface` y foco ⏳ |
 | — | 9.3.5 · Login institucional ⏳ |
 | — | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ |

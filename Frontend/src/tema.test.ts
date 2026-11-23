@@ -83,6 +83,9 @@ const PARES: Par[] = [
   // 9.3.3: texto blanco (text-surface) sobre los botones institucionales.
   ['surface', 'primary', 4.5],
   ['surface', 'accent', 4.5],
+  // Pregunta 16: insignias sólidas de los estados en curso (texto blanco sobre el neutro).
+  ['surface', 'texto-principal', 4.5],
+  ['surface', 'texto-secundario', 4.5],
 ]
 
 describe('Tema · contraste medido (R9-3)', () => {
@@ -122,9 +125,9 @@ function usosDePaleta(fuente: string): string[] {
 const EXCEPCIONES: ReadonlySet<string> = new Set(['backdrop:bg-black/50'])
 
 /**
- * Trinquete de transición: usos que esperan una decisión visual (texto principal gray-700/900,
- * insignias de estado, blanco sobre primario, cajas de error de D-R3-3 en 9.3.4). Solo puede
- * reducirse: un uso nuevo hace fallar la prueba y uno resuelto obliga a retirarlo de aquí.
+ * Trinquete de transición: usos que esperan su lote (cajas de error de D-R3-3 y el botón
+ * deshabilitado de D-R3-4). Solo puede reducirse: un uso nuevo hace fallar la prueba y uno
+ * resuelto obliga a retirarlo de aquí.
  */
 const PENDIENTES: Record<string, Record<string, number>> = {
   './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
@@ -139,12 +142,6 @@ const PENDIENTES: Record<string, Record<string, number>> = {
   './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1 },
   './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './componentes/HistorialEnlaces.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/Insignias.tsx': {
-    'bg-gray-100': 3, 'bg-gray-200': 1, 'bg-gray-700': 1, 'bg-gray-900': 1,
-    'bg-white': 3, 'border-gray-200': 1, 'border-gray-400': 3, 'border-gray-500': 1,
-    'border-gray-700': 1, 'border-gray-900': 4, 'text-gray-500': 1, 'text-gray-600': 1,
-    'text-gray-700': 3, 'text-gray-900': 3, 'text-white': 2,
-  },
 }
 
 function contar(usos: string[]): Record<string, number> {
