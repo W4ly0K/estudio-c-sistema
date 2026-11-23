@@ -62,7 +62,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
             <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
             <p className="text-sm text-texto-secundario">Esto es lo que espera tu atención en el Estudio C.</p>
           </div>
-          <Link to={RUTA_TABLERO} className="px-4 py-2 bg-primary text-surface rounded-sm text-sm font-bold hover:opacity-90">
+          <Link to={RUTA_TABLERO} className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm text-sm font-bold transition-colors">
             {TEXTO_IR_AL_TABLERO}
           </Link>
         </div>

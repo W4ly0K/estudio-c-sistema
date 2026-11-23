@@ -198,6 +198,13 @@ describe('Tema · guardia de la paleta por defecto (R9-3, D-R3-7)', () => {
     expect(restos).toEqual([])
   })
 
+  it('9.3.6: ninguna acción principal (bg-primary) usa el hover por opacidad; usa primary-hover', () => {
+    const restos = Object.entries(componentes).flatMap(([ruta, fuente]) =>
+      (fuente.match(/["'`][^"'`]*\bbg-primary\b[^"'`]*\bhover:opacity-\d+[^"'`]*["'`]/g) ?? []).map((clases) => `${ruta}: ${clases}`),
+    )
+    expect(restos).toEqual([])
+  })
+
   it('el tema ya no declara --color-outline', () => {
     expect(hojaDeEstilos).not.toMatch(/--color-outline:/)
   })

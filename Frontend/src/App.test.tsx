@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
-import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
+import App, { TEXTO_AUTENTICANDO, TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SIN_PROXIMAS } from './InicioSolicitante'
 import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
@@ -89,6 +89,33 @@ describe('App', () => {
 
     expect(await screen.findByText(`❌ ${mensaje}`)).toBeInTheDocument()
     expect(localStorage.getItem('estudio_c_token')).toBeNull()
+  })
+
+  it('9.3.6: «Autenticando...» es un estado informativo (rol status), no un error, y da paso al mensaje del servidor', async () => {
+    const mensaje = 'Acceso restringido al dominio @unicesmag.edu.co'
+    let responder: ((respuesta: Response) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolver) => {
+            responder = resolver
+          }),
+      ),
+    )
+    mostrarApp()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
+
+    const estado = await screen.findByRole('status')
+    expect(estado).toHaveTextContent(TEXTO_AUTENTICANDO)
+    expect(estado).toHaveClass('text-texto-secundario')
+    expect(estado).not.toHaveClass('text-accent')
+
+    responder?.(json(401, { statusCode: 401, message: mensaje }))
+
+    expect(await screen.findByText(`❌ ${mensaje}`)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('token vencido (401 en una ruta privada): borra el token y vuelve al login con un aviso', async () => {

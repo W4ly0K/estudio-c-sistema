@@ -86,7 +86,7 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         {/* Navegar desmonta el panel y con él el <dialog>: el navegador lo saca de la capa superior. */}
-        <Link to={rutaDetalle(solicitud.radicado)} className="px-5 py-2.5 bg-primary text-surface rounded-sm font-bold hover:opacity-90">
+        <Link to={rutaDetalle(solicitud.radicado)} className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors">
           Ver seguimiento detallado
         </Link>
         <button type="button" onClick={onVolver} className="px-5 py-2.5 border border-borde-control rounded-sm text-primary hover:bg-superficie-suave">

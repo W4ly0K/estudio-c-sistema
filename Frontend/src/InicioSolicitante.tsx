@@ -69,7 +69,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
           </div>
           <Link
             to={RUTA_MIS_SOLICITUDES}
-            className="px-5 py-2.5 bg-primary text-surface rounded-sm font-bold hover:opacity-90"
+            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors"
           >
             {TEXTO_NUEVA_SOLICITUD}
           </Link>

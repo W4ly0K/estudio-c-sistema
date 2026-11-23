@@ -16,6 +16,8 @@ import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from '.
 import { useSesion } from './sesion/use-sesion';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
+/** Estado informativo mientras el servidor valida la credencial de Google (no es un error). */
+export const TEXTO_AUTENTICANDO = 'Autenticando...';
 export const TEXTO_SIN_VERIFICAR =
   'No pudimos verificar tu sesión con el servidor. Tu sesión sigue guardada: intenta de nuevo en un momento.';
 
@@ -67,7 +69,7 @@ function App() {
       return;
     }
 
-    setStatus('Autenticando...');
+    setStatus(TEXTO_AUTENTICANDO);
     const error = await iniciarSesion(credencial);
     // Mensaje del servidor tal cual (por ejemplo, el del dominio institucional).
     setStatus(error === null ? '' : `❌ ${textoDeError(error)}`);
@@ -141,6 +143,10 @@ function App() {
 
   // Aviso de la máquina (sesión expirada) o resultado del último intento de login.
   const mensaje = status !== '' ? status : sesion.aviso === null ? '' : `⚠️ ${sesion.aviso}`;
+  // R9-3 · 9.3.6: «Autenticando...» es un estado informativo, no un error. Se pinta aparte, en un
+  // <output> (rol status) que existe solo mientras dura: nunca convive con el mensaje de error, así
+  // que no hay dos anuncios del mismo intento. El flujo de autenticación no cambia.
+  const autenticando = status === TEXTO_AUTENTICANDO;
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
@@ -165,8 +171,10 @@ function App() {
           />
         </div>
         
-        {mensaje && (
-          <p className="mt-3 text-xs font-bold text-accent">{mensaje}</p>
+        {autenticando ? (
+          <output className="block mt-3 text-xs text-texto-secundario">{TEXTO_AUTENTICANDO}</output>
+        ) : (
+          mensaje && <p className="mt-3 text-xs font-bold text-accent">{mensaje}</p>
         )}
       </div>
       

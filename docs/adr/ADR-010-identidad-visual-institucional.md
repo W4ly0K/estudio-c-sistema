@@ -96,6 +96,8 @@ Decisiones tomadas por el responsable del proyecto durante 9.3.3, sobre la base 
 | I-8 | **Acción principal (D-R3-4, 9.3.4):** «Nueva Solicitud» pasa de `bg-accent` a `bg-primary` (Azul 2) con `hover:bg-primary-hover` (Azul 1), en lugar de `hover:opacity-90`. Los demás botones primarios conservan su hover actual | Blanco sobre `primary` 11,12 y sobre `primary-hover` 6,81 |
 | I-9 | **Foco visible (D-R3-6, 9.3.4):** regla global `:focus-visible` en `index.css`: anillo `outline` de 2 px en `foco` con `outline-offset` de 2 px, y sombra blanca de 2 px que rellena la separación. Las cabeceras con foco por código conservan `outline-none`. Limitación aceptada: en un control con sombra de utilidad (`shadow-*`) prevalece esa sombra y la separación muestra el fondo; sobre los fondos claros el anillo sigue visible | `foco` sobre `surface` 6,81 (umbral 3); `tema.test.ts` lee la regla |
 | I-10 | **Pantalla de acceso (9.3.5, sin escudo):** el título pasa a `h1` (no hay encabezado sin sesión) en Roboto 900 y `primary`; la indicación sube de `text-xs` a `text-sm` en `texto-secundario`; «Reintentar» usa `hover:bg-primary-hover`. Sin cambios en la autenticación, los mensajes ni la navegación; el foco lo da la regla global (I-9). El escudo espera las preguntas 14 y 15 | `primary` sobre `surface` 11,12; `texto-secundario` sobre `surface` 6,49 |
+| I-11 | **«Autenticando...» como estado informativo (9.3.6):** se pinta aparte en un `<output>` (rol `status`) con `texto-secundario`, que existe solo mientras dura la validación; nunca convive con el mensaje de error, así que el mismo intento no genera dos anuncios. El texto, los mensajes de error y el flujo de autenticación no cambian | `texto-secundario` sobre `surface` 6,49 · prueba de `App` |
+| I-12 | **Hover de las acciones principales (9.3.6):** las cuatro restantes con `hover:opacity-90` («Ver seguimiento detallado», «Enviar Radicado», «Nueva solicitud» del inicio y «Ir al tablero») pasan a `hover:bg-primary-hover`. Los botones de las acciones sobre la solicitud y de confirmación (incluida la destructiva en `accent`) conservan su estilo propio. La guardia de `tema.test.ts` impide volver a combinar `bg-primary` con `hover:opacity-*` | Blanco sobre `primary-hover` 6,81 |
 
 ---
 
@@ -147,7 +149,7 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 
 - Las respuestas 14 a 16 y la revisión visual conjunta del sitio institucional (paso 9.3.0).
 - El recurso oficial del escudo en una tinta.
-- Al cerrar: `public/icons.svg` y `src/assets/Logo_Estudio_C_2-02.svg`, que parecen sin uso (pendiente heredado del PR #13). Se verifica con `grep` antes de decidir.
+- `public/icons.svg` y `src/assets/Logo_Estudio_C_2-02.svg` (pendiente heredado del PR #13): el 2026-11-23 un `grep` no encontró referencias en `.ts`, `.tsx`, `.html` ni `.css`. **Pendientes de revisión: no se eliminan todavía**; su retiro es una decisión aparte.
 
 ---
 
@@ -162,4 +164,4 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | `ddd30d7` | Fuera de los pasos de R9-3: actualización de `vite`, `undici` y `source-map-js` dentro de sus rangos (alertas altas de `npm audit`, solo de desarrollo) ✅ |
 | — | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
 | — | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
-| — | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ |
+| — | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |

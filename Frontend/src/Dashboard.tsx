@@ -350,7 +350,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-primary text-surface rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
+                <button type="submit" className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors">Enviar Radicado</button>
               </div>
             </form>
           </>
