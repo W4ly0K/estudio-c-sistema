@@ -76,7 +76,7 @@ export function HistorialEnlaces({ radicado, idSolicitante, version }: Historial
           <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm font-bold text-accent">
             {TEXTO_HISTORIAL_ERROR} {estado.texto}
           </p>
-          <button type="button" onClick={() => setIntento((n) => n + 1)} className="mt-2 underline font-semibold text-primary">
+          <button type="button" onClick={() => setIntento((n) => n + 1)} className="mt-2 underline font-bold text-primary">
             Reintentar
           </button>
         </div>

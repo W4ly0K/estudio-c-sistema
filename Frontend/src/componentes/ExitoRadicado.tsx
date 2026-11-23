@@ -61,20 +61,20 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
       <dl className="border border-outline rounded-sm p-3 text-left space-y-2 mb-5">
         <div className="flex justify-between gap-3">
           <dt className="text-gray-500">Categoría</dt>
-          <dd className="font-semibold text-primary text-right">{ETIQUETAS_CATEGORIA[solicitud.categoria]}</dd>
+          <dd className="font-bold text-primary text-right">{ETIQUETAS_CATEGORIA[solicitud.categoria]}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-gray-500">Fecha y franja (hora de Colombia)</dt>
-          <dd className="font-semibold text-primary text-right">{formatearFranja(solicitud.fecha_inicio, solicitud.fecha_fin)}</dd>
+          <dd className="font-bold text-primary text-right">{formatearFranja(solicitud.fecha_inicio, solicitud.fecha_fin)}</dd>
         </div>
         <div className="flex justify-between gap-3">
           {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial, el que quedó guardado (respuesta del servidor). */}
           <dt className="text-gray-500">Sub-espacio</dt>
-          <dd className="font-semibold text-primary text-right">{ETIQUETAS_SUB_ESPACIO[solicitud.sub_espacio]}</dd>
+          <dd className="font-bold text-primary text-right">{ETIQUETAS_SUB_ESPACIO[solicitud.sub_espacio]}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-gray-500">Responsable</dt>
-          <dd className="font-semibold text-primary text-right">{responsable}</dd>
+          <dd className="font-bold text-primary text-right">{responsable}</dd>
         </div>
         <div className="flex justify-between items-center gap-3">
           <dt className="text-gray-500">Estado inicial</dt>

@@ -156,7 +156,7 @@ export function CorreccionEnlaceEntrega({ detalle, deshabilitada, alCorregir, al
           <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
             <p className="font-bold">{textoDeError(error)}</p>
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
                 Recargar la solicitud
               </button>
             )}

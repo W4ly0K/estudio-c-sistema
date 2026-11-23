@@ -75,7 +75,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
             <button
               type="button"
               onClick={() => setVersion((v) => v + 1)}
-              className="mt-2 text-sm underline font-semibold text-primary"
+              className="mt-2 text-sm underline font-bold text-primary"
             >
               Reintentar
             </button>

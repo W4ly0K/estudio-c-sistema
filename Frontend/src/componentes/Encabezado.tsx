@@ -66,7 +66,7 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
         <div className="min-w-0 md:max-w-xs md:text-right">
           <p className="text-sm font-bold text-primary break-words">{usuario.nombre}</p>
           <p className="text-xs text-gray-500">
-            Rol: <span className="font-semibold text-accent">{usuario.rol}</span>
+            Rol: <span className="font-bold text-accent">{usuario.rol}</span>
           </p>
         </div>
         <button

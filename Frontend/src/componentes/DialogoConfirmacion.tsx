@@ -85,7 +85,7 @@ export function DialogoConfirmacion({
           </p>
           {children}
           {mostrarRazon && (
-            <p id={idRazon} className="mt-4 text-sm font-semibold text-primary">
+            <p id={idRazon} className="mt-4 text-sm font-bold text-primary">
               {razonBloqueo}
             </p>
           )}

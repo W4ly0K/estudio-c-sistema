@@ -26,7 +26,7 @@ export function CampoEnlace({ etiqueta, ayuda, valor, onCambio, invalido, soloLe
   const idAyuda = `${id}-ayuda`
   return (
     <div className="mt-4">
-      <label htmlFor={id} className="block font-semibold text-primary">
+      <label htmlFor={id} className="block font-bold text-primary">
         {etiqueta}
       </label>
       <p id={idAyuda} className="text-xs text-gray-600 mb-1">

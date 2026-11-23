@@ -178,7 +178,7 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
               {avisoVisible !== null ? `${textoRecargaFallida} ${carga.texto}` : carga.texto}
             </p>
-            <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-semibold text-primary">
+            <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-bold text-primary">
               Recargar la solicitud
             </button>
           </div>
@@ -330,7 +330,7 @@ function Contenido({
           <p className="mt-1 text-gray-700">{TEXTO_PROPUESTA_EN_ESPERA_STAFF}</p>
           {propuesta.motivo !== null && (
             <p className="mt-2 text-gray-700">
-              <span className="font-semibold">{ETIQUETAS_MOTIVO_PROPUESTA.STAFF}:</span> {propuesta.motivo}
+              <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.STAFF}:</span> {propuesta.motivo}
             </p>
           )}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -346,8 +346,8 @@ function Contenido({
             </div>
             <div className="border-2 border-primary rounded-sm p-3">
               <p className="text-xs font-bold text-primary uppercase">Franja propuesta</p>
-              <p className="font-semibold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
-              <p className="font-semibold text-primary">
+              <p className="font-bold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
+              <p className="font-bold text-primary">
                 {ETIQUETAS_SUB_ESPACIO[propuesta.subEspacio]}
                 {propuesta.subEspacio === detalle.sub_espacio && (
                   <span className="font-normal text-gray-500"> (el mismo sub-espacio)</span>

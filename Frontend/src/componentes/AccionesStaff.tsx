@@ -401,7 +401,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
             {error.tipo === 'http' && error.status === 409 && (
               <>
                 <p className="mt-1">{TEXTO_AYUDA_CONFLICTO}</p>
-                <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
+                <button type="button" onClick={recargar} className="mt-2 underline font-bold">
                   Recargar la solicitud
                 </button>
               </>

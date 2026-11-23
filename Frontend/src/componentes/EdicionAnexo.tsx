@@ -165,7 +165,7 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
             <p className="font-bold">{textoDeError(error)}</p>
             {/* 409: el estado o el anexo cambiaron mientras se veían (el Staff avanzó, otra pestaña...). */}
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
                 Recargar la solicitud
               </button>
             )}

@@ -260,7 +260,7 @@ function Contenido({
           </h3>
           {propuesta.motivo !== null && (
             <p className="mt-2 text-gray-700">
-              <span className="font-semibold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
+              <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
             </p>
           )}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -276,8 +276,8 @@ function Contenido({
             </div>
             <div className="border-2 border-primary rounded-sm p-3">
               <p className="text-xs font-bold text-primary uppercase">Nueva franja propuesta</p>
-              <p className="font-semibold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
-              <p className="font-semibold text-primary">
+              <p className="font-bold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
+              <p className="font-bold text-primary">
                 {ETIQUETAS_SUB_ESPACIO[propuesta.subEspacio]}
                 {propuesta.subEspacio === detalle.sub_espacio && (
                   <span className="font-normal text-gray-500"> (el mismo sub-espacio)</span>

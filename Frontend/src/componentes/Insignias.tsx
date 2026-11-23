@@ -31,7 +31,7 @@ export function InsigniaEstado({ estado, perspectiva }: { estado: Estado; perspe
   return (
     <span
       data-estado={estado}
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-semibold ${clases}`}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-bold ${clases}`}
     >
       {/* El símbolo es decorativo: el lector de pantalla lee el nombre del estado. */}
       {simbolo !== '' && <span aria-hidden="true">{simbolo}</span>}

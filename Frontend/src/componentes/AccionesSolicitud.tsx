@@ -145,7 +145,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
             {seleccionada === 'ACEPTAR_REPROGRAMACION' && <p className="mt-1">{TEXTO_AYUDA_ACEPTAR}</p>}
             {/* 409: la solicitud cambió mientras se veía (el Staff avanzó, otra pestaña...). */}
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
                 Recargar la solicitud
               </button>
             )}

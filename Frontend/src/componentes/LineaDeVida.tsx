@@ -74,7 +74,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
               {evento.actor !== null && <p className="text-xs text-gray-600">Por: {evento.actor}</p>}
               {evento.motivo !== null && (
                 <p className="mt-1 text-gray-700">
-                  <span className="font-semibold">{evento.motivo.etiqueta}:</span> {evento.motivo.texto}
+                  <span className="font-bold">{evento.motivo.etiqueta}:</span> {evento.motivo.texto}
                 </p>
               )}
             </li>
