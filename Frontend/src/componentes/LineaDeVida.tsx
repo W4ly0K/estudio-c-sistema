@@ -9,7 +9,7 @@ import { InsigniaEstado } from './Insignias'
  * lector de pantalla (DV6): el color nunca es la única señal.
  */
 const NODO: Readonly<Record<SituacionPaso, { readonly clases: string; readonly simbolo: string; readonly texto: string }>> = {
-  completado: { clases: 'bg-primary text-white border-2 border-primary', simbolo: '✓', texto: 'completado' },
+  completado: { clases: 'bg-primary text-surface border-2 border-primary', simbolo: '✓', texto: 'completado' },
   actual: { clases: 'bg-surface text-primary border-4 border-primary', simbolo: '●', texto: 'en curso' },
   pendiente: { clases: 'bg-surface text-texto-secundario border border-borde-control', simbolo: '', texto: 'pendiente' },
   omitido: { clases: 'bg-surface text-texto-terciario border border-dashed border-borde-control', simbolo: '–', texto: 'no se realizará' },

@@ -52,7 +52,7 @@ export function DialogoConfirmacion({
   // con opacity-60 el rojo de una acción irreversible seguía pareciendo activo.
   const estiloConfirmar = bloqueado
     ? 'bg-gray-200 text-texto-secundario border border-dashed border-borde-control cursor-not-allowed'
-    : `${irreversible ? 'bg-accent' : 'bg-primary'} text-white disabled:opacity-60`
+    : `${irreversible ? 'bg-accent' : 'bg-primary'} text-surface disabled:opacity-60`
 
   // useLayoutEffect: abrir y cerrar ocurren en el MISMO commit que cambia el contenido; nunca
   // queda un fotograma con el resultado pintado y el modal todavía abierto encima (ver 6.4.5).

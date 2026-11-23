@@ -93,7 +93,7 @@ function App() {
         <PantallaCentrada>
           <p role="alert" className="text-sm text-primary mb-6">{TEXTO_SIN_VERIFICAR}</p>
           <div className="flex gap-3">
-            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">
+            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary text-surface rounded-sm font-bold hover:opacity-90">
               Reintentar
             </button>
             <button type="button" onClick={handleLogout} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">

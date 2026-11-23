@@ -79,6 +79,9 @@ const PARES: Par[] = [
   ['foco', 'surface', 3],
   // D-R3-3: las cajas de error pasan a bg-surface con text-accent.
   ['accent', 'surface', 4.5],
+  // 9.3.3: texto blanco (text-surface) sobre los botones institucionales.
+  ['surface', 'primary', 4.5],
+  ['surface', 'accent', 4.5],
 ]
 
 describe('Tema · contraste medido (R9-3)', () => {
@@ -123,19 +126,17 @@ const EXCEPCIONES: ReadonlySet<string> = new Set(['backdrop:bg-black/50'])
  * reducirse: un uso nuevo hace fallar la prueba y uno resuelto obliga a retirarlo de aquí.
  */
 const PENDIENTES: Record<string, Record<string, number>> = {
-  './App.tsx': { 'text-white': 1 },
-  './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-white': 2 },
+  './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
   './DetalleSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
   './DetalleStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2 },
-  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2, 'text-white': 1 },
-  './InicioStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-white': 1 },
+  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2 },
+  './InicioStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './TableroStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1, 'text-white': 1 },
-  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-gray-700': 2, 'text-white': 1 },
+  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
+  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-gray-700': 2 },
   './componentes/CorreccionEnlaceEntrega.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
-  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1, 'text-gray-700': 2, 'text-white': 1 },
+  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1, 'text-gray-700': 2 },
   './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
-  './componentes/ExitoRadicado.tsx': { 'text-white': 1 },
   './componentes/HistorialEnlaces.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './componentes/Insignias.tsx': {
     'bg-gray-100': 3, 'bg-gray-200': 1, 'bg-gray-700': 1, 'bg-gray-900': 1,
@@ -143,7 +144,7 @@ const PENDIENTES: Record<string, Record<string, number>> = {
     'border-gray-700': 1, 'border-gray-900': 4, 'text-gray-500': 1, 'text-gray-600': 1,
     'text-gray-700': 3, 'text-gray-900': 3, 'text-white': 2,
   },
-  './componentes/LineaDeVida.tsx': { 'text-gray-700': 3, 'text-white': 1 },
+  './componentes/LineaDeVida.tsx': { 'text-gray-700': 3 },
   './componentes/TarjetaTablero.tsx': { 'text-gray-700': 2 },
 }
 

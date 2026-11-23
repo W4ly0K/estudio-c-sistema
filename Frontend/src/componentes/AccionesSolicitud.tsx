@@ -113,7 +113,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
                   type="button"
                   onClick={() => abrir(transicion.accion)}
                   className={`px-4 py-2 rounded-sm text-sm font-bold ${
-                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-white'
+                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-surface'
                   }`}
                 >
                   {boton}

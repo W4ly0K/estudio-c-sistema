@@ -289,7 +289,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
                   onClick={() => abrir(opcion)}
                   disabled={deshabilitadas}
                   className={`px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 ${
-                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-white'
+                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-surface'
                   }`}
                 >
                   {boton}
