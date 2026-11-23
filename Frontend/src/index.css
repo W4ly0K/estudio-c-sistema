@@ -26,11 +26,11 @@
   /* Fondos y bordes */
   --color-background: #f4f7f6;
   --color-surface: #ffffff;
-  --color-outline: #c6c6cd;
 
   /* Fase 9 · R9-3 (ADR-010, D-R3-2): neutros propios, derivados del Azul 2 porque el manual no
      define grises. Siempre en hex, para que tema.test.ts mida cada par de contraste.
-     outline y el placeholder gray-400 se sustituyen en el refactor mecánico (9.3.3). */
+     9.3.3: outline (#c6c6cd, 1,70:1) se retiró; los controles usan borde-control y los
+     contenedores y separadores, borde-suave. El placeholder usa texto-terciario. */
   --color-texto-secundario: #545D7C;
   --color-texto-terciario: #646C88;
   --color-borde-control: #7C849F;
@@ -59,7 +59,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-gray-400);
+    color: var(--color-texto-terciario);
   }
 
   /*

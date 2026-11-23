@@ -34,13 +34,13 @@ const AREA_TACTIL = 'inline-flex min-h-11 items-center'
  */
 export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
   return (
-    <header className="w-full bg-surface border-b border-outline px-4 py-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
+    <header className="w-full bg-surface border-b border-borde-suave px-4 py-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
         <div data-parte="marca" className="flex min-w-0 items-center gap-4">
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
-          <span className="font-bold text-primary border-l border-outline pl-4 tracking-wide">{titulo}</span>
+          <span className="font-bold text-primary border-l border-borde-suave pl-4 tracking-wide">{titulo}</span>
         </div>
-        <nav aria-label="Navegación principal" className="md:border-l md:border-outline md:pl-4">
+        <nav aria-label="Navegación principal" className="md:border-l md:border-borde-suave md:pl-4">
           <ul className="flex flex-wrap items-center gap-2 text-sm">
             {navegacionDelRol(usuario.rol).map((enlace) => (
               <li key={enlace.ruta}>
@@ -51,7 +51,7 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
                     `${AREA_TACTIL} px-2 rounded-sm ${
                       isActive
                         ? 'font-bold text-primary underline decoration-2 underline-offset-4'
-                        : 'text-gray-600 hover:text-primary hover:underline'
+                        : 'text-texto-secundario hover:text-primary hover:underline'
                     }`
                   }
                 >
@@ -65,14 +65,14 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
       <div data-parte="usuario" className="flex min-w-0 items-center justify-between gap-4 md:ml-auto md:justify-end">
         <div className="min-w-0 md:max-w-xs md:text-right">
           <p className="text-sm font-bold text-primary break-words">{usuario.nombre}</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-texto-secundario">
             Rol: <span className="font-bold text-accent">{usuario.rol}</span>
           </p>
         </div>
         <button
           type="button"
           onClick={onLogout}
-          className={`${AREA_TACTIL} shrink-0 px-4 border border-outline rounded-sm text-sm font-medium hover:bg-gray-50 text-primary transition-colors`}
+          className={`${AREA_TACTIL} shrink-0 px-4 border border-borde-control rounded-sm text-sm font-medium hover:bg-superficie-suave text-primary transition-colors`}
         >
           Salir
         </button>

@@ -64,7 +64,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
         <div className="flex flex-wrap justify-between items-end gap-4">
           <div>
             <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-gray-600">Reserva los espacios del Estudio C y sigue tus solicitudes.</p>
+            <p className="text-sm text-texto-secundario">Reserva los espacios del Estudio C y sigue tus solicitudes.</p>
           </div>
           <Link
             to={RUTA_MIS_SOLICITUDES}
@@ -74,7 +74,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
           </Link>
         </div>
 
-        {cargando && resumen === null && <p className="text-sm text-gray-500">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
+        {cargando && resumen === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
         {error !== null && (
           <div>
             <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
@@ -115,7 +115,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
                 {TEXTO_TITULO_PROXIMAS}
               </h2>
               {resumen.proximasValidadas.length === 0 ? (
-                <p className="text-sm text-gray-500">{TEXTO_SIN_PROXIMAS}</p>
+                <p className="text-sm text-texto-secundario">{TEXTO_SIN_PROXIMAS}</p>
               ) : (
                 <ul className="space-y-4">
                   {resumen.proximasValidadas.slice(0, MAXIMO_PROXIMAS_INICIO).map((solicitud) => (
@@ -132,7 +132,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
           </>
         )}
 
-        <section aria-labelledby={ids.reglas} className="border border-outline rounded-lg p-6 bg-surface">
+        <section aria-labelledby={ids.reglas} className="border border-borde-suave rounded-lg p-6 bg-surface">
           <h2 id={ids.reglas} className="font-bold text-primary mb-2">
             {TEXTO_TITULO_REGLAS}
           </h2>

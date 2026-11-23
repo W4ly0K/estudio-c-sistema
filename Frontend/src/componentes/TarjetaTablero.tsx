@@ -42,7 +42,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
   return (
     <article
       aria-labelledby={idRadicado}
-      className={`rounded-md p-4 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-outline'}`}
+      className={`rounded-md p-4 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h4 id={idRadicado} className="font-black text-primary">
@@ -70,13 +70,13 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         {/* Si el contrato llegara sin la franja propuesta, se omite: nunca "Invalid Date". */}
         {estado === 'Pendiente de Reprogramación' && propuestaInicio !== null && propuestaFin !== null && (
           <div>
-            <dt className="text-xs text-gray-500">Franja propuesta</dt>
+            <dt className="text-xs text-texto-secundario">Franja propuesta</dt>
             <dd className="text-primary">{formatearFranja(propuestaInicio, propuestaFin)}</dd>
           </div>
         )}
         {lugarPropuesto !== null && (
           <div>
-            <dt className="text-xs text-gray-500">Sub-espacio propuesto</dt>
+            <dt className="text-xs text-texto-secundario">Sub-espacio propuesto</dt>
             <dd>
               <InsigniaSubEspacio subEspacio={lugarPropuesto} />
             </dd>
@@ -96,7 +96,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         {/* Nombre accesible único por tarjeta; el espacio va FUERA del span (ver TarjetaSolicitud). */}
         <Link
           to={rutaDetalle(radicado)}
-          className="px-3 py-1.5 border border-primary rounded-sm text-xs font-medium text-primary hover:bg-gray-50"
+          className="px-3 py-1.5 border border-primary rounded-sm text-xs font-medium text-primary hover:bg-superficie-suave"
         >
           Abrir detalle{' '}
           <span className="sr-only">de {radicado}</span>

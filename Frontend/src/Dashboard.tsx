@@ -198,10 +198,10 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
       {/* Área de Trabajo - Tabla Intacta */}
       <main className="flex-1 p-8 max-w-[1200px] mx-auto w-full">
-        <div className="flex justify-between items-end border-b border-outline pb-4 mb-8">
+        <div className="flex justify-between items-end border-b border-borde-suave pb-4 mb-8">
           <div>
             <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-texto-secundario mt-1">
               {!loading && !errorCarga && solicitudes.length > 0
                 ? textoResumen(resumen)
                 : 'Seguimiento de tus reservas de espacios y equipos.'}
@@ -216,20 +216,20 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
         </div>
 
         {loading ? (
-          <p className="text-sm text-gray-500">Cargando radicados...</p>
+          <p className="text-sm text-texto-secundario">Cargando radicados...</p>
         ) : errorCarga ? (
           <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
             {errorCarga}
           </p>
         ) : solicitudes.length === 0 ? (
-          <div className="border border-outline rounded-lg p-8 text-center bg-surface">
-            <p className="text-gray-500 text-sm">No tienes solicitudes registradas aún.</p>
+          <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
+            <p className="text-texto-secundario text-sm">No tienes solicitudes registradas aún.</p>
           </div>
         ) : (
           <div className="space-y-4">
             {/* Wireframe B1 · intervención inmediata: lo que espera al solicitante, arriba. */}
             {avisoPorDecidir !== null && (
-              <p className="p-3 border border-dotted border-gray-500 rounded-sm bg-gray-50 text-sm font-bold text-primary">
+              <p className="p-3 border border-dotted border-borde-control rounded-sm bg-superficie-suave text-sm font-bold text-primary">
                 <span aria-hidden="true">↻ </span>
                 {avisoPorDecidir}
               </p>
@@ -249,7 +249,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
         ref={dialogoRef}
         onClose={() => setDialogo(DIALOGO_CERRADO)}
         aria-labelledby={ids.titulo}
-        className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50"
+        className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-borde-suave rounded-xl p-6 shadow-xl backdrop:bg-black/50"
       >
         {dialogo.vista === 'exito' && (
           <ExitoRadicado
@@ -266,11 +266,11 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             <form onSubmit={handleCrearSolicitud} className="space-y-4 text-sm">
               
               <div>
-                <label htmlFor={ids.categoria} className="block text-gray-600 mb-1">Categoría</label>
+                <label htmlFor={ids.categoria} className="block text-texto-secundario mb-1">Categoría</label>
                 <select 
                   id={ids.categoria}
                   required 
-                  className="w-full border border-outline rounded-sm p-2 text-primary" 
+                  className="w-full border border-borde-control rounded-sm p-2 text-primary" 
                   value={form.categoria}
                   // SE10: en un servicio, el texto que explica el lugar describe la categoría elegida.
                   aria-describedby={eligeLugar ? undefined : ids.lugarDeServicios}
@@ -305,18 +305,18 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   onCambio={(subEspacio) => setForm({ ...form, subEspacio })}
                 />
               ) : (
-                <p id={ids.lugarDeServicios} className="text-xs text-gray-500">
+                <p id={ids.lugarDeServicios} className="text-xs text-texto-secundario">
                   {TEXTO_LUGAR_DE_SERVICIOS}
                 </p>
               )}
 
               <div>
-                <label htmlFor={ids.proposito} className="block text-gray-600 mb-1">Propósito de la reserva</label>
+                <label htmlFor={ids.proposito} className="block text-texto-secundario mb-1">Propósito de la reserva</label>
                 <textarea 
                   id={ids.proposito}
                   required 
                   rows={2}
-                  className="w-full border border-outline rounded-sm p-2 text-primary resize-none" 
+                  className="w-full border border-borde-control rounded-sm p-2 text-primary resize-none" 
                   placeholder="Describe brevemente el uso..."
                   value={form.proposito}
                   onChange={e => setForm({...form, proposito: e.target.value})}
@@ -345,7 +345,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
               )}
 
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
               </div>
             </form>

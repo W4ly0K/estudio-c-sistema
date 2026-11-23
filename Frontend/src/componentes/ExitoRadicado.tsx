@@ -41,12 +41,12 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
       <h3 id={idTitulo} ref={tituloRef} tabIndex={-1} className="text-xl font-bold text-primary outline-none">
         {TEXTO_EXITO_TITULO}
       </h3>
-      <p className="text-gray-600 mt-1">Tu solicitud entró a la validación técnica del equipo del Estudio C.</p>
+      <p className="text-texto-secundario mt-1">Tu solicitud entró a la validación técnica del equipo del Estudio C.</p>
 
-      <div className="my-5 p-4 border-2 border-dashed border-primary rounded-lg bg-gray-50">
-        <p className="text-xs text-gray-500 uppercase tracking-wider">Número oficial de radicado</p>
+      <div className="my-5 p-4 border-2 border-dashed border-primary rounded-lg bg-superficie-suave">
+        <p className="text-xs text-texto-secundario uppercase tracking-wider">Número oficial de radicado</p>
         <p className="text-2xl font-black text-primary tracking-tight">{solicitud.radicado}</p>
-        <p className="text-xs text-gray-500 mt-1">Guárdalo: es la referencia para cualquier consulta con el Staff.</p>
+        <p className="text-xs text-texto-secundario mt-1">Guárdalo: es la referencia para cualquier consulta con el Staff.</p>
       </div>
 
       {solicitud.es_urgencia && (
@@ -58,26 +58,26 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
         </div>
       )}
 
-      <dl className="border border-outline rounded-sm p-3 text-left space-y-2 mb-5">
+      <dl className="border border-borde-suave rounded-sm p-3 text-left space-y-2 mb-5">
         <div className="flex justify-between gap-3">
-          <dt className="text-gray-500">Categoría</dt>
+          <dt className="text-texto-secundario">Categoría</dt>
           <dd className="font-bold text-primary text-right">{ETIQUETAS_CATEGORIA[solicitud.categoria]}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-gray-500">Fecha y franja (hora de Colombia)</dt>
+          <dt className="text-texto-secundario">Fecha y franja (hora de Colombia)</dt>
           <dd className="font-bold text-primary text-right">{formatearFranja(solicitud.fecha_inicio, solicitud.fecha_fin)}</dd>
         </div>
         <div className="flex justify-between gap-3">
           {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial, el que quedó guardado (respuesta del servidor). */}
-          <dt className="text-gray-500">Sub-espacio</dt>
+          <dt className="text-texto-secundario">Sub-espacio</dt>
           <dd className="font-bold text-primary text-right">{ETIQUETAS_SUB_ESPACIO[solicitud.sub_espacio]}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-gray-500">Responsable</dt>
+          <dt className="text-texto-secundario">Responsable</dt>
           <dd className="font-bold text-primary text-right">{responsable}</dd>
         </div>
         <div className="flex justify-between items-center gap-3">
-          <dt className="text-gray-500">Estado inicial</dt>
+          <dt className="text-texto-secundario">Estado inicial</dt>
           <dd>
             <InsigniaEstado estado={solicitud.estado} perspectiva="SOLICITANTE" />
           </dd>
@@ -89,7 +89,7 @@ export function ExitoRadicado({ solicitud, responsable, idTitulo, onVolver }: Ex
         <Link to={rutaDetalle(solicitud.radicado)} className="px-5 py-2.5 bg-primary text-white rounded-sm font-bold hover:opacity-90">
           Ver seguimiento detallado
         </Link>
-        <button type="button" onClick={onVolver} className="px-5 py-2.5 border border-outline rounded-sm text-primary hover:bg-gray-50">
+        <button type="button" onClick={onVolver} className="px-5 py-2.5 border border-borde-control rounded-sm text-primary hover:bg-superficie-suave">
           Volver al panel
         </button>
       </div>

@@ -59,14 +59,14 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
         <div className="flex flex-wrap justify-between items-end gap-4">
           <div>
             <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-gray-600">Esto es lo que espera tu atención en el Estudio C.</p>
+            <p className="text-sm text-texto-secundario">Esto es lo que espera tu atención en el Estudio C.</p>
           </div>
           <Link to={RUTA_TABLERO} className="px-4 py-2 bg-primary text-white rounded-sm text-sm font-bold hover:opacity-90">
             {TEXTO_IR_AL_TABLERO}
           </Link>
         </div>
 
-        {cargando && atajos === null && <p className="text-sm text-gray-500">{TEXTO_CARGANDO_INICIO}</p>}
+        {cargando && atajos === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO}</p>}
         {error !== null && (
           <div>
             <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
@@ -93,7 +93,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
                 ))}
               </ul>
             </nav>
-            <p className="text-xs text-gray-500">{TEXTO_NOTA_RELOJ}</p>
+            <p className="text-xs text-texto-secundario">{TEXTO_NOTA_RELOJ}</p>
           </>
         )}
       </main>
@@ -112,7 +112,7 @@ function TarjetaAtajo({ atajo }: { atajo: AtajoInicio }) {
   // Fase 8 · requisito 6: el aviso de urgencia va en rojo; lo demás resaltado sigue en el azul del
   // Estudio. Clases completas (no armadas con plantillas): Tailwind solo genera las que lee enteras.
   const urgente = resaltado && atajo.clave === 'urgentes'
-  const borde = resaltado ? (urgente ? 'border-2 border-urgencia' : 'border-2 border-primary') : 'border border-outline'
+  const borde = resaltado ? (urgente ? 'border-2 border-urgencia' : 'border-2 border-primary') : 'border border-borde-suave'
   const texto = urgente ? 'text-urgencia' : 'text-primary'
   return (
     <div data-atencion={resaltado} data-urgencia={urgente} className={`h-full rounded-lg bg-surface p-4 ${borde}`}>
@@ -123,7 +123,7 @@ function TarjetaAtajo({ atajo }: { atajo: AtajoInicio }) {
         </span>{' '}
         <span className="block font-bold">{atajo.titulo}</span>
       </Link>
-      <p id={idAyuda} className="mt-2 text-xs text-gray-600">
+      <p id={idAyuda} className="mt-2 text-xs text-texto-secundario">
         {atajo.ayuda}
       </p>
     </div>

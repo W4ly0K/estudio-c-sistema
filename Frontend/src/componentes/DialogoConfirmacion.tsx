@@ -51,7 +51,7 @@ export function DialogoConfirmacion({
   // B2: el bloqueo se ve por la forma (gris, borde punteado, cursor), no solo por la opacidad:
   // con opacity-60 el rojo de una acción irreversible seguía pareciendo activo.
   const estiloConfirmar = bloqueado
-    ? 'bg-gray-200 text-gray-600 border border-dashed border-gray-400 cursor-not-allowed'
+    ? 'bg-gray-200 text-texto-secundario border border-dashed border-borde-control cursor-not-allowed'
     : `${irreversible ? 'bg-accent' : 'bg-primary'} text-white disabled:opacity-60`
 
   // useLayoutEffect: abrir y cerrar ocurren en el MISMO commit que cambia el contenido; nunca
@@ -73,7 +73,7 @@ export function DialogoConfirmacion({
         // Escape con la petición en vuelo: cerrar haría creer que se canceló la acción.
         if (enCurso) evento.preventDefault()
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50 text-sm"
+      className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-borde-suave rounded-xl p-6 shadow-xl backdrop:bg-black/50 text-sm"
     >
       {abierto && (
         <>
@@ -94,7 +94,7 @@ export function DialogoConfirmacion({
               type="button"
               onClick={onCerrar}
               disabled={enCurso}
-              className="px-4 py-2 border border-outline rounded-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="px-4 py-2 border border-borde-control rounded-sm text-gray-700 hover:bg-superficie-suave disabled:opacity-50"
             >
               {TEXTO_VOLVER_SIN_CAMBIOS}
             </button>

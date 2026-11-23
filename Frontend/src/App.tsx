@@ -23,7 +23,7 @@ export const TEXTO_SIN_VERIFICAR =
 function PantallaCentrada({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-outline rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
         <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         {children}
       </div>
@@ -84,7 +84,7 @@ function App() {
       // Evita el parpadeo de la pantalla de login antes de saltar al panel.
       return (
         <PantallaCentrada>
-          <output className="block text-sm text-gray-500">{TEXTO_VERIFICANDO}</output>
+          <output className="block text-sm text-texto-secundario">{TEXTO_VERIFICANDO}</output>
         </PantallaCentrada>
       );
 
@@ -96,7 +96,7 @@ function App() {
             <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">
               Reintentar
             </button>
-            <button type="button" onClick={handleLogout} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">
+            <button type="button" onClick={handleLogout} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">
               Cerrar sesión
             </button>
           </div>
@@ -144,13 +144,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-outline rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
         
         {/* Logo (Verifica que la ruta sea correcta) */}
         <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         
         <h2 className="text-xl font-bold text-primary mb-1">Acceso al Sistema</h2>
-        <p className="text-xs text-gray-500 mb-6">
+        <p className="text-xs text-texto-secundario mb-6">
           Inicia sesión exclusivamente con tu correo institucional CESMAG.
         </p>
         
@@ -169,7 +169,7 @@ function App() {
         )}
       </div>
       
-      <p className="mt-6 text-xs text-gray-400 font-medium">
+      <p className="mt-6 text-xs text-texto-terciario font-medium">
         Universidad CESMAG · Ciencia y Servicio
       </p>
     </div>

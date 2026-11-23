@@ -103,7 +103,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
   return (
     <>
       {acciones.length > 0 ? (
-        <section aria-label="Acciones sobre la solicitud" className="border border-outline rounded-lg p-6 bg-surface">
+        <section aria-label="Acciones sobre la solicitud" className="border border-borde-suave rounded-lg p-6 bg-surface">
           <div className="flex flex-wrap justify-end gap-3">
             {acciones.map((transicion) => {
               const { boton, irreversible } = textosDe(transicion.accion, detalle.radicado, franjaPropuesta)
@@ -125,7 +125,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
       ) : (
         detalle.estado === 'En Producción' &&
         rol === 'SOLICITANTE' && (
-          <p className="p-3 border border-outline rounded-sm bg-gray-50 text-sm text-gray-700">{TEXTO_SIN_CANCELACION}</p>
+          <p className="p-3 border border-borde-suave rounded-sm bg-superficie-suave text-sm text-gray-700">{TEXTO_SIN_CANCELACION}</p>
         )
       )}
 
