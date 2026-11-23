@@ -31,6 +31,8 @@
      define grises. Siempre en hex, para que tema.test.ts mida cada par de contraste.
      9.3.3: outline (#c6c6cd, 1,70:1) se retiró; los controles usan borde-control y los
      contenedores y separadores, borde-suave. El placeholder usa texto-terciario. */
+  /* 9.3.3: texto principal (reemplaza gray-700), mismo tono del Azul 2 desaturado. */
+  --color-texto-principal: #3A4057;
   --color-texto-secundario: #545D7C;
   --color-texto-terciario: #646C88;
   --color-borde-control: #7C849F;

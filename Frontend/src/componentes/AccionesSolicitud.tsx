@@ -125,7 +125,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
       ) : (
         detalle.estado === 'En Producción' &&
         rol === 'SOLICITANTE' && (
-          <p className="p-3 border border-borde-suave rounded-sm bg-superficie-suave text-sm text-gray-700">{TEXTO_SIN_CANCELACION}</p>
+          <p className="p-3 border border-borde-suave rounded-sm bg-superficie-suave text-sm text-texto-principal">{TEXTO_SIN_CANCELACION}</p>
         )
       )}
 

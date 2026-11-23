@@ -259,7 +259,7 @@ function Contenido({
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación del Staff Estudio C
           </h3>
           {propuesta.motivo !== null && (
-            <p className="mt-2 text-gray-700">
+            <p className="mt-2 text-texto-principal">
               <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
             </p>
           )}

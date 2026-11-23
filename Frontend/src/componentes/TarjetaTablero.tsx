@@ -84,11 +84,11 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         )}
         <div>
           <dt className="sr-only">Categoría</dt>
-          <dd className="text-gray-700">{ETIQUETAS_CATEGORIA[categoria]}</dd>
+          <dd className="text-texto-principal">{ETIQUETAS_CATEGORIA[categoria]}</dd>
         </div>
         <div>
           <dt className="sr-only">Solicitante</dt>
-          <dd className="text-gray-700">{usuario.nombre}</dd>
+          <dd className="text-texto-principal">{usuario.nombre}</dd>
         </div>
       </dl>
 

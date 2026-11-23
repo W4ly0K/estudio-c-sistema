@@ -80,7 +80,7 @@ export function DialogoConfirmacion({
           <h3 id={`${id}-titulo`} className="text-lg font-bold text-primary mb-3">
             {titulo}
           </h3>
-          <p id={`${id}-descripcion`} className="text-gray-700">
+          <p id={`${id}-descripcion`} className="text-texto-principal">
             {descripcion}
           </p>
           {children}
@@ -94,7 +94,7 @@ export function DialogoConfirmacion({
               type="button"
               onClick={onCerrar}
               disabled={enCurso}
-              className="px-4 py-2 border border-borde-control rounded-sm text-gray-700 hover:bg-superficie-suave disabled:opacity-50"
+              className="px-4 py-2 border border-borde-control rounded-sm text-texto-principal hover:bg-superficie-suave disabled:opacity-50"
             >
               {TEXTO_VOLVER_SIN_CAMBIOS}
             </button>

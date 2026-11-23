@@ -56,7 +56,7 @@ describe('Tema · invariantes de marca (R9-3)', () => {
     expect(color(token).toUpperCase()).toBe(color(marca).toUpperCase())
   })
 
-  it.each(['texto-secundario', 'texto-terciario', 'borde-control', 'borde-suave', 'superficie-suave', 'foco'])(
+  it.each(['texto-principal', 'texto-secundario', 'texto-terciario', 'borde-control', 'borde-suave', 'superficie-suave', 'foco'])(
     'declara --color-%s en hex',
     (token) => {
       expect(color(token)).toMatch(/^#[0-9a-fA-F]{6}$/)
@@ -71,6 +71,7 @@ type Par = [primerPlano: string, fondo: string, minimo: number]
 
 const PARES: Par[] = [
   ...FONDOS.flatMap((fondo): Par[] => [
+    ['texto-principal', fondo, 4.5],
     ['texto-secundario', fondo, 4.5],
     ['texto-terciario', fondo, 4.5],
     ['borde-control', fondo, 3],
@@ -127,16 +128,16 @@ const EXCEPCIONES: ReadonlySet<string> = new Set(['backdrop:bg-black/50'])
  */
 const PENDIENTES: Record<string, Record<string, number>> = {
   './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
-  './DetalleSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
-  './DetalleStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2 },
-  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2 },
+  './DetalleSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './DetalleStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './InicioStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './TableroStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
-  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-gray-700': 2 },
-  './componentes/CorreccionEnlaceEntrega.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
-  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1, 'text-gray-700': 2 },
-  './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
+  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
+  './componentes/CorreccionEnlaceEntrega.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1 },
+  './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './componentes/HistorialEnlaces.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
   './componentes/Insignias.tsx': {
     'bg-gray-100': 3, 'bg-gray-200': 1, 'bg-gray-700': 1, 'bg-gray-900': 1,
@@ -144,8 +145,6 @@ const PENDIENTES: Record<string, Record<string, number>> = {
     'border-gray-700': 1, 'border-gray-900': 4, 'text-gray-500': 1, 'text-gray-600': 1,
     'text-gray-700': 3, 'text-gray-900': 3, 'text-white': 2,
   },
-  './componentes/LineaDeVida.tsx': { 'text-gray-700': 3 },
-  './componentes/TarjetaTablero.tsx': { 'text-gray-700': 2 },
 }
 
 function contar(usos: string[]): Record<string, number> {

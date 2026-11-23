@@ -327,9 +327,9 @@ function Contenido({
           <h3 className="font-bold text-primary">
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación
           </h3>
-          <p className="mt-1 text-gray-700">{TEXTO_PROPUESTA_EN_ESPERA_STAFF}</p>
+          <p className="mt-1 text-texto-principal">{TEXTO_PROPUESTA_EN_ESPERA_STAFF}</p>
           {propuesta.motivo !== null && (
-            <p className="mt-2 text-gray-700">
+            <p className="mt-2 text-texto-principal">
               <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.STAFF}:</span> {propuesta.motivo}
             </p>
           )}

@@ -133,7 +133,7 @@ export function CorreccionEnlaceEntrega({ detalle, deshabilitada, alCorregir, al
         onCerrar={cerrar}
       >
         {/* div y no p: EnlaceProductoFinal pinta un <p> cuando el enlace guardado no es seguro. */}
-        <div className="mt-4 text-gray-700">
+        <div className="mt-4 text-texto-principal">
           {TEXTO_ENLACE_ACTUAL}: <EnlaceProductoFinal enlace={anteriorObservado} radicado={detalle.radicado} />
         </div>
         <CampoEnlace

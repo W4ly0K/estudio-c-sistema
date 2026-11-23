@@ -99,7 +99,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
                   <span aria-hidden="true">⚠ </span>
                   {TEXTO_TITULO_PENDIENTES} ({resumen.pendientesDeTuRespuesta.length})
                 </h2>
-                <p className="text-sm text-gray-700">{TEXTO_AYUDA_PENDIENTES}</p>
+                <p className="text-sm text-texto-principal">{TEXTO_AYUDA_PENDIENTES}</p>
                 <ul className="space-y-4">
                   {resumen.pendientesDeTuRespuesta.map((solicitud) => (
                     <li key={solicitud.radicado}>
@@ -136,7 +136,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
           <h2 id={ids.reglas} className="font-bold text-primary mb-2">
             {TEXTO_TITULO_REGLAS}
           </h2>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+          <ul className="list-disc pl-5 space-y-1 text-sm text-texto-principal">
             {REGLAS_ESTUDIO_C.map((regla) => (
               <li key={regla}>{regla}</li>
             ))}

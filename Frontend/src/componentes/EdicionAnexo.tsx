@@ -146,7 +146,7 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
       >
         {anteriorObservado !== null && (
           // div y no p: EnlaceAnexo pinta un <p> cuando el enlace guardado no es seguro.
-          <div className="mt-4 text-gray-700">
+          <div className="mt-4 text-texto-principal">
             {TEXTO_ANEXO_ACTUAL}: <EnlaceAnexo enlace={anteriorObservado} radicado={detalle.radicado} />
           </div>
         )}

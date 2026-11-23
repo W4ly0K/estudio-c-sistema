@@ -37,7 +37,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
                 <span aria-hidden="true" className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${nodo.clases}`}>
                   {nodo.simbolo === '' ? indice + 1 : nodo.simbolo}
                 </span>
-                <span className={`mt-2 text-xs font-bold ${paso.situacion === 'actual' ? 'text-primary underline' : 'text-gray-700'}`}>
+                <span className={`mt-2 text-xs font-bold ${paso.situacion === 'actual' ? 'text-primary underline' : 'text-texto-principal'}`}>
                   {etiquetaEstado(paso.estado, linea.perspectiva)}
                 </span>
                 <span className="sr-only">: {nodo.texto}</span>
@@ -48,7 +48,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
           })}
         </ol>
         {linea.desvio !== null && (
-          <p className="mt-5 pt-4 border-t border-borde-suave text-sm text-gray-700 flex flex-wrap items-center gap-2">
+          <p className="mt-5 pt-4 border-t border-borde-suave text-sm text-texto-principal flex flex-wrap items-center gap-2">
             Estado actual, fuera del camino habitual: <InsigniaEstado estado={linea.desvio} perspectiva={linea.perspectiva} />
           </p>
         )}
@@ -73,7 +73,7 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
               </div>
               {evento.actor !== null && <p className="text-xs text-texto-secundario">Por: {evento.actor}</p>}
               {evento.motivo !== null && (
-                <p className="mt-1 text-gray-700">
+                <p className="mt-1 text-texto-principal">
                   <span className="font-bold">{evento.motivo.etiqueta}:</span> {evento.motivo.texto}
                 </p>
               )}

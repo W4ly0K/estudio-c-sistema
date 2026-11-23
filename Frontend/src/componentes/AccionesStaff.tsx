@@ -348,7 +348,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         )}
         {ajustando && (
           <>
-            <p className="mt-4 text-gray-700">
+            <p className="mt-4 text-texto-principal">
               Pedido por el solicitante (hora de Colombia): <strong className="text-primary">{franjaActual}</strong>, en{' '}
               <strong className="text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</strong>
             </p>
@@ -366,7 +366,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         )}
         {accion === 'PROPONER_REPROGRAMACION' && (
           <>
-            <p className="mt-4 text-gray-700">
+            <p className="mt-4 text-texto-principal">
               Franja actual (hora de Colombia): <strong className="text-primary">{franjaActual}</strong>
             </p>
             <div className="mt-4 space-y-4">
