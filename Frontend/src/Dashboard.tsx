@@ -9,6 +9,7 @@ import {
   type SubEspacio,
   type UsuarioSesion,
 } from './api/esquemas';
+import { ADMITE_ANEXO, admiteAnexo } from './api/categorias';
 import { useApi } from './api/contexto-api';
 import type { CuerpoCrearSolicitud } from './api/solicitudes';
 import {
@@ -17,10 +18,18 @@ import {
   TEXTO_LEYENDA_SUB_ESPACIO,
   TEXTO_LUGAR_DE_SERVICIOS,
 } from './componentes/CampoSubEspacio';
+import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
 import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
+import {
+  anexoParaEnviar,
+  anexoSegunCategoria,
+  TEXTO_ANEXO_INVALIDO,
+  TEXTO_AYUDA_ANEXO,
+  TEXTO_ETIQUETA_ANEXO,
+} from './presentacion/anexo';
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
@@ -40,6 +49,12 @@ interface FormularioSolicitud {
    * sin valor inicial para no elegir por él. Fuera de esa categoría siempre es null.
    */
   subEspacio: SubEspacio | null;
+  /**
+   * Fase 9 · R9-1: enlace opcional al guion; vacío = sin anexo (la clave no viaja). Fase 9 · AN2b
+   * (K2): solo en PODCAST, VIDEO y STREAMING. Al pasar a ESPACIOS o ASESORIAS se BORRA (como el
+   * lugar en SE10); entre categorías que lo admiten se conserva.
+   */
+  anexo: string;
 }
 
 const FORMULARIO_VACIO: FormularioSolicitud = {
@@ -47,6 +62,7 @@ const FORMULARIO_VACIO: FormularioSolicitud = {
   categoria: 'ESPACIOS',
   proposito: '',
   subEspacio: null,
+  anexo: '',
 };
 
 /**
@@ -80,6 +96,8 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   const dialogoRef = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState<FormularioSolicitud>(FORMULARIO_VACIO);
   const eligeLugar = form.categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO;
+  // Fase 9 · AN2b (K2): el campo del anexo solo existe en las categorías que lo admiten.
+  const pideAnexo = ADMITE_ANEXO[form.categoria];
   const [errorValidacion, setErrorValidacion] = useState('');
 
   // Una sola fuente de verdad: el estado `dialogo` manda y el <dialog> lo obedece.
@@ -123,20 +141,36 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
       setErrorValidacion(franja.error);
       return;
     }
-    const comun = { proposito: form.proposito, fecha_inicio: franja.inicio, fecha_fin: franja.fin };
+    // Fase 9 · R9-1 y AN2b (K2): el anexo se valida con la misma regla con la que se pinta
+    // (esEnlaceSeguro), y solo en las categorías que lo admiten: un texto residual en ESPACIOS o
+    // ASESORIAS no se valida ni viaja.
+    const anexo = anexoSegunCategoria(form.categoria, form.anexo);
+    if (!anexo.ok) {
+      setErrorValidacion(anexo.error);
+      return;
+    }
+    const comun = {
+      proposito: form.proposito,
+      fecha_inicio: franja.inicio,
+      fecha_fin: franja.fin,
+    };
+    const { categoria } = form;
     let cuerpo: CuerpoCrearSolicitud;
-    // Fase 7 · SE10: el lugar solo viaja en una solicitud de espacio físico. La rama decide
-    // también el tipo: TypeScript no deja enviar un servicio con lugar ni un espacio sin él.
-    if (form.categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO) {
+    // Fase 7 · SE10 y Fase 9 · AN2b: la rama decide también el tipo. TypeScript no deja enviar un
+    // servicio con lugar, un espacio sin él, ni un anexo en ESPACIOS o ASESORIAS.
+    if (categoria === CATEGORIA_QUE_ELIGE_SUB_ESPACIO) {
       // El navegador ya lo exige (`required`); esta guarda es la defensa en profundidad y lo
       // que le permite a TypeScript enviar un SubEspacio y no un null.
       if (form.subEspacio === null) {
         setErrorValidacion(TEXTO_ELIGE_SUB_ESPACIO);
         return;
       }
-      cuerpo = { ...comun, categoria: form.categoria, sub_espacio: form.subEspacio };
+      cuerpo = { ...comun, categoria, sub_espacio: form.subEspacio };
+    } else if (admiteAnexo(categoria)) {
+      // Sin anexo, la clave no viaja: el servidor rechaza la cadena vacía (DTO ⊆ CHECK).
+      cuerpo = { ...comun, categoria, ...(anexo.enlace === undefined ? {} : { enlace_anexo: anexo.enlace }) };
     } else {
-      cuerpo = { ...comun, categoria: form.categoria };
+      cuerpo = { ...comun, categoria };
     }
 
     const resultado = await api.crear(cuerpo);
@@ -245,7 +279,15 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                     const categoria = CATEGORIAS.find((c) => c === e.target.value);
                     // SE10: al salir de "espacio físico" la elección se BORRA: un lugar elegido antes
                     // no viaja oculto, y volver a esa categoría pide elegir de nuevo.
-                    if (categoria) setForm({ ...form, categoria, subEspacio: null });
+                    if (!categoria) return;
+                    // AN2b (K2 · DK2-2 y DK2-5): hacia ESPACIOS o ASESORIAS el anexo se borra sin
+                    // aviso; entre categorías que lo admiten se conserva.
+                    const conservaAnexo = ADMITE_ANEXO[categoria];
+                    setForm({ ...form, categoria, subEspacio: null, anexo: conservaAnexo ? form.anexo : '' });
+                    // DK2-3: si se descarta, su aviso local también; los demás mensajes se conservan.
+                    if (!conservaAnexo) {
+                      setErrorValidacion((actual) => (actual === TEXTO_ANEXO_INVALIDO ? '' : actual));
+                    }
                   }}
                 >
                   {CATEGORIAS.map((categoria) => (
@@ -280,6 +322,19 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   onChange={e => setForm({...form, proposito: e.target.value})}
                 />
               </div>
+
+              {/* Fase 9 · R9-1: anexo opcional (guion); la ayuda explica cómo compartirlo (AN15).
+                  AN2b (K2): solo en PODCAST, VIDEO y STREAMING. */}
+              {pideAnexo && (
+                <CampoEnlace
+                  etiqueta={TEXTO_ETIQUETA_ANEXO}
+                  ayuda={TEXTO_AYUDA_ANEXO}
+                  valor={form.anexo}
+                  onCambio={(anexo) => setForm({ ...form, anexo })}
+                  invalido={!anexoParaEnviar(form.anexo).ok}
+                  soloLectura={false}
+                />
+              )}
 
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
 

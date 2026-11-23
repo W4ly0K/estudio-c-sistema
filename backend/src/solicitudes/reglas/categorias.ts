@@ -26,6 +26,11 @@ export interface PoliticaCategoria {
   readonly pasaPorEdicion: boolean;
   /** Requisito 4: OBLIGATORIO exige un https:// válido; PROHIBIDO responde 400 si llega. */
   readonly enlaceAlEntregar: EnlaceAlEntregar;
+  /**
+   * Fase 9 · AN2b (pregunta 5, ADR-009 §2.7): admite el anexo del solicitante (guion). Hoy coincide
+   * con enlaceAlEntregar OBLIGATORIO, pero por otro motivo: por eso es un campo propio.
+   */
+  readonly admiteAnexo: boolean;
 }
 
 /**
@@ -34,11 +39,11 @@ export interface PoliticaCategoria {
  * y la migración (su prueba de alineación compara el SQL con las listas derivadas de abajo).
  */
 export const POLITICA_POR_CATEGORIA: Readonly<Record<CategoriaSolicitud, PoliticaCategoria>> = Object.freeze({
-  PODCAST: Object.freeze({ pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO' }),
-  VIDEO: Object.freeze({ pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO' }),
-  ESPACIOS: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO' }),
-  STREAMING: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'OBLIGATORIO' }),
-  ASESORIAS: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO' }),
+  PODCAST: Object.freeze({ pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true }),
+  VIDEO: Object.freeze({ pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true }),
+  ESPACIOS: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO', admiteAnexo: false }),
+  STREAMING: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true }),
+  ASESORIAS: Object.freeze({ pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO', admiteAnexo: false }),
 });
 
 const CATEGORIAS: readonly CategoriaSolicitud[] = Object.values(CategoriaSolicitud);
@@ -51,6 +56,15 @@ export const CATEGORIAS_CON_EDICION: readonly CategoriaSolicitud[] = Object.free
 /** Derivada de la tabla: las categorías cuya entrega exige el enlace, en el orden del enum. */
 export const CATEGORIAS_CON_ENLACE: readonly CategoriaSolicitud[] = Object.freeze(
   CATEGORIAS.filter((categoria) => POLITICA_POR_CATEGORIA[categoria].enlaceAlEntregar === 'OBLIGATORIO'),
+);
+
+/**
+ * Derivada de la tabla: las categorías que admiten anexo, en el orden del enum. La migración
+ * 20261109110000_enlace_anexo la repite en Solicitud_enlace_anexo_segun_categoria_check (A3);
+ * categorias.spec.ts compara las dos.
+ */
+export const CATEGORIAS_CON_ANEXO: readonly CategoriaSolicitud[] = Object.freeze(
+  CATEGORIAS.filter((categoria) => POLITICA_POR_CATEGORIA[categoria].admiteAnexo),
 );
 
 /**

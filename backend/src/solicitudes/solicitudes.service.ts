@@ -1,4 +1,4 @@
-import { Prisma, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
+import { Prisma, CampoEnlace, CategoriaSolicitud, RolUsuario, Solicitud, SubEspacio } from '@prisma/client';
 import {
   Injectable,
   BadRequestException,
@@ -11,6 +11,8 @@ import {
 import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import type { EditarAnexoDto } from './dto/editar-anexo.dto';
+import type { CorregirEnlaceEntregaDto } from './dto/corregir-enlace-entrega.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
 import { filtroDeAcceso } from './politicas/filtro-de-acceso';
@@ -40,7 +42,9 @@ import {
   type DetalleSolicitudStaff,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
 } from './proyecciones/detalle-solicitud.proyeccion';
+import { datosDelLog, ESTADO_DEL_EVENTO_DE_ENLACE, type EventoAuditoria } from './auditoria/evento-auditoria';
 
 /** Mensaje único para "no existe" y "no es tuyo" (Decisión H: anti-enumeración). */
 export const MENSAJE_SOLICITUD_NO_ENCONTRADA = 'Solicitud no encontrada.';
@@ -136,6 +140,105 @@ export const MENSAJE_MOTIVO_SOLO_EN_RECHAZO =
   'El motivo de rechazo solo se admite al cambiar el estado a "Rechazado".';
 
 /**
+ * Fase 9 · AN2b (ADR-009 §2.7, pregunta 5): solo PODCAST, VIDEO y STREAMING admiten anexo. En el
+ * motor lo exige Solicitud_enlace_anexo_segun_categoria_check (H1); en el servidor, create() lo
+ * valida antes de consultar la base (J0). Sin esta regla, el motor rechazaba el INSERT y la excepción
+ * de Prisma salía sin traducir (medido en I-38e el 2026-11-12, antes de la corrección).
+ */
+export const MENSAJE_ANEXO_NO_APLICA =
+  'Esta categoría no admite anexo: el guion solo se adjunta en solicitudes de pódcast, video o streaming.';
+
+/** Fase 9 · ADR-005 E7 (D4-B′): al aprobar (T1) en las categorías con anexo, el Staff indica cuál vio. */
+export const MENSAJE_ANEXO_REVISADO_OBLIGATORIO =
+  'Para aprobar esta solicitud indique el anexo revisado, o null si no tenía anexo.';
+
+/** Fase 9 · ADR-005 E7: el anexo que vio el Staff ya no es el vigente (lo cambió o retiró el solicitante). */
+export const MENSAJE_ANEXO_CAMBIO_EN_REVISION =
+  'El anexo cambió mientras se revisaba. Recargue el detalle y revíselo antes de aprobar.';
+
+/** Fase 9 · ADR-005 E7: anexo_revisado solo acompaña a T1 en PODCAST, VIDEO o STREAMING. */
+export const MENSAJE_ANEXO_REVISADO_NO_APLICA =
+  'anexo_revisado solo se envía al aprobar una solicitud de pódcast, video o streaming.';
+
+/** Fase 9 · ADR-009 AN10 (DJ2-3): el solicitante solo cambia el anexo en «Recibido». */
+export const MENSAJE_ANEXO_SOLO_EN_RECIBIDO =
+  'El anexo solo se puede cambiar mientras la solicitud está en Recibido.';
+
+/** Fase 9 · ADR-009 AN13 (D9): el anexo que vio el solicitante ya no es el vigente. */
+export const MENSAJE_ANEXO_DESACTUALIZADO =
+  'El anexo cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.';
+
+/** Fase 9 · ADR-009 AN10 a AN14: respuestas del comando del anexo. */
+export const MENSAJE_ANEXO_ACTUALIZADO = 'Anexo actualizado.';
+export const MENSAJE_ANEXO_RETIRADO = 'Anexo retirado.';
+export const MENSAJE_ANEXO_SIN_CAMBIOS = 'El anexo ya tenía ese valor.';
+
+/**
+ * Fase 9 · DJ2-2: respuesta de PATCH /solicitudes/:radicado/anexo. `sin_cambios` va SIEMPRE explícito;
+ * `solicitud` es la proyección del dueño, también cuando no hubo escritura.
+ */
+export interface RespuestaEdicionAnexo {
+  mensaje: string;
+  sin_cambios: boolean;
+  solicitud: DetalleSolicitudSolicitante;
+}
+
+/** Fase 9 · ADR-012 D7 (lote J2b, DJ2b-3): el historial de enlaces es solo para el Staff. */
+export const MENSAJE_HISTORIAL_SOLO_STAFF = 'El historial de enlaces solo lo puede consultar el Staff.';
+
+/** Fase 9 · J2b: un evento de enlace, con EXACTAMENTE los campos permitidos (DJ2b-2). */
+export interface EventoDeEnlace {
+  id_log: string;
+  enlace_campo: CampoEnlace;
+  enlace_anterior: string | null;
+  enlace_nuevo: string | null;
+  motivo_correccion: string | null;
+  modificado_por: string;
+  fecha_modificacion: Date;
+}
+
+/** Fase 9 · J2b (DJ2b-1): respuesta de GET /solicitudes/:radicado/historial-enlaces. */
+export interface HistorialDeEnlaces {
+  radicado: string;
+  eventos: EventoDeEnlace[];
+}
+
+/** Fase 9 · ADR-008 EN6 (lote J3, DJ3-2): la corrección del enlace de entrega es solo del Staff. */
+export const MENSAJE_CORRECCION_SOLO_STAFF = 'La corrección del enlace del producto final solo la hace el Staff.';
+
+/** Fase 9 · ADR-008 EN6 a EN9 (DJ3-3). */
+export const MENSAJE_CORRECCION_NO_APLICA = 'Esta categoría no tiene un enlace de producto final que corregir.';
+export const MENSAJE_CORRECCION_SOLO_EN_ENTREGADO =
+  'El enlace del producto final solo se corrige en una solicitud entregada.';
+export const MENSAJE_ENTREGA_SIN_ENLACE_PREVIO =
+  'Esta entrega no tiene un enlace registrado; agregarlo por primera vez no está disponible.';
+export const MENSAJE_ENLACE_DESACTUALIZADO =
+  'El enlace cambió desde que abrió el detalle. Recargue y vuelva a intentarlo.';
+export const MENSAJE_ENLACE_ENTREGA_CORREGIDO = 'Enlace del producto final corregido.';
+export const MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS = 'El enlace ya tenía ese valor.';
+
+/** Fase 9 · DJ3-4: respuesta de la corrección, con la proyección del Staff (también sin escritura). */
+export interface RespuestaCorreccionEntrega {
+  mensaje: string;
+  sin_cambios: boolean;
+  solicitud: DetalleSolicitudStaff;
+}
+
+/** Fase 9 · EN6: lo mínimo que lee la corrección. */
+const SELECT_ENTREGA_STAFF = {
+  estado: true,
+  categoria: true,
+  enlace_entrega: true,
+} satisfies Prisma.SolicitudSelect;
+
+/** Fase 9 · AN10: lo mínimo que lee el comando del anexo (propiedad aparte, en el WHERE). */
+const SELECT_ANEXO_SOLICITANTE = {
+  estado: true,
+  categoria: true,
+  enlace_anexo: true,
+} satisfies Prisma.SolicitudSelect;
+
+/**
  * D5 · F3: el compare-and-set no encontró la fila tal como se validó (otra petición la
  * cambió entre la lectura y la escritura). Distinto de CA-06: no es un cruce de franjas.
  */
@@ -218,8 +321,8 @@ interface OperacionCompareAndSet<T> {
   data: Prisma.SolicitudUpdateManyMutationInput;
   /** R1: si viene, los recursos se reemplazan dentro de la misma transacción. */
   recursos?: ReadonlyArray<{ id_recurso: number; cantidad: number }>;
-  /** CA-09: si viene, se registra el log en la misma transacción. */
-  log?: Omit<Prisma.Log_AuditoriaUncheckedCreateInput, 'radicado_solicitud'>;
+  /** CA-09 · ADR-012 EV6: si viene, su log se registra en la misma transacción. */
+  evento?: EventoAuditoria;
   /** Relectura dentro de la transacción (con la proyección que corresponda). */
   releer: (tx: Prisma.TransactionClient) => Promise<T>;
 }
@@ -257,6 +360,14 @@ export class SolicitudesService {
       throw new BadRequestException(MENSAJES_SUBESPACIO_AL_RADICAR[lugar.error]);
     }
     const subEspacio = lugar.subEspacio;
+
+    // --- 0b. Fase 9 · AN2b: el anexo solo en las categorías que lo admiten. También es forma de la
+    // petición: va antes del horario y de CA-06, así que no consulta ni escribe nada. Ausente o null
+    // = sin anexo, válido en cualquier categoría (DTO ⊆ CHECK: el motor repite la regla en A3).
+    const tieneAnexo = (createSolicitudeDto.enlace_anexo ?? null) !== null;
+    if (tieneAnexo && !POLITICA_POR_CATEGORIA[createSolicitudeDto.categoria].admiteAnexo) {
+      throw new BadRequestException(MENSAJE_ANEXO_NO_APLICA);
+    }
 
     // --- 1. Reglas de horario puras (Fase 3): CA-04, pasado, mismo día, día
     // hábil y urgencia por 5 días hábiles. Van ANTES de CA-06: una entrada
@@ -308,6 +419,8 @@ export class SolicitudesService {
           es_urgencia: horario.urgente,
           // Siempre explícito: desde el contract (7A.8) la columna no tiene DEFAULT.
           sub_espacio: subEspacio,
+          // Fase 9 · R9-1: el anexo tal como lo validó el pipe; null = sin anexo (siempre explícito).
+          enlace_anexo: createSolicitudeDto.enlace_anexo ?? null,
         
           recursos: { 
             create: createSolicitudeDto.recursos?.map(recurso => ({
@@ -492,6 +605,26 @@ export class SolicitudesService {
       }
     }
 
+    // --- 2d. Fase 9 · ADR-005 E7 (D4-B′): al aprobar (T1, también con ajustes) en una categoría GUARDADA
+    // que admite anexo, el Staff confirma el anexo que vio: se protege la REFERENCIA, no la lectura del
+    // archivo. Va después de la máquina y antes de franja y CA-06 (solo cambia el orden de los errores).
+    // En cualquier otro caso, incluido un PATCH sin cambio de estado, el campo no aplica: 400, también
+    // antes de la salida sin escritura, para que no se ignore en silencio.
+    const exigeAnexoRevisado = accion === 'APROBAR' && POLITICA_POR_CATEGORIA[existente.categoria].admiteAnexo;
+    const anexoRevisado = updateSolicitudeDto.anexo_revisado;
+    if (!exigeAnexoRevisado && anexoRevisado !== undefined) {
+      throw new BadRequestException(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+    }
+    if (exigeAnexoRevisado) {
+      if (anexoRevisado === undefined) {
+        throw new BadRequestException(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      }
+      // Igualdad estricta y exacta: null === null («no había anexo»); una URL, carácter por carácter.
+      if (anexoRevisado !== existente.enlace_anexo) {
+        throw new ConflictException(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+      }
+    }
+
     // --- 2b. T10 (Fase 7 · NA2): se cierra la franja REGISTRADA. Fechas nuevas en la misma
     // petición cambiarían la base sobre la que se evalúa la regla de tiempo del paso 5b.
     if (accion === 'CERRAR_NO_ATENDIDA' && cambianFechas) {
@@ -580,24 +713,30 @@ export class SolicitudesService {
         fecha_fin: existente.fecha_fin,
         // Fase 7 · SE5: sobre el sub-espacio guardado también se calculó CA-06.
         sub_espacio: existente.sub_espacio,
+        // Fase 9 · ADR-005 E7: solo en T1 con anexo, el anexo que se comparó (el leído). Si el
+        // solicitante lo cambia entre la lectura y la escritura, el compare-and-set pierde → 409.
+        ...(exigeAnexoRevisado ? { enlace_anexo: existente.enlace_anexo } : {}),
       },
       data,
       recursos,
       // CA-09: hay log si y solo si cambió el estado.
-      log: cambiaEstado
+      evento: cambiaEstado
         ? {
-            estado_anterior: existente.estado,
-            estado_nuevo: estadoFinal,
-            modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
-            motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
-            // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
-            // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
-            ...(accion === 'APROBAR' && cambiaSubEspacio
-              ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
-              : {}),
-            ...(accion === 'APROBAR' && cambiaFranja
-              ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
-              : {}),
+            tipo: 'TRANSICION',
+            log: {
+              estado_anterior: existente.estado,
+              estado_nuevo: estadoFinal,
+              modificado_por: idStaff, // Zero Trust: autor tomado del JWT verificado, nunca del body
+              motivo_rechazo: updateSolicitudeDto.motivo_rechazo,
+              // Fase 7 · SE7 y P-1 (Q-A12, Q-B2): el ajuste al validar queda en el MISMO log de T1.
+              // Solo con APROBAR: el motor exige estado_nuevo = "Validado" (A3 y F3).
+              ...(accion === 'APROBAR' && cambiaSubEspacio
+                ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioFinal }
+                : {}),
+              ...(accion === 'APROBAR' && cambiaFranja
+                ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin }
+                : {}),
+            },
           }
         : undefined,
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado } }),
@@ -632,10 +771,13 @@ export class SolicitudesService {
       // G3: la propiedad también va en la ESCRITURA; el estado esperado es el leído.
       esperado: { id_usuario: usuario.id, estado: existente.estado },
       data: { estado: transicion.destino },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6: el autor es quien cancela, tomado del JWT
+        },
       },
       // G8: proyección mínima del solicitante (sin la identidad del Staff en los logs).
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
@@ -719,13 +861,16 @@ export class SolicitudesService {
         sub_espacio_propuesto: null,
         es_urgencia: false,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
-        // Fase 7 · SE7 y P-1 (Q-A12): T7 termina en "Validado", como exigen A3 y F3.
-        ...(cambiaSubEspacio ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioPropuesto } : {}),
-        ...(cambiaFranja ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin } : {}),
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6 · L9 (aceptar): autor tomado del JWT
+          // Fase 7 · SE7 y P-1 (Q-A12): T7 termina en "Validado", como exigen A3 y F3.
+          ...(cambiaSubEspacio ? { sub_espacio_anterior: existente.sub_espacio, sub_espacio_nuevo: subEspacioPropuesto } : {}),
+          ...(cambiaFranja ? { fecha_inicio_anterior: existente.fecha_inicio, fecha_fin_anterior: existente.fecha_fin } : {}),
+        },
       },
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
@@ -758,14 +903,177 @@ export class SolicitudesService {
         fecha_propuesta_fin: null,
         sub_espacio_propuesto: null,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: transicion.destino,
-        modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: transicion.destino,
+          modificado_por: usuario.id, // D6 · L9 (rechazar): autor tomado del JWT
+        },
       },
       releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
     });
     return { mensaje: MENSAJE_REPROGRAMACION_RECHAZADA, solicitud };
+  }
+
+  /**
+   * Fase 9 · ADR-009 AN10 a AN14 (lote J2): el DUEÑO agrega, cambia o retira el anexo de su solicitud.
+   * Orden (DJ2-1, enmienda de AN14): propiedad (404 uniforme) → categoría (400) → «Recibido» (409) →
+   * sin_cambios (200) → valor anterior observado (409) → compare-and-set con el evento ENLACE_ANEXO.
+   * sin_cambios solo se responde después de comprobar propiedad, categoría y estado: nunca hay éxito en
+   * un estado no autorizado. Si el valor pedido ya es el vigente, es sin_cambios aunque el anterior
+   * observado difiera (D10: el efecto pedido ya existe; no es idempotencia completa).
+   */
+  async editarAnexo(radicado: string, usuario: UsuarioAutenticado, dto: EditarAnexoDto): Promise<RespuestaEdicionAnexo> {
+    // ADR-002: la propiedad va DENTRO del WHERE, explícita por id_usuario (además de @Roles).
+    const propia = { radicado, id_usuario: usuario.id } satisfies Prisma.SolicitudWhereInput;
+    const existente = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_ANEXO_SOLICITANTE });
+    if (!existente) {
+      // Ajena o inexistente → el mismo 404, antes de revelar categoría o estado.
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // AN2b: la categoría GUARDADA decide si admite anexo (el motor lo repite en A3).
+    if (!POLITICA_POR_CATEGORIA[existente.categoria].admiteAnexo) {
+      throw new BadRequestException(MENSAJE_ANEXO_NO_APLICA);
+    }
+    // AN10 (pregunta 3): solo en «Recibido».
+    if (existente.estado !== ESTADO_INICIAL) {
+      throw new ConflictException(MENSAJE_ANEXO_SOLO_EN_RECIBIDO);
+    }
+    // AN14 · D10: el valor pedido ya es el vigente → sin escritura ni evento, con la proyección del dueño.
+    if (dto.enlace_anexo === existente.enlace_anexo) {
+      const solicitud = await this.prisma.solicitud.findFirst({ where: propia, select: SELECT_DETALLE_SOLICITANTE });
+      if (!solicitud) {
+        throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      }
+      return { mensaje: MENSAJE_ANEXO_SIN_CAMBIOS, sin_cambios: true, solicitud };
+    }
+    // AN13 · D9: comparación exacta con el vigente (null === null: «no había anexo»).
+    if (dto.enlace_anexo_anterior !== existente.enlace_anexo) {
+      throw new ConflictException(MENSAJE_ANEXO_DESACTUALIZADO);
+    }
+
+    // ADR-012 EV5: el cambio y su evento en la MISMA transacción. El compare-and-set exige el dueño, el
+    // estado y el anexo observado: si cualquiera cambió entre la lectura y la escritura → 409, sin evento.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { id_usuario: usuario.id, estado: ESTADO_INICIAL, enlace_anexo: existente.enlace_anexo },
+      data: { enlace_anexo: dto.enlace_anexo },
+      evento: {
+        tipo: 'ENLACE_ANEXO',
+        modificado_por: usuario.id, // Zero Trust: autor tomado del JWT
+        // El valor LEÍDO de la base (igual al observado tras AN13): el log dice exactamente qué había.
+        enlace_anterior: existente.enlace_anexo,
+        enlace_nuevo: dto.enlace_anexo,
+      },
+      // Proyección del dueño: sus logs excluyen los eventos de enlace (ADR-012 EV7, lote I-2).
+      releer: (tx) => tx.solicitud.findFirstOrThrow({ where: propia, select: SELECT_DETALLE_SOLICITANTE }),
+    });
+    return {
+      mensaje: dto.enlace_anexo === null ? MENSAJE_ANEXO_RETIRADO : MENSAJE_ANEXO_ACTUALIZADO,
+      sin_cambios: false,
+      solicitud,
+    };
+  }
+
+  /**
+   * Fase 9 · ADR-008 EN6 a EN12 (lote J3): el STAFF corrige el enlace del producto final de una entrega.
+   * Orden (DJ3-1, enmienda de EN12): rol (403, antes de consultar) → 404 uniforme → categoría (400) →
+   * «Entregado» (409) → enlace previo (409, EN8) → sin_cambios (200) → enlace anterior observado (409) →
+   * compare-and-set con el evento ENLACE_ENTREGA. No es una transición: el estado no cambia, no pasa por
+   * la máquina (ni T9 ni T12) y no deja log de transición; la línea de vida no se mueve (I-2).
+   */
+  async corregirEnlaceEntrega(
+    radicado: string,
+    usuario: UsuarioAutenticado,
+    dto: CorregirEnlaceEntregaDto,
+  ): Promise<RespuestaCorreccionEntrega> {
+    // DJ3-2 · defensa en profundidad (además de @Roles): fail-closed ANTES de consultar.
+    if (usuario.rol !== RolUsuario.STAFF) {
+      throw new ForbiddenException(MENSAJE_CORRECCION_SOLO_STAFF);
+    }
+    const existente = await this.prisma.solicitud.findUnique({ where: { radicado }, select: SELECT_ENTREGA_STAFF });
+    if (!existente) {
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // EN6: solo las categorías cuya entrega exige el enlace (PODCAST, VIDEO y STREAMING).
+    if (POLITICA_POR_CATEGORIA[existente.categoria].enlaceAlEntregar !== 'OBLIGATORIO') {
+      throw new BadRequestException(MENSAJE_CORRECCION_NO_APLICA);
+    }
+    // EN6 · B4: solo en «Entregado» (el estado en que existe un evento ENTREGA).
+    if (existente.estado !== ESTADO_DEL_EVENTO_DE_ENLACE.ENTREGA) {
+      throw new ConflictException(MENSAJE_CORRECCION_SOLO_EN_ENTREGADO);
+    }
+    // EN8 · D2: agregar un enlace por primera vez queda fuera de alcance (entregas históricas, DA-5).
+    const vigente = existente.enlace_entrega;
+    if (vigente === null) {
+      throw new ConflictException(MENSAJE_ENTREGA_SIN_ENLACE_PREVIO);
+    }
+    // EN11 · D10: el enlace pedido ya es el vigente → sin escritura, sin evento y sin guardar el motivo.
+    if (dto.enlace_entrega === vigente) {
+      const solicitud = await this.prisma.solicitud.findUnique({ where: { radicado }, select: SELECT_DETALLE_STAFF });
+      if (!solicitud) {
+        throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      }
+      return { mensaje: MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS, sin_cambios: true, solicitud };
+    }
+    // EN9 · D9: comparación exacta con el vigente.
+    if (dto.enlace_entrega_anterior !== vigente) {
+      throw new ConflictException(MENSAJE_ENLACE_DESACTUALIZADO);
+    }
+
+    // ADR-012 EV5: el cambio y su evento en la MISMA transacción. Sin `estado` en data.
+    const solicitud = await this.escribirConCompareAndSet({
+      radicado,
+      esperado: { estado: ESTADO_DEL_EVENTO_DE_ENLACE.ENTREGA, enlace_entrega: vigente },
+      data: { enlace_entrega: dto.enlace_entrega },
+      evento: {
+        tipo: 'ENLACE_ENTREGA',
+        modificado_por: usuario.id, // Zero Trust: autor tomado del JWT
+        enlace_anterior: vigente, // el valor LEÍDO de la base
+        enlace_nuevo: dto.enlace_entrega,
+        // D8: sin motivo, la propiedad no viaja; con él, ya recortado por el DTO (B9).
+        ...(dto.motivo_correccion === undefined ? {} : { motivo_correccion: dto.motivo_correccion }),
+      },
+      releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
+    });
+    return { mensaje: MENSAJE_ENLACE_ENTREGA_CORREGIDO, sin_cambios: false, solicitud };
+  }
+
+  /**
+   * Fase 9 · ADR-012 EV7 y D7 (lote J2b): historial de enlaces de una solicitud, solo para el STAFF.
+   * Consulta APARTE del detalle: `logs` del detalle sigue con solo transiciones (I-2) y la línea de vida
+   * no cambia. Una sola lectura: sin fila → 404 uniforme; con fila y sin eventos → lista vacía.
+   */
+  async historialDeEnlaces(radicado: string, usuario: UsuarioAutenticado): Promise<HistorialDeEnlaces> {
+    // DJ2b-3 · defensa en profundidad (además de @Roles): fail-closed ANTES de consultar.
+    if (usuario.rol !== RolUsuario.STAFF) {
+      throw new ForbiddenException(MENSAJE_HISTORIAL_SOLO_STAFF);
+    }
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { radicado },
+      select: { radicado: true, logs: SELECT_HISTORIAL_ENLACES },
+    });
+    if (!solicitud) {
+      throw new NotFoundException(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    }
+    // La respuesta se construye campo por campo: nunca se devuelve el objeto de Prisma.
+    const eventos = solicitud.logs.map((log): EventoDeEnlace => {
+      if (log.enlace_campo === null) {
+        // Imposible con el filtro de la consulta; si ocurriera, se falla en vez de mezclar una transición.
+        throw new Error('El historial de enlaces recibió un log que no es un evento de enlace.');
+      }
+      return {
+        id_log: log.id_log,
+        enlace_campo: log.enlace_campo,
+        enlace_anterior: log.enlace_anterior,
+        enlace_nuevo: log.enlace_nuevo,
+        motivo_correccion: log.motivo_correccion,
+        modificado_por: log.modificado_por,
+        fecha_modificacion: log.fecha_modificacion,
+      };
+    });
+    return { radicado: solicitud.radicado, eventos };
   }
 
   /**
@@ -878,13 +1186,16 @@ export class SolicitudesService {
         fecha_propuesta_fin: propuesta.fin,
         sub_espacio_propuesto: subEspacioPropuesto,
       },
-      log: {
-        estado_anterior: existente.estado,
-        estado_nuevo: resultado.transicion.destino,
-        modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
-        // K7 · Fase 6.1b: la justificación vive en el log de T5 (inmutable, sobrevive a
-        // T7 y T8). El motor exige que exista justo aquí (…_segun_estado_check).
-        motivo_reprogramacion: dto.motivo,
+      evento: {
+        tipo: 'TRANSICION',
+        log: {
+          estado_anterior: existente.estado,
+          estado_nuevo: resultado.transicion.destino,
+          modificado_por: idStaff, // D6 · K6: autor tomado del JWT verificado
+          // K7 · Fase 6.1b: la justificación vive en el log de T5 (inmutable, sobrevive a
+          // T7 y T8). El motor exige que exista justo aquí (…_segun_estado_check).
+          motivo_reprogramacion: dto.motivo,
+        },
       },
       // K8: proyección del Staff (franja oficial y propuesta), releída en la transacción.
       releer: (tx) => tx.solicitud.findUniqueOrThrow({ where: { radicado }, select: SELECT_DETALLE_STAFF }),
@@ -953,9 +1264,10 @@ export class SolicitudesService {
           });
         }
 
-        // CA-09: el log va en la MISMA transacción que el cambio de estado.
-        if (op.log !== undefined) {
-          await tx.log_Auditoria.create({ data: { radicado_solicitud: op.radicado, ...op.log } });
+        // CA-09: el log va en la MISMA transacción que el cambio de estado. ADR-012 EV6: datosDelLog
+        // arma los datos según el tipo de evento; los de una transición son exactamente los de siempre.
+        if (op.evento !== undefined) {
+          await tx.log_Auditoria.create({ data: datosDelLog(op.radicado, op.evento) });
         }
 
         return op.releer(tx);

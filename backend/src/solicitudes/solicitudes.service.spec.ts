@@ -7,7 +7,24 @@ import {
 } from '@nestjs/common';
 import { CategoriaSolicitud, Log_Auditoria, Solicitud, SubEspacio } from '@prisma/client';
 import {
+  MENSAJE_ANEXO_ACTUALIZADO,
+  MENSAJE_ANEXO_CAMBIO_EN_REVISION,
+  MENSAJE_ANEXO_DESACTUALIZADO,
+  MENSAJE_ANEXO_NO_APLICA,
+  MENSAJE_ANEXO_RETIRADO,
+  MENSAJE_ANEXO_SIN_CAMBIOS,
+  MENSAJE_ANEXO_SOLO_EN_RECIBIDO,
+  MENSAJE_ANEXO_REVISADO_NO_APLICA,
+  MENSAJE_ANEXO_REVISADO_OBLIGATORIO,
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
+  MENSAJE_HISTORIAL_SOLO_STAFF,
+  MENSAJE_CORRECCION_NO_APLICA,
+  MENSAJE_CORRECCION_SOLO_EN_ENTREGADO,
+  MENSAJE_CORRECCION_SOLO_STAFF,
+  MENSAJE_ENLACE_DESACTUALIZADO,
+  MENSAJE_ENLACE_ENTREGA_CORREGIDO,
+  MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS,
+  MENSAJE_ENTREGA_SIN_ENLACE_PREVIO,
   MENSAJE_CAMBIO_CONCURRENTE,
   MENSAJE_CANCELAR_CON_PROPUESTA,
   MENSAJE_CANCELAR_EN_PRODUCCION,
@@ -43,6 +60,7 @@ import {
   DetalleSolicitudSolicitante,
   SELECT_DETALLE_SOLICITANTE,
   SELECT_DETALLE_STAFF,
+  SELECT_HISTORIAL_ENLACES,
 } from './proyecciones/detalle-solicitud.proyeccion';
 import { USUARIO_SOLICITANTE, USUARIO_STAFF } from '../../test/utils/contexto-http.mock';
 import { PrismaService } from '../prisma/prisma.service';
@@ -80,6 +98,8 @@ const solicitudBase: Solicitud = {
   sub_espacio_propuesto: null,
   // Fase 8 · requisito 4: sin enlace salvo en una entrega que lo exige.
   enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
 };
 
 // Test de COMPILACIÓN (Decisión I): si alguien agrega modificado_por a la proyección del
@@ -102,6 +122,11 @@ const logBase: Log_Auditoria = {
   sub_espacio_nuevo: null,
   fecha_inicio_anterior: null,
   fecha_fin_anterior: null,
+  // Fase 9 (ADR-012): una transición no es un evento de enlace; los cuatro campos van en null.
+  enlace_campo: null,
+  enlace_anterior: null,
+  enlace_nuevo: null,
+  motivo_correccion: null,
 };
 
 describe('SolicitudesService', () => {
@@ -161,6 +186,95 @@ describe('SolicitudesService', () => {
         data: expect.objectContaining({ id_usuario: 'uuid-del-token', estado: 'Recibido' }),
       }),
     );
+  });
+
+  describe('create() — anexo del solicitante (Fase 9 · R9-1)', () => {
+    // Objeto plano verificado con `satisfies` (no anotado con la clase): el spread de cada prueba
+    // no pierde ningún prototipo (typescript/no-misused-spread) y tsc sigue exigiendo la forma del DTO.
+    const dtoServicio = {
+      categoria: CategoriaSolicitud.PODCAST,
+      proposito: solicitudBase.proposito,
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+    } satisfies CreateSolicitudeDto;
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.create.mockResolvedValue(solicitudBase);
+    });
+
+    it('guarda el anexo que validó el pipe, tal cual', async () => {
+      const anexo = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+
+      await service.create({ ...dtoServicio, enlace_anexo: anexo }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: anexo }) }),
+      );
+    });
+
+    it('sin anexo escribe NULL explícito', async () => {
+      await service.create(dtoServicio, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ enlace_anexo: null }) }),
+      );
+    });
+
+    // Fase 9 · AN2b (J0): el anexo solo en PODCAST, VIDEO y STREAMING.
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con anexo → 400 antes de consultar o escribir', async (categoria, lugar) => {
+      const error = await rechazoDe(service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: ANEXO }, 'uuid-del-token'));
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [CategoriaSolicitud.ESPACIOS, { sub_espacio: SubEspacio.CABINA_AUDIO }],
+      [CategoriaSolicitud.ASESORIAS, {}],
+    ])('AN2b · %s con enlace_anexo null radica normalmente (sin anexo)', async (categoria, lugar) => {
+      await service.create({ ...dtoServicio, categoria, ...lugar, enlace_anexo: null as unknown as string }, 'uuid-del-token');
+
+      expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: null }) }),
+      );
+    });
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'AN2b · %s con anexo radica y lo guarda',
+      async (categoria) => {
+        await service.create({ ...dtoServicio, categoria, enlace_anexo: ANEXO }, 'uuid-del-token');
+
+        expect(prismaMock.solicitud.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ categoria, enlace_anexo: ANEXO }) }),
+        );
+      },
+    );
+
+    it('AN2b · la forma del sub-espacio (SE10) va antes que la del anexo', async () => {
+      const error = await rechazoDe(
+        service.create({ ...dtoServicio, categoria: CategoriaSolicitud.ESPACIOS, enlace_anexo: ANEXO }, 'uuid-del-token'),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).not.toBe(MENSAJE_ANEXO_NO_APLICA);
+      expect(prismaMock.solicitud.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('create() — reglas de horario integradas (Fase 3)', () => {
@@ -480,6 +594,608 @@ describe('SolicitudesService', () => {
 
       expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
       expect(JSON.stringify(prismaMock.solicitud.updateMany.mock.calls)).not.toContain('PODCAST');
+    });
+  });
+
+  describe('update() — E7 · anexo revisado al aprobar T1 (Fase 9 · ADR-005 E7)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/guion/view';
+    const OTRO = 'https://drive.google.com/file/d/otro/view';
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      estado?: string;
+      anexo_revisado?: string | null;
+      motivo_rechazo?: string;
+      proposito?: string;
+      fecha_inicio?: Date;
+      fecha_fin?: Date;
+    }
+    const conCategoria = (categoria: CategoriaSolicitud, enlace_anexo: string | null = null, estado = 'Recibido'): Solicitud => ({
+      ...solicitudBase,
+      categoria,
+      enlace_anexo,
+      estado,
+    });
+    const pedir = (cuerpo: Cuerpo) => service.update('EC-2099-0001', { estado: 'Validado', ...cuerpo }, 'uuid-staff');
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    /** Las condiciones del único compare-and-set de la prueba: exige que exista antes de leerlo. */
+    const whereDelCompareAndSet = (): Record<string, unknown> => {
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledTimes(1);
+      const [llamada] = prismaMock.solicitud.updateMany.mock.calls;
+      if (llamada === undefined) throw new Error('El compare-and-set no se ejecutó');
+      return (llamada[0] as { where: Record<string, unknown> }).where;
+    };
+    const PREDICADOS_DE_SIEMPRE = {
+      radicado: 'EC-2099-0001',
+      estado: 'Recibido',
+      fecha_inicio: solicitudBase.fecha_inicio,
+      fecha_fin: solicitudBase.fecha_fin,
+      sub_espacio: solicitudBase.sub_espacio,
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirst.mockResolvedValue(null);
+      prismaMock.solicitud.findUniqueOrThrow.mockResolvedValue({ ...solicitudBase, estado: 'Validado' });
+    });
+
+    describe.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      '%s (admite anexo)',
+      (categoria) => {
+        it('sin anexo_revisado → 400 OBLIGATORIO, sin escribir', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          const error = await rechazoDe(pedir({}));
+
+          expect(error).toBeInstanceOf(BadRequestException);
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          sinEscribir();
+        });
+
+        it('null con la solicitud sin anexo → aprueba; el compare-and-set suma enlace_anexo: null', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({ anexo_revisado: null });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+          expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+        });
+
+        it('la URL vista igual a la guardada → aprueba; el compare-and-set suma esa URL', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO));
+
+          await pedir({ anexo_revisado: ANEXO });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: ANEXO });
+        });
+
+        it.each([
+          ['vio null pero hay anexo', null, ANEXO],
+          ['vio un anexo pero ya no hay', ANEXO, null],
+          ['vio otro anexo', OTRO, ANEXO],
+          ['la misma URL con un espacio final (comparación exacta)', `${ANEXO} `, ANEXO],
+        ])('%s → 409 CAMBIO_EN_REVISION, sin escribir ni consultar CA-06', async (_caso, visto, guardado) => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, guardado));
+
+          const error = await rechazoDe(pedir({ anexo_revisado: visto }));
+
+          expect(error).toBeInstanceOf(ConflictException);
+          expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja también lo exige (400 antes de horario y CA-06)', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          const error = await rechazoDe(
+            pedir({ fecha_inicio: new Date('2099-01-16T09:00:00-05:00'), fecha_fin: new Date('2099-01-16T10:00:00-05:00') }),
+          );
+
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+          expect(prismaMock.solicitud.findFirst).not.toHaveBeenCalled();
+          sinEscribir();
+        });
+
+        it('la aprobación con ajuste de franja y anexo_revisado correcto aprueba con enlace_anexo en el compare-and-set', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, null));
+
+          await pedir({
+            anexo_revisado: null,
+            fecha_inicio: new Date('2099-01-16T09:00:00-05:00'),
+            fecha_fin: new Date('2099-01-16T10:00:00-05:00'),
+          });
+
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, enlace_anexo: null });
+        });
+
+        it('otra transición (En Producción) con anexo_revisado → 400 NO_APLICA; sin él, su compare-and-set no cambia', async () => {
+          prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria, ANEXO, 'Validado'));
+
+          const error = await rechazoDe(pedir({ estado: 'En Producción', anexo_revisado: ANEXO }));
+          expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+          sinEscribir();
+
+          await pedir({ estado: 'En Producción' });
+          expect(whereDelCompareAndSet()).toEqual({ ...PREDICADOS_DE_SIEMPRE, estado: 'Validado' });
+        });
+      },
+    );
+
+    describe.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s (no admite anexo)', (categoria) => {
+      it('aprobar sin el campo funciona como siempre: compare-and-set sin enlace_anexo', async () => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        await pedir({});
+
+        expect(whereDelCompareAndSet()).toEqual(PREDICADOS_DE_SIEMPRE);
+      });
+
+      it.each([
+        ['null', null],
+        ['una URL', ANEXO],
+      ])('aprobar con anexo_revisado %s → 400 NO_APLICA, sin escribir', async (_caso, valor) => {
+        prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(categoria));
+
+        const error = await rechazoDe(pedir({ anexo_revisado: valor }));
+
+        expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+        sinEscribir();
+      });
+    });
+
+    it('RECHAZAR (T2) con anexo_revisado → 400 NO_APLICA', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(
+        pedir({ estado: 'Rechazado', motivo_rechazo: 'El guion no corresponde a la actividad.', anexo_revisado: ANEXO }),
+      );
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('un PATCH sin cambio de estado con anexo_revisado → 400 NO_APLICA (no se ignora en silencio)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Recibido', anexo_revisado: ANEXO }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it('orden: una transición ilegal responde primero el 409 de la máquina', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, ANEXO));
+
+      const error = await rechazoDe(pedir({ estado: 'Entregado', anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJES_TRANSICION_INVALIDA.TRANSICION_NO_DEFINIDA);
+    });
+
+    it('orden: el 409 de E7 va antes de la franja vencida (D7)', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue({
+        ...conCategoria(CategoriaSolicitud.PODCAST, ANEXO),
+        fecha_inicio: new Date('2026-10-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-10-01T10:00:00-05:00'),
+      });
+
+      const error = await rechazoDe(pedir({ anexo_revisado: OTRO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_CAMBIO_EN_REVISION);
+    });
+
+    it('la categoría sale de la base, no del cuerpo: un PODCAST no se aprueba sin anexo_revisado aunque el cuerpo diga ESPACIOS', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(conCategoria(CategoriaSolicitud.PODCAST, null));
+      const dtoContaminado = { estado: 'Validado', categoria: CategoriaSolicitud.ESPACIOS } as unknown as UpdateSolicitudeDto;
+
+      const error = await rechazoDe(service.update('EC-2099-0001', dtoContaminado, 'uuid-staff'));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_REVISADO_OBLIGATORIO);
+      sinEscribir();
+    });
+  });
+
+  describe('editarAnexo() — el dueño cambia o retira su anexo (Fase 9 · ADR-009 AN10 a AN14)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/guion/view';
+    const OTRO = 'https://drive.google.com/file/d/otro/view';
+    const PROPIA = { radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id };
+    const DETALLE = { radicado: 'EC-2099-0001', estado: 'Recibido', logs: [] };
+    /** Lo que lee el comando (estado, categoría y anexo vigente). */
+    const lectura = (enlace_anexo: string | null, estado = 'Recibido', categoria: CategoriaSolicitud = CategoriaSolicitud.PODCAST) => ({
+      estado,
+      categoria,
+      enlace_anexo,
+    });
+    const editar = (enlace_anexo_anterior: string | null, enlace_anexo: string | null) =>
+      service.editarAnexo('EC-2099-0001', USUARIO_SOLICITANTE, { enlace_anexo_anterior, enlace_anexo });
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+    /** La primera lectura del comando (la segunda, si existe, es la proyección del dueño). */
+    const primeraLectura = (estado: ReturnType<typeof lectura> | null) =>
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(estado as unknown as Solicitud | null);
+
+    beforeEach(() => {
+      prismaMock.solicitud.findFirstOrThrow.mockResolvedValue(DETALLE);
+    });
+
+    it('lee con la propiedad en el WHERE y solo lo mínimo', async () => {
+      primeraLectura(lectura(null));
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      await editar(null, null);
+
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(1, {
+        where: PROPIA,
+        select: { estado: true, categoria: true, enlace_anexo: true },
+      });
+    });
+
+    it('ajena o inexistente → el mismo 404, sin revelar nada ni escribir', async () => {
+      primeraLectura(null);
+
+      const error = await rechazoDe(editar(null, ANEXO));
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      sinEscribir();
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s → 400 (no admite anexo), sin escribir', async (categoria) => {
+      primeraLectura(lectura(null, 'Recibido', categoria));
+
+      const error = await rechazoDe(editar(null, ANEXO));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_ANEXO_NO_APLICA);
+      sinEscribir();
+    });
+
+    it.each(['Validado', 'En Producción', 'Pendiente de Reprogramación', 'Cancelado por el Usuario', 'Rechazado'])(
+      'en «%s» → 409 aunque el valor pedido sea el vigente (sin_cambios nunca da éxito fuera de Recibido)',
+      async (estado) => {
+        primeraLectura(lectura(ANEXO, estado));
+
+        const error = await rechazoDe(editar(ANEXO, ANEXO));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_SOLO_EN_RECIBIDO);
+        expect(prismaMock.solicitud.findFirst).toHaveBeenCalledTimes(1);
+        sinEscribir();
+      },
+    );
+
+    it.each([
+      ['la misma URL', ANEXO, ANEXO, ANEXO],
+      ['null y null', null, null, null],
+      ['el valor pedido ya es el vigente aunque el anterior observado difiera', OTRO, ANEXO, ANEXO],
+      ['retirar algo que ya no está, con el anterior observado desactualizado', ANEXO, null, null],
+    ])('sin_cambios: %s → 200 con la proyección del dueño, sin escritura ni evento', async (_caso, anterior, nuevo, vigente) => {
+      primeraLectura(lectura(vigente));
+      prismaMock.solicitud.findFirst.mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      const respuesta = await editar(anterior, nuevo);
+
+      expect(respuesta).toEqual({ mensaje: MENSAJE_ANEXO_SIN_CAMBIOS, sin_cambios: true, solicitud: DETALLE });
+      expect(prismaMock.solicitud.findFirst).toHaveBeenNthCalledWith(2, { where: PROPIA, select: SELECT_DETALLE_SOLICITANTE });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      sinEscribir();
+    });
+
+    it.each([
+      ['vio null pero hay anexo', null, ANEXO],
+      ['vio un anexo pero ya no hay', ANEXO, null],
+      ['vio otro anexo', OTRO, ANEXO],
+      ['la misma URL con un espacio final (comparación exacta)', `${ANEXO} `, ANEXO],
+    ])('%s → 409 DESACTUALIZADO, sin escribir', async (_caso, anterior, vigente) => {
+      primeraLectura(lectura(vigente));
+
+      const error = await rechazoDe(editar(anterior, 'https://drive.google.com/file/d/nuevo/view'));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_ANEXO_DESACTUALIZADO);
+      sinEscribir();
+    });
+
+    it.each([
+      ['agregar', null, ANEXO, MENSAJE_ANEXO_ACTUALIZADO],
+      ['cambiar', ANEXO, OTRO, MENSAJE_ANEXO_ACTUALIZADO],
+      ['retirar', ANEXO, null, MENSAJE_ANEXO_RETIRADO],
+    ])('%s: compare-and-set con dueño, estado y anexo observado, y evento ENLACE_ANEXO en la misma transacción', async (_caso, vigente, nuevo, mensaje) => {
+      primeraLectura(lectura(vigente));
+
+      const respuesta = await editar(vigente, nuevo);
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001', id_usuario: USUARIO_SOLICITANTE.id, estado: 'Recibido', enlace_anexo: vigente },
+        data: { enlace_anexo: nuevo },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Recibido',
+          estado_nuevo: 'Recibido',
+          modificado_por: USUARIO_SOLICITANTE.id,
+          enlace_campo: 'ANEXO',
+          enlace_anterior: vigente,
+          enlace_nuevo: nuevo,
+        },
+      });
+      expect(prismaMock.solicitud.findFirstOrThrow).toHaveBeenCalledWith({ where: PROPIA, select: SELECT_DETALLE_SOLICITANTE });
+      expect(respuesta).toEqual({ mensaje, sin_cambios: false, solicitud: DETALLE });
+    });
+
+    it('compare-and-set perdido (el anexo cambió entre la lectura y la escritura) → 409, sin evento', async () => {
+      primeraLectura(lectura(ANEXO));
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazoDe(editar(ANEXO, OTRO));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('corregirEnlaceEntrega() — el Staff corrige el enlace de una entrega (Fase 9 · ADR-008 EN6 a EN12)', () => {
+    const A = 'https://youtu.be/entrega-a';
+    const B = 'https://youtu.be/entrega-b';
+    const MOTIVO = 'El enlace apuntaba a un borrador.';
+    const DETALLE = { radicado: 'EC-2099-0001', estado: 'Entregado', logs: [] };
+    const lectura = (enlace_entrega: string | null, estado = 'Entregado', categoria: CategoriaSolicitud = CategoriaSolicitud.PODCAST) =>
+      ({ estado, categoria, enlace_entrega }) as unknown as Solicitud;
+    /** Objeto plano (no la clase del DTO): el spread no pierde prototipos (no-misused-spread). */
+    interface Cuerpo {
+      enlace_entrega_anterior: string;
+      enlace_entrega: string;
+      motivo_correccion?: string;
+    }
+    const corregir = (cuerpo: Cuerpo, usuario = USUARIO_STAFF) => service.corregirEnlaceEntrega('EC-2099-0001', usuario, cuerpo);
+    const rechazoDe = async (operacion: Promise<unknown>): Promise<unknown> => {
+      try {
+        await operacion;
+      } catch (error: unknown) {
+        return error;
+      }
+      throw new Error('Se esperaba un rechazo');
+    };
+    const sinEscribir = () => {
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.solicitud.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    };
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }, USUARIO_SOLICITANTE));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_CORRECCION_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('lee por radicado solo lo mínimo; inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(null);
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { estado: true, categoria: true, enlace_entrega: true },
+      });
+      sinEscribir();
+    });
+
+    it.each([CategoriaSolicitud.ESPACIOS, CategoriaSolicitud.ASESORIAS])('%s → 400 (sin enlace que corregir)', async (categoria) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+      expect((error as BadRequestException).message).toBe(MENSAJE_CORRECCION_NO_APLICA);
+      sinEscribir();
+    });
+
+    it.each(['Recibido', 'Validado', 'En Producción', 'Edición y postproducción', 'Cancelado por el Usuario'])(
+      'en «%s» → 409 aunque el enlace pedido sea el vigente (sin_cambios nunca da éxito fuera de Entregado)',
+      async (estado) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B, estado));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: B, enlace_entrega: B }));
+
+        expect((error as ConflictException).message).toBe(MENSAJE_CORRECCION_SOLO_EN_ENTREGADO);
+        expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+        sinEscribir();
+      },
+    );
+
+    it.each([CategoriaSolicitud.PODCAST, CategoriaSolicitud.VIDEO, CategoriaSolicitud.STREAMING])(
+      'EN8 · %s entregado sin enlace previo → 409, sin escribir (agregarlo por primera vez queda fuera de alcance)',
+      async (categoria) => {
+        prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(null, 'Entregado', categoria));
+
+        const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B }));
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).message).toBe(MENSAJE_ENTREGA_SIN_ENLACE_PREVIO);
+        sinEscribir();
+      },
+    );
+
+    it.each([
+      ['el mismo enlace', B],
+      ['el mismo enlace aunque el anterior observado difiera', A],
+    ])('sin_cambios: %s → 200 con la proyección del Staff, sin escribir ni guardar el motivo', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(B)).mockResolvedValueOnce(DETALLE as unknown as Solicitud);
+
+      const respuesta = await corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B, motivo_correccion: MOTIVO });
+
+      expect(respuesta).toEqual({ mensaje: MENSAJE_ENLACE_ENTREGA_SIN_CAMBIOS, sin_cambios: true, solicitud: DETALLE });
+      expect(prismaMock.solicitud.findUnique).toHaveBeenNthCalledWith(2, {
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      sinEscribir();
+    });
+
+    it.each([
+      ['vio otro enlace', 'https://youtu.be/otro'],
+      ['el mismo enlace con un espacio final (comparación exacta)', `${A} `],
+    ])('%s → 409 DESACTUALIZADO, sin escribir', async (_caso, anterior) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: anterior, enlace_entrega: B }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_ENLACE_DESACTUALIZADO);
+      sinEscribir();
+    });
+
+    it.each([
+      ['con motivo', { motivo_correccion: MOTIVO }, { motivo_correccion: MOTIVO }],
+      ['sin motivo (la propiedad no viaja)', {}, {}],
+    ])('corrección %s: compare-and-set sin estado y un solo evento ENLACE_ENTREGA, sin transición', async (_caso, extra, enEvento) => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+
+      const respuesta = await corregir({ enlace_entrega_anterior: A, enlace_entrega: B, ...extra });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.updateMany).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001', estado: 'Entregado', enlace_entrega: A },
+        data: { enlace_entrega: B },
+      });
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.log_Auditoria.create).toHaveBeenCalledWith({
+        data: {
+          radicado_solicitud: 'EC-2099-0001',
+          estado_anterior: 'Entregado',
+          estado_nuevo: 'Entregado',
+          modificado_por: USUARIO_STAFF.id,
+          enlace_campo: 'ENTREGA',
+          enlace_anterior: A,
+          enlace_nuevo: B,
+          ...enEvento,
+        },
+      });
+      // Sin motivo, la clave no llega a Prisma (ni siquiera con undefined): D8 y el criterio de J3.
+      const [escritura] = prismaMock.log_Auditoria.create.mock.calls;
+      if (escritura === undefined) throw new Error('No se escribió el evento');
+      expect(Object.keys((escritura[0] as { data: object }).data).includes('motivo_correccion')).toBe('motivo_correccion' in enEvento);
+      expect(prismaMock.solicitud.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: SELECT_DETALLE_STAFF,
+      });
+      expect(respuesta).toMatchObject({ mensaje: MENSAJE_ENLACE_ENTREGA_CORREGIDO, sin_cambios: false });
+    });
+
+    it('compare-and-set perdido (el enlace cambió entre la lectura y la escritura) → 409, sin evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValueOnce(lectura(A));
+      prismaMock.solicitud.updateMany.mockResolvedValue({ count: 0 });
+
+      const error = await rechazoDe(corregir({ enlace_entrega_anterior: A, enlace_entrega: B, motivo_correccion: MOTIVO }));
+
+      expect((error as ConflictException).message).toBe(MENSAJE_CAMBIO_CONCURRENTE);
+      expect(prismaMock.log_Auditoria.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('historialDeEnlaces() — solo el Staff (Fase 9 · ADR-012 EV7 · lote J2b)', () => {
+    const ANEXO_EVENTO = {
+      id_log: 'uuid-log-1',
+      enlace_campo: 'ANEXO',
+      enlace_anterior: null,
+      enlace_nuevo: 'https://drive.google.com/file/d/a/view',
+      motivo_correccion: null,
+      modificado_por: 'uuid-solicitante',
+      fecha_modificacion: new Date('2026-10-06T09:00:00-05:00'),
+    };
+    const ENTREGA_EVENTO = {
+      id_log: 'uuid-log-2',
+      enlace_campo: 'ENTREGA',
+      enlace_anterior: 'https://youtu.be/a',
+      enlace_nuevo: 'https://youtu.be/b',
+      motivo_correccion: 'El enlace apuntaba a un borrador.',
+      modificado_por: 'uuid-staff',
+      fecha_modificacion: new Date('2026-10-07T09:00:00-05:00'),
+    };
+    const fila = (logs: readonly object[]) =>
+      ({ radicado: 'EC-2099-0001', logs } as unknown as Solicitud);
+
+    it('un SOLICITANTE (aunque sea el dueño) → 403 antes de consultar', async () => {
+      const error = await service.historialDeEnlaces('EC-2099-0001', USUARIO_SOLICITANTE).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe(MENSAJE_HISTORIAL_SOLO_STAFF);
+      expect(prismaMock.solicitud.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('inexistente → 404 uniforme', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(null);
+
+      const error = await service.historialDeEnlaces('EC-2099-9999', USUARIO_STAFF).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe(MENSAJE_SOLICITUD_NO_ENCONTRADA);
+    });
+
+    it('una sola consulta: por radicado, con el filtro, el orden y las columnas del historial', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF);
+
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledTimes(1);
+      expect(prismaMock.solicitud.findUnique).toHaveBeenCalledWith({
+        where: { radicado: 'EC-2099-0001' },
+        select: { radicado: true, logs: SELECT_HISTORIAL_ENLACES },
+      });
+    });
+
+    it('existente sin eventos → lista vacía', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([]));
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [],
+      });
+    });
+
+    it('ANEXO y ENTREGA, en el orden de la base, con EXACTAMENTE los campos permitidos', async () => {
+      // La fila trae campos de más: la respuesta se construye campo por campo y no los deja pasar.
+      prismaMock.solicitud.findUnique.mockResolvedValue(
+        fila([
+          { ...ANEXO_EVENTO, estado_anterior: 'Recibido', radicado_solicitud: 'EC-2099-0001', motivo_rechazo: null },
+          { ...ENTREGA_EVENTO, estado_nuevo: 'Entregado', usuario: { correo: 'staff@unicesmag.edu.co' } },
+        ]),
+      );
+
+      expect(await service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).toStrictEqual({
+        radicado: 'EC-2099-0001',
+        eventos: [ANEXO_EVENTO, ENTREGA_EVENTO],
+      });
+    });
+
+    it('fail-closed: un log sin enlace_campo (una transición) nunca se devuelve como evento', async () => {
+      prismaMock.solicitud.findUnique.mockResolvedValue(fila([{ ...ANEXO_EVENTO, enlace_campo: null }]));
+
+      await expect(service.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF)).rejects.toThrow(
+        'El historial de enlaces recibió un log que no es un evento de enlace.',
+      );
     });
   });
 
@@ -2212,6 +2928,11 @@ describe('SolicitudesService', () => {
       expect(SELECT_DETALLE_SOLICITANTE.recursos.select.recurso.select).not.toHaveProperty(
         'cantidad_total',
       );
+    });
+
+    it('Fase 9 · R9-1: las dos proyecciones exponen el anexo (Staff y dueño)', () => {
+      expect(SELECT_DETALLE_SOLICITANTE).toHaveProperty('enlace_anexo', true);
+      expect(SELECT_DETALLE_STAFF).toHaveProperty('enlace_anexo', true);
     });
   });
 });

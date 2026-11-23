@@ -451,7 +451,14 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
 
         await service.update(
           'EC-INT-T1',
-          { estado: 'Validado', sub_espacio: ESTUDIO_GRABACION, fecha_inicio: bogota('28', '09:00'), fecha_fin: bogota('28', '10:00') },
+          // Fase 9 · ADR-005 E7: PODCAST exige el anexo revisado al aprobar; la siembra no tiene anexo.
+          {
+            estado: 'Validado',
+            sub_espacio: ESTUDIO_GRABACION,
+            fecha_inicio: bogota('28', '09:00'),
+            fecha_fin: bogota('28', '10:00'),
+            anexo_revisado: null,
+          },
           STAFF,
         );
 
@@ -550,8 +557,9 @@ describe('Sub-espacios contra PostgreSQL real (integración · Fase 7 · 7A.3)',
 
         const { exitos, rechazos } = separar(
           await Promise.allSettled([
-            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: CABINA_AUDIO }, STAFF),
-            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: ESTUDIO_GRABACION }, STAFF_B),
+            // Fase 9 · ADR-005 E7: PODCAST sin anexo → anexo_revisado null.
+            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: CABINA_AUDIO, anexo_revisado: null }, STAFF),
+            service.update('EC-INT-T1', { estado: 'Validado', sub_espacio: ESTUDIO_GRABACION, anexo_revisado: null }, STAFF_B),
           ]),
         );
 

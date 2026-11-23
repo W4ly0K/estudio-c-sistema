@@ -3,19 +3,26 @@ import type { ClienteApi, Resultado } from './cliente'
 import {
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
+  esquemaHistorialEnlaces,
   esquemaRespuestaComando,
+  esquemaRespuestaCorreccionEntrega,
+  esquemaRespuestaEdicionAnexo,
   esquemaSolicitud,
   esquemaSolicitudPropia,
   esquemaSolicitudTablero,
   type Categoria,
   type DetalleSolicitante,
   type DetalleStaff,
+  type HistorialEnlaces,
+  type RespuestaCorreccionEntrega,
+  type RespuestaEdicionAnexo,
   type Solicitud,
   type SolicitudPropia,
   type SolicitudTablero,
   type SubEspacio,
   type CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
 } from './esquemas'
+import type { CategoriaConAnexo } from './categorias'
 import type { Estado, TRANSICIONES } from './maquina-estados'
 
 /**
@@ -36,15 +43,29 @@ interface RadicacionComun {
 /** La categoría en la que el solicitante elige el lugar (SE10). */
 type CategoriaQueElige = typeof CATEGORIA_QUE_ELIGE_SUB_ESPACIO
 
+/** Fase 7 · SE10: el lugar, obligatorio en la categoría que lo elige y prohibido en las demás. */
+type LugarDe<C extends Categoria> = C extends CategoriaQueElige
+  ? { readonly sub_espacio: SubEspacio }
+  : { readonly sub_espacio?: never }
+
+/**
+ * Fase 9 · AN2b (K2): el anexo, opcional en PODCAST, VIDEO y STREAMING (si no hay, la clave no
+ * viaja: el servidor rechaza '') y prohibido en las demás (400 MENSAJE_ANEXO_NO_APLICA).
+ */
+type AnexoDe<C extends Categoria> = C extends CategoriaConAnexo
+  ? { readonly enlace_anexo?: string }
+  : { readonly enlace_anexo?: never }
+
 /**
  * POST /solicitudes. Fase 7 · 7B.4 (ADR-007 SE10): unión discriminada por la categoría, igual
  * que la regla del backend. Una solicitud de espacio físico SIN lugar (CA-12) o un servicio
  * CON lugar (400 del servidor) no compilan: el servidor nunca elige por el solicitante, y el
- * cliente nunca envía una elección que el servidor rechazaría.
+ * cliente nunca envía una elección que el servidor rechazaría. Fase 9 · K2: una variante por
+ * categoría, que suma la regla del anexo (AN2b) a la del lugar.
  */
-export type CuerpoCrearSolicitud =
-  | (RadicacionComun & { readonly categoria: CategoriaQueElige; readonly sub_espacio: SubEspacio })
-  | (RadicacionComun & { readonly categoria: Exclude<Categoria, CategoriaQueElige>; readonly sub_espacio?: never })
+export type CuerpoCrearSolicitud = {
+  [C in Categoria]: RadicacionComun & { readonly categoria: C } & LugarDe<C> & AnexoDe<C>
+}[Categoria]
 
 /**
  * Destinos que el tablero ejecuta con el PATCH (E1: T1, T2, T4, T9, desde la Fase 7 T10 y, desde la Fase 8, T11 y T12). Se DERIVAN de la
@@ -65,8 +86,17 @@ export type AjusteAlValidar =
   | { readonly fecha_inicio: string; readonly fecha_fin: string; readonly sub_espacio?: SubEspacio }
   | { readonly fecha_inicio?: never; readonly fecha_fin?: never; readonly sub_espacio?: SubEspacio }
 
-/** T1: el destino y, si los hay, sus ajustes. */
-type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never; readonly enlace_entrega?: never } & AjusteAlValidar
+/**
+ * Fase 9 · ADR-005 E7 (D4-B′): en T1 de PODCAST, VIDEO y STREAMING el Staff confirma el anexo que
+ * vio en el detalle: el enlace exacto o null si no había (obligatorio; el servidor responde 400 si
+ * falta). En ESPACIOS y ASESORIAS la clave no existe (400 si viajara, también con null). La
+ * categoría solo se conoce en ejecución: la elige revisionDelAnexo() (presentacion/acciones-staff).
+ */
+export type RevisionDelAnexo = { readonly anexo_revisado: string | null } | { readonly anexo_revisado?: never }
+
+/** T1: el destino, si los hay, sus ajustes, y la revisión del anexo (E7). */
+type ValidarConAjuste = { readonly estado: 'Validado'; readonly motivo_rechazo?: never; readonly enlace_entrega?: never } & AjusteAlValidar &
+  RevisionDelAnexo
 
 /**
  * PATCH /solicitudes/:radicado (solo STAFF). Siempre con un destino: el tablero no edita
@@ -84,6 +114,7 @@ export type CambiosTablero =
       readonly fecha_fin?: never
       readonly sub_espacio?: never
       readonly enlace_entrega?: never
+      readonly anexo_revisado?: never
     }
   | {
       // Fase 8 · requisito 4: el enlace del producto final solo acompaña la entrega (T9 y T12).
@@ -94,6 +125,7 @@ export type CambiosTablero =
       readonly fecha_inicio?: never
       readonly fecha_fin?: never
       readonly sub_espacio?: never
+      readonly anexo_revisado?: never
     }
   | {
       readonly estado: 'Rechazado'
@@ -102,6 +134,7 @@ export type CambiosTablero =
       readonly fecha_fin?: never
       readonly sub_espacio?: never
       readonly enlace_entrega?: never
+      readonly anexo_revisado?: never
     }
 
 /** POST /solicitudes/:radicado/reprogramacion (T5 · README §12.2). */
@@ -115,6 +148,29 @@ export interface CuerpoProponerReprogramacion {
   readonly sub_espacio: SubEspacio
   /** 10 a 500 caracteres sin los espacios de los extremos (Fase 6.1b). */
   readonly motivo: string
+}
+
+/**
+ * PATCH /solicitudes/:radicado/anexo (SOLICITANTE dueño · ADR-009 AN10 a AN14 · K3). Las DOS
+ * claves son obligatorias (sin `?`): `enlace_anexo_anterior` es el anexo que se vio, exacto, o
+ * null si no había; `enlace_anexo` es el nuevo, o null para retirarlo. El servidor decide
+ * propiedad, estado y categoría.
+ */
+export interface CuerpoEditarAnexo {
+  readonly enlace_anexo_anterior: string | null
+  readonly enlace_anexo: string | null
+}
+
+/**
+ * PATCH /solicitudes/:radicado/enlace-entrega (STAFF · ADR-008 EN6 a EN12 · K4). Ninguna clave
+ * admite null: el anterior es el enlace vigente que se vio, exacto (EN8: sin él no hay
+ * corrección); el nuevo, un https seguro. El motivo es opcional: si no hay, la clave no viaja
+ * (null, '' o solo espacios responderían 400).
+ */
+export interface CuerpoCorregirEnlaceEntrega {
+  readonly enlace_entrega_anterior: string
+  readonly enlace_entrega: string
+  readonly motivo_correccion?: string
 }
 
 export interface FiltrosTablero {
@@ -172,6 +228,22 @@ export function crearApiSolicitudes(cliente: ClienteApi) {
         esquema: esquemaRespuestaComando(esquemaSolicitud),
       }),
 
+    /** GET /solicitudes/:radicado/historial-enlaces (STAFF · J2b): eventos de enlace, aparte de la línea de vida. */
+    historialEnlaces: (radicado: string): Promise<Resultado<HistorialEnlaces>> =>
+      cliente.solicitar({ metodo: 'GET', ruta: rutaDe(radicado, '/historial-enlaces'), esquema: esquemaHistorialEnlaces }),
+
+    /** PATCH /solicitudes/:radicado/enlace-entrega (STAFF · J3). No es una transición: el estado no cambia. */
+    corregirEnlaceEntrega: (
+      radicado: string,
+      cuerpo: CuerpoCorregirEnlaceEntrega,
+    ): Promise<Resultado<RespuestaCorreccionEntrega>> =>
+      cliente.solicitar({
+        metodo: 'PATCH',
+        ruta: rutaDe(radicado, '/enlace-entrega'),
+        cuerpo,
+        esquema: esquemaRespuestaCorreccionEntrega,
+      }),
+
     /** POST /solicitudes/:radicado/reprogramacion (STAFF · T5). */
     proponerReprogramacion: (
       radicado: string,
@@ -183,6 +255,10 @@ export function crearApiSolicitudes(cliente: ClienteApi) {
         cuerpo,
         esquema: esquemaRespuestaComando(esquemaDetalleStaff),
       }),
+
+    /** PATCH /solicitudes/:radicado/anexo (SOLICITANTE dueño · AN10 a AN14). No es una transición. */
+    editarAnexo: (radicado: string, cuerpo: CuerpoEditarAnexo): Promise<Resultado<RespuestaEdicionAnexo>> =>
+      cliente.solicitar({ metodo: 'PATCH', ruta: rutaDe(radicado, '/anexo'), cuerpo, esquema: esquemaRespuestaEdicionAnexo }),
 
     /** POST /solicitudes/:radicado/cancelar (SOLICITANTE dueño · T3 y T6). Sin cuerpo. */
     cancelar: (radicado: string): Promise<Resultado<RespuestaComando<DetalleSolicitante>>> =>

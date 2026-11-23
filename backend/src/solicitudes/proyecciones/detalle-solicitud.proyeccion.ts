@@ -6,6 +6,43 @@ import { Prisma } from '@prisma/client';
  * NO se expone en la API hasta que alguien la agregue aquí a propósito.
  */
 
+/**
+ * Fase 9 · ADR-012 EV7 (lote I-2): `logs` lleva solo TRANSICIONES (T1 a T12), en las dos
+ * proyecciones. Los eventos de enlace (cambio del anexo y corrección de la entrega) tienen el mismo
+ * estado antes y después: si llegaran a `logs`, la línea de vida del frontend movería la fecha de
+ * «Recibido» o «Entregado» (toma el último log con ese estado) y mostraría un evento «X → X». El
+ * contrato del frontend no tiene `enlace_campo`, así que el filtro solo puede ir aquí.
+ * Los eventos siguen guardados en Log_Auditoria. El historial de enlaces del Staff será una consulta
+ * APARTE (con el filtro complementario, `enlace_campo` no nulo): Prisma no selecciona la misma
+ * relación dos veces con filtros distintos, y este filtro no la impide.
+ */
+export const FILTRO_LOGS_DE_TRANSICION = { enlace_campo: null } as const satisfies Prisma.Log_AuditoriaWhereInput;
+
+/**
+ * Fase 9 · ADR-012 EV7 (lote J2b): el filtro COMPLEMENTARIO, para el historial de enlaces del Staff
+ * (GET /solicitudes/:radicado/historial-enlaces). Entre los dos cubren todo Log_Auditoria sin
+ * solaparse: transiciones (enlace_campo IS NULL) y eventos de enlace (IS NOT NULL).
+ */
+export const FILTRO_EVENTOS_DE_ENLACE = { enlace_campo: { not: null } } as const satisfies Prisma.Log_AuditoriaWhereInput;
+
+/**
+ * Fase 9 · J2b: lo único que se lee de cada evento de enlace (minimización). Sin los estados: los fija
+ * el tipo de evento (B3 y B4). Orden cronológico ascendente, con id_log solo para desempatar.
+ */
+export const SELECT_HISTORIAL_ENLACES = {
+  where: FILTRO_EVENTOS_DE_ENLACE,
+  orderBy: [{ fecha_modificacion: 'asc' }, { id_log: 'asc' }],
+  select: {
+    id_log: true,
+    enlace_campo: true,
+    enlace_anterior: true,
+    enlace_nuevo: true,
+    motivo_correccion: true,
+    modificado_por: true,
+    fecha_modificacion: true,
+  },
+} satisfies Prisma.Solicitud$logsArgs;
+
 /** Vista completa para el Staff (gestión y auditoría). */
 export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
   radicado: true,
@@ -24,6 +61,8 @@ export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
   sub_espacio_propuesto: true,
   // Fase 8 · requisito 4: el Staff ve lo que entregó.
   enlace_entrega: true,
+  // Fase 9 · R9-1: el guion que adjuntó el solicitante (la vista lo pinta con esEnlaceSeguro).
+  enlace_anexo: true,
   usuario: { select: { id_usuario: true, nombre: true, correo: true, rol: true } },
   recursos: {
     select: {
@@ -33,6 +72,7 @@ export const SELECT_DETALLE_STAFF = Prisma.validator<Prisma.SolicitudSelect>()({
     },
   },
   logs: {
+    where: FILTRO_LOGS_DE_TRANSICION,
     orderBy: { fecha_modificacion: 'asc' },
     select: {
       id_log: true,
@@ -63,10 +103,13 @@ export const SELECT_DETALLE_SOLICITANTE = Prisma.validator<Prisma.SolicitudSelec
   sub_espacio_propuesto: true,
   // Fase 8 · requisito 4: el solicitante abre su producto final (la vista lo pinta de forma segura).
   enlace_entrega: true,
+  // Fase 9 · R9-1: el guion que adjuntó (la vista lo pinta con esEnlaceSeguro).
+  enlace_anexo: true,
   recursos: {
     select: { cantidad_solicitada: true, recurso: { select: { nombre: true } } },
   },
   logs: {
+    where: FILTRO_LOGS_DE_TRANSICION,
     orderBy: { fecha_modificacion: 'asc' },
     select: {
       estado_anterior: true,

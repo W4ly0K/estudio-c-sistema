@@ -64,6 +64,8 @@ export const SOLICITUD_E2E: Solicitud = {
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
   enlace_entrega: null,
+  // Fase 9 · R9-1: sin anexo (es opcional).
+  enlace_anexo: null,
 };
 
 /** Solicitud de OTRO usuario: la que el solicitante de prueba jamás debe poder leer. */
@@ -94,6 +96,11 @@ const LOG_E2E: Log_Auditoria = {
   sub_espacio_nuevo: null,
   fecha_inicio_anterior: null,
   fecha_fin_anterior: null,
+  // Fase 9 (ADR-012): una transición no es un evento de enlace; los cuatro campos van en null.
+  enlace_campo: null,
+  enlace_anterior: null,
+  enlace_nuevo: null,
+  motivo_correccion: null,
 };
 
 interface ArgsCreateSolicitud {

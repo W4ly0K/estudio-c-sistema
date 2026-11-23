@@ -4,7 +4,11 @@ import {
   esquemaCuerpoError,
   esquemaDetalleSolicitante,
   esquemaDetalleStaff,
+  esquemaEventoEnlace,
+  esquemaHistorialEnlaces,
   esquemaRespuestaComando,
+  esquemaRespuestaCorreccionEntrega,
+  esquemaRespuestaEdicionAnexo,
   esquemaRespuestaLogin,
   esquemaSolicitudTablero,
 } from './esquemas'
@@ -33,6 +37,7 @@ const DETALLE_SOLICITANTE = {
   sub_espacio: 'ESTUDIO_COMPLETO',
   sub_espacio_propuesto: null,
   enlace_entrega: null,
+  enlace_anexo: null,
   recursos: [{ cantidad_solicitada: 2, recurso: { nombre: 'Micrófono de solapa' } }],
   logs: [LOG],
 }
@@ -57,6 +62,17 @@ describe('Esquemas del contrato (DC1)', () => {
     it('Fase 8 · acepta una entrega con el enlace del producto final', () => {
       const entregada = { ...DETALLE_SOLICITANTE, estado: 'Entregado', enlace_entrega: 'https://youtu.be/abc123' }
       expect(acepta(esquemaDetalleSolicitante, entregada)).toBe(true)
+    })
+
+    it('Fase 9 · R9-1: acepta el anexo del solicitante', () => {
+      const conAnexo = { ...DETALLE_SOLICITANTE, enlace_anexo: 'https://drive.google.com/file/d/xyz/view' }
+      expect(acepta(esquemaDetalleSolicitante, conAnexo)).toBe(true)
+    })
+
+    it('Fase 9 · R9-1 (D1, fail-closed): una respuesta sin enlace_anexo no se acepta', () => {
+      const sinAnexo: Record<string, unknown> = { ...DETALLE_SOLICITANTE }
+      delete sinAnexo.enlace_anexo
+      expect(acepta(esquemaDetalleSolicitante, sinAnexo)).toBe(false)
     })
 
     it('acepta una propuesta pendiente con fechas en hora de Bogotá y el motivo del Staff', () => {
@@ -166,5 +182,89 @@ describe('Esquemas del contrato (DC1)', () => {
     it('rechaza un message numérico', () => {
       expect(acepta(esquemaCuerpoError, { statusCode: 500, message: 500 })).toBe(false)
     })
+  })
+})
+
+describe('esquemaRespuestaEdicionAnexo (Fase 9 · K3 · AN14 y D10)', () => {
+  const ok = { mensaje: 'Anexo actualizado.', sin_cambios: false, solicitud: { ...DETALLE_SOLICITANTE, estado: 'Recibido' } }
+
+  it.each([false, true])('acepta sin_cambios = %s con la proyección del dueño', (sin_cambios) => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { ...ok, sin_cambios })).toBe(true)
+  })
+
+  it('fail-closed: sin `sin_cambios` la respuesta no se acepta', () => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { mensaje: ok.mensaje, solicitud: ok.solicitud })).toBe(false)
+  })
+
+  it.each([null, 'false', 0])('rechaza sin_cambios = %j (debe ser booleano)', (valor) => {
+    expect(acepta(esquemaRespuestaEdicionAnexo, { ...ok, sin_cambios: valor })).toBe(false)
+  })
+
+  it('los demás comandos no cambian: su esquema no exige sin_cambios', () => {
+    expect(acepta(esquemaRespuestaComando(esquemaDetalleSolicitante), { mensaje: 'ok', solicitud: DETALLE_SOLICITANTE })).toBe(true)
+  })
+})
+
+describe('historial de enlaces (Fase 9 · K4 · J2b, DJ2b-2 y migración 20261109110000)', () => {
+  const ANEXO = {
+    id_log: 'log-1',
+    enlace_campo: 'ANEXO',
+    enlace_anterior: null,
+    enlace_nuevo: 'https://drive.google.com/file/d/xyz/view',
+    motivo_correccion: null,
+    modificado_por: 'uuid-solicitante',
+    fecha_modificacion: '2026-10-09T14:00:00.000Z',
+  }
+  const ENTREGA = {
+    ...ANEXO,
+    id_log: 'log-2',
+    enlace_campo: 'ENTREGA',
+    enlace_anterior: 'https://youtu.be/viejo',
+    enlace_nuevo: 'https://youtu.be/nuevo',
+    motivo_correccion: 'Se registró otra grabación.',
+    modificado_por: 'uuid-staff',
+  }
+
+  it.each([
+    ['ANEXO agregado', ANEXO],
+    ['ANEXO retirado', { ...ANEXO, enlace_anterior: 'https://drive.google.com/file/d/xyz/view', enlace_nuevo: null }],
+    ['ENTREGA con motivo', ENTREGA],
+    ['ENTREGA sin motivo', { ...ENTREGA, motivo_correccion: null }],
+    // EN8 lo garantiza solo el servicio: el motor admite ENTREGA con anterior NULL, y aquí también.
+    ['ENTREGA con anterior null', { ...ENTREGA, enlace_anterior: null }],
+  ])('acepta %s', (_caso, evento) => {
+    expect(acepta(esquemaEventoEnlace, evento)).toBe(true)
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['un campo adicional (DK4-2)', { ...ANEXO, correo: 'ana@unicesmag.edu.co' }],
+    ['sin id_log', { ...ANEXO, id_log: undefined }],
+    ['sin modificado_por', { ...ANEXO, modificado_por: undefined }],
+    ['sin fecha_modificacion', { ...ANEXO, fecha_modificacion: undefined }],
+    ['un enlace_campo desconocido', { ...ANEXO, enlace_campo: 'OTRO' }],
+    ['motivo en ANEXO (B8)', { ...ANEXO, motivo_correccion: 'Un motivo cualquiera.' }],
+    ['ENTREGA sin enlace nuevo (B4)', { ...ENTREGA, enlace_nuevo: null }],
+    ['sin cambio real (B2)', { ...ENTREGA, enlace_anterior: ENTREGA.enlace_nuevo }],
+    ['ANEXO de null a null (B2)', { ...ANEXO, enlace_nuevo: null }],
+    ['fecha sin zona', { ...ANEXO, fecha_modificacion: '2026-10-09T14:00:00' }],
+  ])('rechaza %s', (_caso, evento) => {
+    const sinIndefinidos = Object.fromEntries(Object.entries(evento).filter(([, valor]) => valor !== undefined))
+    expect(acepta(esquemaEventoEnlace, sinIndefinidos)).toBe(false)
+  })
+
+  it('la respuesta tiene exactamente { radicado, eventos }', () => {
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [ANEXO, ENTREGA] })).toBe(true)
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [] })).toBe(true)
+    expect(acepta(esquemaHistorialEnlaces, { radicado: 'EC-1', eventos: [], logs: [] })).toBe(false)
+  })
+
+  it('respuesta de la corrección: sin_cambios booleano obligatorio con la proyección del Staff', () => {
+    const respuesta = { mensaje: 'Enlace del producto final corregido.', solicitud: { ...DETALLE_STAFF, estado: 'Entregado' } }
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: false })).toBe(true)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: true })).toBe(true)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, respuesta)).toBe(false)
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: 'true' })).toBe(false)
+    // La proyección es la del Staff: la del solicitante no basta.
+    expect(acepta(esquemaRespuestaCorreccionEntrega, { ...respuesta, sin_cambios: false, solicitud: DETALLE_SOLICITANTE })).toBe(false)
   })
 })

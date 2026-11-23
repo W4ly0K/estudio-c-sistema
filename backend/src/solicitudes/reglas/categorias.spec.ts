@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CategoriaSolicitud } from '@prisma/client';
-import { ENLACE_ENTREGA_MAXIMO } from '../dto/update-solicitude.dto';
+import { ENLACE_MAXIMO } from '../../common/validadores/enlace-seguro.decorator';
 import {
   CATEGORIA_QUE_ELIGE_SUB_ESPACIO,
+  CATEGORIAS_CON_ANEXO,
   CATEGORIAS_CON_EDICION,
   CATEGORIAS_CON_ENLACE,
   POLITICA_POR_CATEGORIA,
@@ -17,11 +18,12 @@ import { TRANSICIONES } from './maquina-estados';
  * SE10. Se compara contra ella, nunca contra la tabla consigo misma (sería una tautología).
  */
 const ORACULO: Readonly<Record<CategoriaSolicitud, PoliticaCategoria & { readonly eligeSubEspacio: boolean }>> = {
-  PODCAST: { eligeSubEspacio: false, pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO' },
-  VIDEO: { eligeSubEspacio: false, pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO' },
-  ESPACIOS: { eligeSubEspacio: true, pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO' },
-  STREAMING: { eligeSubEspacio: false, pasaPorEdicion: false, enlaceAlEntregar: 'OBLIGATORIO' },
-  ASESORIAS: { eligeSubEspacio: false, pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO' },
+  // Fase 9 · admiteAnexo: pregunta 5 del cuestionario firmado por el Responsable (2026-11-10).
+  PODCAST: { eligeSubEspacio: false, pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true },
+  VIDEO: { eligeSubEspacio: false, pasaPorEdicion: true, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true },
+  ESPACIOS: { eligeSubEspacio: true, pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO', admiteAnexo: false },
+  STREAMING: { eligeSubEspacio: false, pasaPorEdicion: false, enlaceAlEntregar: 'OBLIGATORIO', admiteAnexo: true },
+  ASESORIAS: { eligeSubEspacio: false, pasaPorEdicion: false, enlaceAlEntregar: 'PROHIBIDO', admiteAnexo: false },
 };
 
 const CATEGORIAS = Object.values(CategoriaSolicitud);
@@ -44,6 +46,15 @@ describe('Política por categoría (Fase 8 · 8.1)', () => {
       CategoriaSolicitud.VIDEO,
       CategoriaSolicitud.STREAMING,
     ]);
+  });
+
+  it('la lista derivada del anexo: PODCAST, VIDEO y STREAMING (Fase 9 · AN2b)', () => {
+    expect(CATEGORIAS_CON_ANEXO).toEqual([
+      CategoriaSolicitud.PODCAST,
+      CategoriaSolicitud.VIDEO,
+      CategoriaSolicitud.STREAMING,
+    ]);
+    expect(Object.isFrozen(CATEGORIAS_CON_ANEXO)).toBe(true);
   });
 
   it('invariante de negocio: toda categoría que pasa por edición exige el enlace del producto final', () => {
@@ -77,13 +88,28 @@ describe('Enlace del producto final: la migración coincide con el código (Fase
     }
   });
 
-  it('el límite del CHECK de formato es ENLACE_ENTREGA_MAXIMO del DTO', () => {
-    expect(sql).toContain(`char_length(enlace_entrega) <= ${ENLACE_ENTREGA_MAXIMO}`);
+  it('el límite del CHECK de formato es ENLACE_MAXIMO de la fuente única', () => {
+    expect(sql).toContain(`char_length(enlace_entrega) <= ${ENLACE_MAXIMO}`);
   });
 
   it('solo la regla de "Entregado exige enlace" va NOT VALID (DT-3); las demás se validan', () => {
     expect([...sql.matchAll(/NOT VALID/g)]).toHaveLength(1);
     expect(sql).toMatch(/"Solicitud_entrega_con_enlace_check"[^;]*NOT VALID;/);
+  });
+});
+
+describe('Anexo del solicitante: la migración consolidada coincide con el código (Fase 9 · AN2b)', () => {
+  // Solo lectura de H1: si la tabla y el CHECK divergen, el motor rechazaría lo que el servidor acepta.
+  const sql = readFileSync(
+    join(__dirname, '../../../prisma/migrations/20261109110000_enlace_anexo/migration.sql'),
+    'utf8',
+  ).replace(/--.*$/gm, '');
+
+  it('Solicitud_enlace_anexo_segun_categoria_check (A3) usa exactamente CATEGORIAS_CON_ANEXO', () => {
+    const restriccion = /"Solicitud_enlace_anexo_segun_categoria_check"[^;]*categoria IN \(([^)]*)\)/.exec(sql);
+    expect(restriccion).not.toBeNull();
+    const lista = [...(restriccion?.[1] ?? '').matchAll(/'([^']*)'/g)].map((m) => m[1]).sort();
+    expect(lista).toEqual([...CATEGORIAS_CON_ANEXO].sort());
   });
 });
 

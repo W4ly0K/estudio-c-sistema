@@ -7,11 +7,14 @@ import type { DetalleSolicitante, UsuarioSesion } from './api/esquemas'
 import type { Rol } from './api/maquina-estados'
 import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
+import { EdicionAnexo } from './componentes/EdicionAnexo'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
+import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
+import { TEXTO_FICHA_SIN_ANEXO, edicionDelAnexoDisponible } from './presentacion/anexo'
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_MIS_SOLICITUDES } from './rutas'
@@ -163,6 +166,8 @@ function Contenido({
   alCompletar: (respuesta: RespuestaComando<DetalleSolicitante>) => void
   alRecargar: () => void
 }) {
+  // Fase 9 · K3: la edición del anexo se OFRECE solo al dueño, en «Recibido» y en las categorías con anexo.
+  const anexoEditable = edicionDelAnexoDisponible(rol, detalle.estado, detalle.categoria)
   const propuesta =
     detalle.estado === 'Pendiente de Reprogramación' &&
     detalle.fecha_propuesta_inicio !== null &&
@@ -212,6 +217,21 @@ function Contenido({
             <dt className="text-gray-500">Propósito</dt>
             <dd className="font-medium text-primary">{detalle.proposito}</dd>
           </div>
+          {/* Fase 9 · R9-1: el guion que adjuntó el solicitante, abierto de forma segura. K3 (DK3-1):
+              junto a él, la edición, solo cuando se ofrece; sin anexo, la fila aparece solo entonces. */}
+          {(detalle.enlace_anexo !== null || anexoEditable) && (
+            <div className="sm:col-span-2">
+              <dt className="text-gray-500">{TEXTO_ANEXO}</dt>
+              <dd>
+                {detalle.enlace_anexo !== null ? (
+                  <EnlaceAnexo enlace={detalle.enlace_anexo} radicado={detalle.radicado} />
+                ) : (
+                  <span className="font-medium text-primary">{TEXTO_FICHA_SIN_ANEXO}</span>
+                )}
+                {anexoEditable && <EdicionAnexo detalle={detalle} alCompletar={alCompletar} alRecargar={alRecargar} />}
+              </dd>
+            </div>
+          )}
           {detalle.recursos.length > 0 && (
             <div className="sm:col-span-2">
               <dt className="text-gray-500">Recursos</dt>

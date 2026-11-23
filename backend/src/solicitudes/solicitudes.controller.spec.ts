@@ -5,6 +5,8 @@ import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudeDto } from './dto/create-solicitude.dto';
 import { UpdateSolicitudeDto } from './dto/update-solicitude.dto';
 import { ProponerReprogramacionDto } from './dto/proponer-reprogramacion.dto';
+import type { EditarAnexoDto } from './dto/editar-anexo.dto';
+import type { CorregirEnlaceEntregaDto } from './dto/corregir-enlace-entrega.dto';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import type { UsuarioAutenticado } from '../auth/interfaces/usuario-autenticado.interface';
@@ -21,7 +23,10 @@ type MetodoControlador =
   | 'cancelar'
   | 'proponerReprogramacion'
   | 'aceptarReprogramacion'
-  | 'rechazarReprogramacion';
+  | 'rechazarReprogramacion'
+  | 'editarAnexo'
+  | 'historialDeEnlaces'
+  | 'corregirEnlaceEntrega';
 
 const reflector = new Reflector();
 const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined =>
@@ -32,7 +37,14 @@ const metadatoDe = <T>(clave: string, metodo: MetodoControlador): T | undefined 
 
 describe('SolicitudesController', () => {
   describe('Autorización declarada (@Roles / @Public)', () => {
-    it.each<MetodoControlador>(['findAll', 'update', 'remove', 'proponerReprogramacion'])(
+    it.each<MetodoControlador>([
+      'findAll',
+      'update',
+      'remove',
+      'proponerReprogramacion',
+      'historialDeEnlaces',
+      'corregirEnlaceEntrega',
+    ])(
       '%s exige el rol STAFF',
       (metodo) => {
         expect(metadatoDe<RolUsuario[]>(ROLES_KEY, metodo)).toEqual([RolUsuario.STAFF]);
@@ -41,6 +53,10 @@ describe('SolicitudesController', () => {
 
     it('cancelar exige el rol SOLICITANTE (PRD §5.5: el Staff nunca cancela por el usuario)', () => {
       expect(metadatoDe<RolUsuario[]>(ROLES_KEY, 'cancelar')).toEqual([RolUsuario.SOLICITANTE]);
+    });
+
+    it('editarAnexo exige el rol SOLICITANTE (solo el dueño cambia su anexo, ADR-009 AN10)', () => {
+      expect(metadatoDe<RolUsuario[]>(ROLES_KEY, 'editarAnexo')).toEqual([RolUsuario.SOLICITANTE]);
     });
 
     it.each<MetodoControlador>(['aceptarReprogramacion', 'rechazarReprogramacion'])(
@@ -70,6 +86,9 @@ describe('SolicitudesController', () => {
         'proponerReprogramacion',
         'aceptarReprogramacion',
         'rechazarReprogramacion',
+        'editarAnexo',
+        'historialDeEnlaces',
+        'corregirEnlaceEntrega',
       ];
       for (const metodo of metodos) {
         expect(metadatoDe<boolean>(IS_PUBLIC_KEY, metodo)).toBeUndefined();
@@ -89,6 +108,9 @@ describe('SolicitudesController', () => {
       proponerReprogramacion: jest.fn<Promise<null>, [string, ProponerReprogramacionDto, string]>(),
       aceptarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
       rechazarReprogramacion: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
+      editarAnexo: jest.fn<Promise<null>, [string, UsuarioAutenticado, EditarAnexoDto]>(),
+      historialDeEnlaces: jest.fn<Promise<null>, [string, UsuarioAutenticado]>(),
+      corregirEnlaceEntrega: jest.fn<Promise<null>, [string, UsuarioAutenticado, CorregirEnlaceEntregaDto]>(),
     };
     const controller = new SolicitudesController(serviceMock as unknown as SolicitudesService);
 
@@ -159,6 +181,32 @@ describe('SolicitudesController', () => {
       await controller.rechazarReprogramacion('EC-2099-0001', USUARIO_SOLICITANTE);
 
       expect(serviceMock.rechazarReprogramacion).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE);
+    });
+
+    it('editarAnexo() entrega al servicio el usuario COMPLETO del token y el cuerpo tal cual', async () => {
+      serviceMock.editarAnexo.mockResolvedValue(null);
+      const dto: EditarAnexoDto = { enlace_anexo_anterior: null, enlace_anexo: 'https://drive.google.com/file/d/x/view' };
+
+      await controller.editarAnexo('EC-2099-0001', dto, USUARIO_SOLICITANTE);
+
+      expect(serviceMock.editarAnexo).toHaveBeenCalledWith('EC-2099-0001', USUARIO_SOLICITANTE, dto);
+    });
+
+    it('historialDeEnlaces() entrega al servicio el usuario COMPLETO del token (el rol se revisa allí también)', async () => {
+      serviceMock.historialDeEnlaces.mockResolvedValue(null);
+
+      await controller.historialDeEnlaces('EC-2099-0001', USUARIO_STAFF);
+
+      expect(serviceMock.historialDeEnlaces).toHaveBeenCalledWith('EC-2099-0001', USUARIO_STAFF);
+    });
+
+    it('corregirEnlaceEntrega() entrega al servicio el usuario COMPLETO del token y el cuerpo tal cual', async () => {
+      serviceMock.corregirEnlaceEntrega.mockResolvedValue(null);
+      const dto: CorregirEnlaceEntregaDto = { enlace_entrega_anterior: 'https://youtu.be/a', enlace_entrega: 'https://youtu.be/b' };
+
+      await controller.corregirEnlaceEntrega('EC-2099-0001', dto, USUARIO_STAFF);
+
+      expect(serviceMock.corregirEnlaceEntrega).toHaveBeenCalledWith('EC-2099-0001', USUARIO_STAFF, dto);
     });
   });
 });

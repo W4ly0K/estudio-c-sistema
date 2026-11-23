@@ -13,6 +13,8 @@ export interface LimitesMotivo {
 
 export const LIMITES_MOTIVO_RECHAZO = { minimo: 10, maximo: 500 } as const satisfies LimitesMotivo
 export const LIMITES_MOTIVO_REPROGRAMACION = { minimo: 10, maximo: 500 } as const satisfies LimitesMotivo
+/** Fase 9 · K4 (ADR-008 EN10): motivo OPCIONAL de la corrección del enlace de entrega. */
+export const LIMITES_MOTIVO_CORRECCION = { minimo: 10, maximo: 500 } as const satisfies LimitesMotivo
 
 /** Ayuda bajo el campo: se DERIVA de los límites, así no puede contradecirlos. */
 export function textoAyudaMotivo({ minimo, maximo }: LimitesMotivo): string {

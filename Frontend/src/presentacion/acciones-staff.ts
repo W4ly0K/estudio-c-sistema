@@ -1,7 +1,7 @@
-import { transicionAplicaALaCategoria } from '../api/categorias'
+import { ADMITE_ANEXO, transicionAplicaALaCategoria } from '../api/categorias'
 import type { Categoria, SubEspacio } from '../api/esquemas'
 import { TRANSICIONES, type Estado } from '../api/maquina-estados'
-import type { AjusteAlValidar } from '../api/solicitudes'
+import type { AjusteAlValidar, RevisionDelAnexo } from '../api/solicitudes'
 import type { TextosAccion } from './acciones-solicitante'
 import { etiquetaEstado } from './etiquetas'
 import { franjaCompleta, franjaDesdeCampos, mismaFranja, type ValoresFranja } from './franja'
@@ -240,6 +240,21 @@ export function ajusteAlValidar(franja: ValoresFranja, subEspacio: SubEspacio, v
   if (!nueva.ok) return { ok: false, error: nueva.error }
   return { ok: true, ajuste: { fecha_inicio: nueva.inicio, fecha_fin: nueva.fin, ...lugar } }
 }
+
+/**
+ * Fase 9 · ADR-005 E7 (K1): la revisión del anexo que acompaña a T1, la MISMA para "Validar" y
+ * para "Validar con ajustes". `anexoObservado` es el anexo del detalle que el Staff tenía delante
+ * al abrir el diálogo: viaja tal cual, sin recortar ni normalizar (el servidor lo compara carácter
+ * por carácter), y null viaja como null explícito («no había anexo»). En las categorías sin anexo
+ * la clave no existe: el servidor la rechazaría, incluso con null.
+ */
+export function revisionDelAnexo(categoria: Categoria, anexoObservado: string | null): RevisionDelAnexo {
+  return ADMITE_ANEXO[categoria] ? { anexo_revisado: anexoObservado } : {}
+}
+
+/** K1 · DK1-2: tras un 409 en T1, la foto del anexo ya no vale; se valida de nuevo después de recargar. */
+export const TEXTO_RAZON_RECARGAR_TRAS_CONFLICTO =
+  'Para volver a validar, recarga la solicitud y revisa su estado y su anexo actuales.'
 
 /** Aviso tras el éxito (DA2): lo escribe el cliente con el destino, que es lo que se aplicó. */
 export function textoExito(destino: DestinoDelStaff): string {

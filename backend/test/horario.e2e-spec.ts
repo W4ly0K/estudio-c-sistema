@@ -5,7 +5,8 @@ import { App } from 'supertest/types';
 import { MENSAJES_ERROR_HORARIO } from '../src/solicitudes/reglas/horario.validator';
 import { MENSAJE_CA06 } from '../src/solicitudes/errores/traslape-ca06';
 import { MENSAJE_MOTIVO_REPROGRAMACION, MENSAJE_SUBESPACIO_PROPUESTO } from '../src/solicitudes/dto/proponer-reprogramacion.dto';
-import { MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
+import { MENSAJE_ENLACE_ENTREGA, MENSAJE_MOTIVO_RECHAZO } from '../src/solicitudes/dto/update-solicitude.dto';
+import { ENLACE_MAXIMO } from '../src/common/validadores/enlace-seguro.decorator';
 import { MENSAJE_SUBESPACIO_DE_CREACION } from '../src/solicitudes/dto/create-solicitude.dto';
 import {
   MENSAJE_FECHAS_SOLO_EN_RECIBIDO,
@@ -16,7 +17,9 @@ import {
   MENSAJE_SUBESPACIO_SOLO_EN_ESPACIOS,
   MENSAJE_USAR_REPROGRAMACION,
   MENSAJES_TRANSICION_INVALIDA,
+  SolicitudesService,
 } from '../src/solicitudes/solicitudes.service';
+import { enlaceConEmojisDeUnidadesUtf16, enlaceConSelectoresDeVariacion } from './utils/casos-enlace';
 import {
   crearAppE2E,
   PrismaMockE2E,
@@ -154,6 +157,14 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
   });
 
   describe('PATCH /solicitudes/:radicado · CA-04 y CA-06 al reprogramar (Fase 4.5)', () => {
+    // Fase 9 · H8b-2 · Más de ENLACE_MAXIMO puntos de código con un selector de variación (el pipe rechaza solo por la
+    // longitud) y emojis que superan ENLACE_MAXIMO unidades UTF-16 sin superar los puntos de código (se acepta).
+    const SELECTORES_FUERA_DEL_LIMITE = [
+      ['U+FE0F', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0F')],
+      ['U+FE0E', enlaceConSelectoresDeVariacion(ENLACE_MAXIMO + 1, 1, '\uFE0E')],
+    ] as const;
+    const EMOJIS_DENTRO_DEL_LIMITE = enlaceConEmojisDeUnidadesUtf16(ENLACE_MAXIMO + 2);
+
     const editar = (body: object) =>
       request(app.getHttpServer())
         .patch(`/solicitudes/${SOLICITUD_E2E.radicado}`)
@@ -178,6 +189,41 @@ describe('Reglas de horario CA-04 y urgencia (e2e)', () => {
       expect(JSON.stringify(respuesta.body)).toContain('El enlace del producto final debe empezar por https://');
       expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    // Fase 9 · H8b-2 · el pipe rechaza por longitud ANTES del servicio: ni el servicio ni Prisma se invocan.
+    it.each(SELECTORES_FUERA_DEL_LIMITE)(
+      `29c. H8b · un enlace con selector %s de ${ENLACE_MAXIMO + 1} puntos de código → 400 del pipe, sin llegar al servicio`,
+      async (_selector, enlace) => {
+        const servicio = jest.spyOn(SolicitudesService.prototype, 'update');
+        try {
+          const respuesta = await editar({ estado: 'Entregado', enlace_entrega: enlace }).expect(400);
+
+          expect(respuesta.body.message).toEqual([MENSAJE_ENLACE_ENTREGA]);
+          expect(servicio).not.toHaveBeenCalled();
+          expect(prisma.solicitud.findUnique).not.toHaveBeenCalled();
+          expect(prisma.solicitud.updateMany).not.toHaveBeenCalled();
+          expect(prisma.$transaction).not.toHaveBeenCalled();
+        } finally {
+          servicio.mockRestore();
+        }
+      },
+    );
+
+    it(`29d. H8b · T12 de un VIDEO con un enlace de emojis (más de ${ENLACE_MAXIMO} unidades UTF-16) → 200 y se escribe tal cual`, async () => {
+      prisma.solicitud.findUnique.mockResolvedValueOnce({
+        ...SOLICITUD_E2E,
+        categoria: CategoriaSolicitud.VIDEO,
+        estado: 'Edición y postproducción',
+        fecha_inicio: new Date('2026-09-01T09:00:00-05:00'),
+        fecha_fin: new Date('2026-09-01T10:00:00-05:00'),
+      });
+
+      await editar({ estado: 'Entregado', enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE }).expect(200);
+
+      expect(prisma.solicitud.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: 'Entregado', enlace_entrega: EMOJIS_DENTRO_DEL_LIMITE }) }),
+      );
     });
 
     it('26. mover la reserva a un sábado → 400 CA-04 sin consultar CA-06 ni escribir', async () => {

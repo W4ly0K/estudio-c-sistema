@@ -24,12 +24,25 @@ enum CategoriaSolicitud {
 
 /// Fase 7 (PRD v2.2 secc. 5.1, ADR-007 SE1): dónde ocurre la reserva. Los dos primeros
 /// son los sub-espacios físicos; ESTUDIO_COMPLETO ocupa los dos (y es el registro
-/// histórico de lo creado antes de la v2.2). CA-06 lo garantizan dos EXCLUDE parciales,
-/// uno por sub-espacio físico (migración 20261023120000_ca06_subespacios).
+/// histórico de lo creado antes de la v2.2). CA-06 lo garantiza PostgreSQL (ADR-004) con dos EXCLUDE
+/// parciales, uno por sub-espacio físico: Solicitud_sin_traslape_ca06_cabina (CABINA_AUDIO y ESTUDIO_COMPLETO)
+/// y Solicitud_sin_traslape_ca06_estudio (ESTUDIO_GRABACION y ESTUDIO_COMPLETO). Evolución:
+/// 20261002200000_ca06_sin_traslape creó una sola restricción, Solicitud_sin_traslape_ca06, cuyos predicados
+/// no consideraban ocupadas las franjas de solicitudes en estado "Rechazado" o "Cancelado por el Usuario".
+/// 20261023120000_ca06_subespacios la reemplazó por las dos actuales y sumó "No atendida"; y
+/// 20261028120000_ca06_edicion_postproduccion las recreó con los mismos nombres, sumando "Edición y
+/// postproducción" y el "Entregado" de PODCAST y VIDEO a lo que no ocupa la franja (ADR-007 y ADR-008).
 enum SubEspacio {
   CABINA_AUDIO
   ESTUDIO_GRABACION
   ESTUDIO_COMPLETO
+}
+
+/// Fase 9 (ADR-012, aceptado el 2026-11-11): qué enlace cambió en un evento de Log_Auditoria que no es una
+/// transición. Lo crea la migración 20261109110000_enlace_anexo.
+enum CampoEnlace {
+  ANEXO
+  ENTREGA
 }
 
 model Usuario {
@@ -40,6 +53,8 @@ model Usuario {
   
   // Relaciones
   solicitudes      Solicitud[]
+  // "StaffModificador" es un nombre histórico: el autor de un log también puede ser el SOLICITANTE
+  // (T3, T6, T7 y T8 y, desde la Fase 9, los eventos ANEXO).
   logs_modificados Log_Auditoria[] @relation("StaffModificador")
 }
 
@@ -71,8 +86,18 @@ model Solicitud {
   sub_espacio_propuesto  SubEspacio?
   /// Fase 8 · requisito 4: enlace del producto final (https://). Solo en "Entregado" y solo en
   /// PODCAST, VIDEO y STREAMING, donde es obligatorio desde la Fase 8 (CHECK NOT VALID: las
-  /// entregas anteriores se conservan sin enlace, DT-3). Ver la migración 20261028130000.
+  /// entregas anteriores se conservan sin enlace, DT-3). Ver la migración 20261028130000_enlace_entrega.
+  /// Fase 9 (ADR-008 EN6 a EN12): el Staff lo corrige en "Entregado" con un evento ENTREGA en Log_Auditoria. El
+  /// motor exige la forma del enlace nuevo y, en el evento, "Entregado" con enlace nuevo (B4); el rol, que ya
+  /// existiera un enlace (EN8, D2) y el valor anterior observado (D9) los comprueba el servicio.
   enlace_entrega         String?            @db.Text
+  /// Fase 9 · R9-1 (ADR-009): anexo opcional del solicitante (guion por enlace https://). Se escribe al radicar y
+  /// el dueño lo cambia o lo retira mientras la solicitud está en "Recibido" (AN10 a AN14), con un evento ANEXO en
+  /// Log_Auditoria. El motor exige la forma (Solicitud_enlace_anexo_formato_check, la misma de enlace_entrega) y las
+  /// categorías PODCAST, VIDEO y STREAMING (Solicitud_enlace_anexo_segun_categoria_check), sin restricción por
+  /// estado; la propiedad, el estado "Recibido" y el valor anterior observado los comprueba el servicio. Ver la
+  /// migración 20261109110000_enlace_anexo.
+  enlace_anexo           String?            @db.Text
 
   // Relaciones
   usuario  Usuario             @relation(fields: [id_usuario], references: [id_usuario])
@@ -100,11 +125,16 @@ model Solicitud_Recurso {
   recurso   Recurso   @relation(fields: [id_recurso], references: [id_recurso])
 }
 
+/// Bitácora de auditoría. Cada fila es una transición T1 a T12 (estado_anterior distinto de estado_nuevo) o, desde
+/// la Fase 9, un evento de enlace sin cambio de estado (ADR-012 EV1; CHECK B3 y B7). Los eventos de enlace no son
+/// transiciones: las proyecciones los excluyen de "logs" (ADR-012 EV7). Ni este esquema ni las migraciones del
+/// repositorio establecen la inmutabilidad del log: D5 sigue pendiente (ADR-012 §4).
 model Log_Auditoria {
   id_log             String   @id @default(uuid())
   radicado_solicitud String
   estado_anterior    String
   estado_nuevo       String
+  /// Autor del log, tomado del JWT (nunca del cuerpo): STAFF o SOLICITANTE según la transición o el evento.
   modificado_por     String
   fecha_modificacion DateTime @default(now())
   /// T2 (Fase 6.5b, DE1): justificación del Staff al rechazar. Existe si y solo si el
@@ -132,6 +162,19 @@ model Log_Auditoria {
   /// 20261023120000_ca06_subespacios.
   fecha_inicio_anterior DateTime?
   fecha_fin_anterior    DateTime?
+  /// Fase 9 (ADR-012, aceptado el 2026-11-11; EV1 a EV3): evento de enlace sin cambio de estado (cambio del anexo o
+  /// corrección del enlace de entrega). enlace_campo, enlace_anterior, enlace_nuevo y motivo_correccion son NULL en las
+  /// transiciones: con estados distintos, B3 exige enlace_campo NULL; sin él, B1 exige enlace_anterior y enlace_nuevo
+  /// NULL y B8, motivo_correccion NULL. Los logs anteriores a la migración 20261109110000_enlace_anexo quedaron con los
+  /// cuatro en NULL (sin backfill). Los CHECK B1 a B9 de esa migración fijan cuándo existe cada uno; Prisma no modela
+  /// CHECK. El motor no garantiza la propiedad o el rol, el valor anterior observado (D9) ni el enlace previo para
+  /// corregir una entrega (D2): los comprueba el servicio (ADR-012 EV4).
+  enlace_campo          CampoEnlace?
+  enlace_anterior       String?      @db.Text
+  enlace_nuevo          String?      @db.Text
+  /// Opcional y solo en eventos ENTREGA (D8; B8, Log_Auditoria_motivo_correccion_segun_evento_check): de 10 a 500
+  /// caracteres reales sin los espacios de los extremos (B9, Log_Auditoria_motivo_correccion_longitud_check).
+  motivo_correccion     String?      @db.Text
 
   // Relaciones
   solicitud  Solicitud @relation(fields: [radicado_solicitud], references: [radicado])

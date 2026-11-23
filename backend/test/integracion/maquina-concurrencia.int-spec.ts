@@ -142,7 +142,8 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
   // --- Operaciones del sistema, tal como las ejecutan los controladores ---------------
   const aprobar = (r: string): Operacion => ({
     etiqueta: 'T1 aprobar (Staff A)', destino: 'Validado',
-    ejecutar: () => service.update(r, { estado: 'Validado' }, STAFF_A),
+    // Fase 9 · ADR-005 E7: VIDEO exige el anexo revisado al aprobar; la siembra no tiene anexo.
+    ejecutar: () => service.update(r, { estado: 'Validado', anexo_revisado: null }, STAFF_A),
   });
   const rechazar = (r: string): Operacion => ({
     etiqueta: 'T2 rechazar (Staff B)', destino: 'Rechazado',
@@ -251,7 +252,8 @@ describe('Concurrencia de la máquina de estados contra PostgreSQL real (integra
    * es decir, una actualización perdida.
    */
   const historial = async (radicado: string, inicial: Estado): Promise<{ transiciones: number; estadoFinal: string }> => {
-    const logs = await prisma.log_Auditoria.findMany({ where: { radicado_solicitud: radicado } });
+    // Fase 9 · ADR-012 EV7: solo TRANSICIONES; un evento de enlace repite el estado y no es una de ellas.
+    const logs = await prisma.log_Auditoria.findMany({ where: { radicado_solicitud: radicado, enlace_campo: null } });
     expect(new Set(logs.map((l) => l.estado_anterior)).size).toBe(logs.length);
     const pendientes = [...logs];
     let actual: string = inicial;

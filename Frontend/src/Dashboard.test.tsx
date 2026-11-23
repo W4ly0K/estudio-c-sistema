@@ -6,8 +6,9 @@ import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import { TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './componentes/ExitoRadicado'
 import { TEXTO_LUGAR_DE_SERVICIOS } from './componentes/CampoSubEspacio'
-import type { SubEspacio } from './api/esquemas'
+import type { Categoria, SubEspacio } from './api/esquemas'
 import type { ApiSolicitudes } from './api/solicitudes'
+import { TEXTO_ANEXO_INVALIDO, TEXTO_AYUDA_ANEXO, TEXTO_ETIQUETA_ANEXO } from './presentacion/anexo'
 import { ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { RECURSOS_RESUMEN, SOLICITUD, apiFalsa } from './test/fixtures-api'
 
@@ -413,6 +414,228 @@ describe('Dashboard con la api inyectada', () => {
       // Si el estado y el <dialog> se desincronizaran, showModal() lanzaría InvalidStateError.
       fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
       expect(screen.getByLabelText('Fecha')).toBeInTheDocument()
+    })
+  })
+
+  describe('anexo del solicitante en B2 (Fase 9 · R9-1)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view'
+
+    const abrirYLlenar = async () => {
+      const crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+        ok: true,
+        datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido' },
+      })
+      const resultado = mostrar(apiFalsa({ crear }))
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      llenarFormulario(resultado.container, '08:00', '10:00', 'servicio')
+      return { crear, ...resultado }
+    }
+
+    it('el campo es opcional y su ayuda (cómo compartir en Drive) es su descripción accesible', async () => {
+      await abrirYLlenar()
+
+      const campo = screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)
+      expect(campo).not.toBeRequired()
+      expect(campo).toHaveAccessibleDescription(TEXTO_AYUDA_ANEXO)
+    })
+
+    it('con anexo: viaja recortado (D4) en enlace_anexo', async () => {
+      const { crear } = await abrirYLlenar()
+
+      fireEvent.change(screen.getByLabelText(TEXTO_ETIQUETA_ANEXO), { target: { value: `  ${ANEXO}  ` } })
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(crear).toHaveBeenCalledWith(expect.objectContaining({ categoria: 'VIDEO', enlace_anexo: ANEXO }))
+    })
+
+    it('sin anexo: la clave enlace_anexo no viaja', async () => {
+      const { crear } = await abrirYLlenar()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(crear).toHaveBeenCalledOnce()
+      expect(crear).toHaveBeenCalledWith(expect.not.objectContaining({ enlace_anexo: expect.anything() }))
+    })
+
+    it('un anexo que no es https:// se marca, se explica y no se envía', async () => {
+      const { crear } = await abrirYLlenar()
+
+      // Una URL bien formada (la validación nativa de type="url" la deja pasar) pero sin cifrar.
+      const campo = screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)
+      fireEvent.change(campo, { target: { value: 'http://drive.google.com/file/d/xyz/view' } })
+      expect(campo).toHaveAttribute('aria-invalid', 'true')
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+
+      expect(await screen.findByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
+      expect(crear).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Enviar Radicado' })).toBeInTheDocument()
+    })
+  })
+
+  describe('anexo según la categoría en B2 (Fase 9 · AN2b · K2)', () => {
+    const ANEXO = 'https://drive.google.com/file/d/xyz/view'
+    const OTRO = 'https://docs.google.com/document/d/abc/edit'
+
+    const abrirFormulario = async (crear = vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+      ok: true,
+      datos: { ...SOLICITUD, radicado: 'EC-2026-0999', estado: 'Recibido' },
+    })) => {
+      const resultado = mostrar(apiFalsa({ crear }))
+      await screen.findByText('No tienes solicitudes registradas aún.')
+      fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+      return { crear, ...resultado }
+    }
+    const elegir = (categoria: Categoria) => fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: categoria } })
+    const escribirAnexo = (valor: string) => fireEvent.change(screen.getByLabelText(TEXTO_ETIQUETA_ANEXO), { target: { value: valor } })
+    const campoAnexo = () => screen.queryByLabelText(TEXTO_ETIQUETA_ANEXO)
+    /** Propósito y franja válidos (martes 20 de octubre de 2026, 08:00 a 10:00), sin tocar la categoría. */
+    const completarResto = () => {
+      fireEvent.change(screen.getByLabelText('Propósito de la reserva'), { target: { value: 'Grabación de clase' } })
+      fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-10-20' } })
+      fireEvent.change(screen.getByLabelText('Hora de inicio'), { target: { value: '08:00' } })
+      fireEvent.change(screen.getByLabelText('Hora de finalización'), { target: { value: '10:00' } })
+    }
+    const elegirCabina = () =>
+      fireEvent.click(within(screen.getByRole('group', { name: 'Sub-espacio' })).getByLabelText(ETIQUETAS_SUB_ESPACIO.CABINA_AUDIO))
+    const enviar = () => fireEvent.click(screen.getByRole('button', { name: 'Enviar Radicado' }))
+    const cuerpoEnviado = (crear: ReturnType<typeof vi.fn<ApiSolicitudes['crear']>>) => crear.mock.calls[0]?.[0]
+
+    it.each<[Categoria, boolean]>([
+      ['PODCAST', true],
+      ['VIDEO', true],
+      ['STREAMING', true],
+      ['ESPACIOS', false],
+      ['ASESORIAS', false],
+    ])('%s: el campo del anexo existe = %s', async (categoria, existe) => {
+      await abrirFormulario()
+      elegir(categoria)
+
+      if (existe) expect(campoAnexo()).toBeInTheDocument()
+      else expect(campoAnexo()).not.toBeInTheDocument()
+    })
+
+    it('la ayuda accesible orienta al acceso institucional de Drive, sin prometer que el sistema lo verifique', async () => {
+      await abrirFormulario()
+      elegir('PODCAST')
+
+      const campo = screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)
+      expect(campo).toHaveAccessibleDescription(TEXTO_AYUDA_ANEXO)
+      expect(TEXTO_AYUDA_ANEXO).toContain('@unicesmag.edu.co')
+      expect(TEXTO_AYUDA_ANEXO).toContain('«Acceso general» → «Universidad Cesmag» → «Lector»')
+      expect(TEXTO_AYUDA_ANEXO).toContain('no queda público')
+      expect(TEXTO_AYUDA_ANEXO).toContain('No uses «Cualquier persona con el enlace»')
+      expect(TEXTO_AYUDA_ANEXO).toContain('consulta con el Estudio C')
+      expect(TEXTO_AYUDA_ANEXO).not.toContain('estudioc@')
+      expect(TEXTO_AYUDA_ANEXO).not.toMatch(/verific/i)
+    })
+
+    it('VIDEO → ESPACIOS: el anexo escrito se borra y NO viaja; el lugar sí', async () => {
+      const { crear } = await abrirFormulario()
+      elegir('VIDEO')
+      escribirAnexo(ANEXO)
+      elegir('ESPACIOS')
+      elegirCabina()
+      completarResto()
+      enviar()
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(crear).toHaveBeenCalledOnce()
+      const cuerpo = cuerpoEnviado(crear)
+      expect(cuerpo).not.toHaveProperty('enlace_anexo')
+      expect(cuerpo).toMatchObject({ categoria: 'ESPACIOS', sub_espacio: 'CABINA_AUDIO' })
+    })
+
+    it('STREAMING → ASESORIAS: el anexo escrito se borra y NO viaja', async () => {
+      const { crear } = await abrirFormulario()
+      elegir('STREAMING')
+      escribirAnexo(ANEXO)
+      elegir('ASESORIAS')
+      completarResto()
+      enviar()
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      const cuerpo = cuerpoEnviado(crear)
+      expect(cuerpo).not.toHaveProperty('enlace_anexo')
+      expect(cuerpo).not.toHaveProperty('sub_espacio')
+      expect(cuerpo).toMatchObject({ categoria: 'ASESORIAS' })
+    })
+
+    it('volver de ESPACIOS a VIDEO muestra el campo vacío: lo descartado no reaparece', async () => {
+      await abrirFormulario()
+      elegir('VIDEO')
+      escribirAnexo(ANEXO)
+      elegir('ESPACIOS')
+      elegir('VIDEO')
+
+      expect(screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)).toHaveValue('')
+    })
+
+    it.each<[Categoria, Categoria]>([
+      ['PODCAST', 'STREAMING'],
+      ['VIDEO', 'PODCAST'],
+      ['STREAMING', 'VIDEO'],
+    ])('DK2-2: %s → %s conserva el anexo y lo envía en la categoría final', async (desde, hacia) => {
+      const { crear } = await abrirFormulario()
+      elegir(desde)
+      escribirAnexo(OTRO)
+      elegir(hacia)
+
+      expect(screen.getByLabelText(TEXTO_ETIQUETA_ANEXO)).toHaveValue(OTRO)
+      completarResto()
+      enviar()
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(cuerpoEnviado(crear)).toMatchObject({ categoria: hacia, enlace_anexo: OTRO })
+    })
+
+    it('DK2-3: un anexo inválido descartado se lleva su aviso y ya no bloquea el envío', async () => {
+      const { crear } = await abrirFormulario()
+      elegir('VIDEO')
+      completarResto()
+      escribirAnexo('http://drive.google.com/file/d/xyz/view')
+      enviar()
+      expect(await screen.findByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
+      expect(crear).not.toHaveBeenCalled()
+
+      elegir('ASESORIAS')
+      expect(screen.queryByText(TEXTO_ANEXO_INVALIDO)).not.toBeInTheDocument()
+      enviar()
+
+      await screen.findByRole('dialog', { name: TEXTO_EXITO_TITULO })
+      expect(cuerpoEnviado(crear)).not.toHaveProperty('enlace_anexo')
+    })
+
+    it('DK2-3: los demás mensajes se conservan al descartar el anexo (aquí, el del servidor)', async () => {
+      const mensaje = 'Error CA-06: el horario seleccionado se cruza con otra reserva. Elige otra franja.'
+      await abrirFormulario(
+        vi.fn<ApiSolicitudes['crear']>().mockResolvedValue({
+          ok: false,
+          error: { tipo: 'http', status: 409, mensajes: [mensaje], requiereRecarga: false },
+        }),
+      )
+      elegir('PODCAST')
+      escribirAnexo(ANEXO)
+      completarResto()
+      enviar()
+      expect(await screen.findByText(mensaje)).toBeInTheDocument()
+
+      elegir('ASESORIAS')
+      expect(screen.getByText(mensaje)).toBeInTheDocument()
+    })
+
+    it('DK2-3: cambiar entre categorías con anexo no borra su aviso (el anexo sigue ahí)', async () => {
+      await abrirFormulario()
+      elegir('VIDEO')
+      completarResto()
+      escribirAnexo('http://drive.google.com/file/d/xyz/view')
+      enviar()
+      expect(await screen.findByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
+
+      elegir('PODCAST')
+      expect(screen.getByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
     })
   })
 })

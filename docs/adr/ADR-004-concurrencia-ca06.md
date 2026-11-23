@@ -4,11 +4,11 @@
 |---|---|
 | **Estado** | ✅ Aceptado |
 | **Fecha** | 2026-10-03 |
-| **Actualización** | 2026-10-23 · Fase 7: la **forma** de la Decisión Y la reemplaza [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2). La restricción global se sustituyó por dos restricciones parciales, una por sub-espacio físico. El principio de esta decisión, la Decisión Z y las Decisiones AA a AF siguen vigentes. Nota posterior en §2 |
+| **Actualización** | 2026-10-23 · Fase 7: la **forma** de la Decisión Y la reemplaza [ADR-007](ADR-007-subespacios-y-no-atendida.md) (SE2). La restricción global se sustituyó por dos restricciones parciales, una por sub-espacio físico. El principio de esta decisión, la Decisión Z y las Decisiones AA a AF siguen vigentes. Nota posterior en §2 · 2026-11-17 · notas posteriores: Fase 8 (CA-06 según la categoría, ADR-008 ED3 y ED4) en §2, en la Decisión AH y en la tabla de mutaciones; la Decisión AG, reemplazada en parte por ADR-005 (D1, F1 y F2) y por ADR-007; corrección de la evidencia de la Decisión Y y aclaración de «producción». Las decisiones originales no cambian |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
 | **Rama** | `feat/fase-4-concurrencia-ca06` |
 | **Complementa a** | [ADR-002](ADR-002-autorizacion-a-nivel-de-dato.md) (la Decisión H de minimización se extiende a CA-06) y [ADR-003](ADR-003-reglas-de-horario.md) (sus reglas puras se reutilizan en `update()`) |
-| **Relacionado con** | PRD v2.1 §13 · CA-06 (dos solicitudes de cualquier categoría con horario traslapado: el sistema lo impide) · CA-09 (auditoría) |
+| **Relacionado con** | PRD v2.1 §13 · CA-06 (dos solicitudes de cualquier categoría con horario traslapado: el sistema lo impide; definición histórica de la PRD v2.1, cuya forma vigente, por sub-espacio y, en «Entregado», por categoría, está en las notas posteriores de §2) · CA-09 (auditoría) |
 
 ---
 
@@ -31,6 +31,8 @@ Hechos que el experimento previo (Paso 4.2, PostgreSQL 17 y Prisma 5.22.0 en una
 
 ## 2. Decisiones
 
+> **Aclaración de contexto (criterio DH2, 2026-11-12; registrada aquí el 2026-11-17).** El sistema está en desarrollo, sin despliegue institucional confirmado. En este ADR, «producción», cuando se refiere a la base de datos, a sus migraciones o a lo que se verificó en ella, designa el **proyecto principal de Supabase** (la «base principal»), que contiene datos de prueba; es distinta de la base desechable de integración (Decisión AI). Las frases históricas se conservan como se escribieron.
+
 ### CA-06 garantizado por el motor, con defensa en profundidad (Decisiones Y y Z)
 
 ```sql
@@ -43,9 +45,16 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06"
 - **Y:** la garantía de CA-06 es una **restricción de exclusión**: la base de datos hace imposible guardar dos solicitudes activas traslapadas, venga la escritura de `create()`, de `update()`, de un cambio de estado o de SQL manual. Se descartaron una transacción `Serializable` y un *advisory lock* porque ambas dependen de que cada camino de escritura recuerde usarlas. La consulta previa (`findFirst`) se conserva solo como **capa amable**: responde rápido en el caso secuencial. `'[)'` es el mismo intervalo semiabierto de CA-04 (Decisión L), y `tsrange` corresponde a columnas `timestamp(3)` sin zona en UTC. No hace falta `btree_gist`: no hay columna escalar en la comparación.
 - **Z:** el `CHECK` se crea **antes** que el `EXCLUDE`. PostgreSQL evalúa los `CHECK` antes de los índices, así que unas fechas invertidas producen un `23514` claro en lugar del error interno de `tsrange`.
 
-**Evidencia en producción de la Decisión Y:** en la prueba de integración I-1 (10 peticiones simultáneas por la misma franja contra PostgreSQL real), **las 9 peticiones rechazadas pasaron la consulta previa y las detuvo el motor (9 de 9)**. La consulta previa, por sí sola, no protege nada bajo concurrencia.
+**Evidencia de la Decisión Y (integración contra PostgreSQL real, en la base desechable; Decisión AI):** en la prueba de integración I-1 (10 peticiones simultáneas por la misma franja contra PostgreSQL real), **las 9 peticiones rechazadas pasaron la consulta previa y las detuvo el motor (9 de 9)**. La consulta previa, por sí sola, no protege nada bajo concurrencia. *Corrección (2026-11-17): el texto anterior (2026-10-03) decía «Evidencia en producción de la Decisión Y»; I-1 se ejecuta solo en la base desechable de integración (Decisión AI).*
 
 > **Nota posterior de actualización (Fase 7, 2026-10-23).** Desde la migración `20261023120000_ca06_subespacios`, aplicada en producción el 2026-10-23, `Solicitud_sin_traslape_ca06` **ya no existe**. La reemplazan dos restricciones de exclusión **parciales**, `Solicitud_sin_traslape_ca06_cabina` y `Solicitud_sin_traslape_ca06_estudio`: cada una compara solo el rango de su sub-espacio físico, y el «Estudio C completo» entra en las dos. Su `WHERE` suma `'No atendida'` a los estados que liberan la franja. Se conservan el principio de la Decisión Y (el motor es el garante), la ausencia de `btree_gist`, la Decisión Z y las Decisiones AA a AF. El detector (Decisión AC) reconoce ahora una lista cerrada de nombres. Detalle en [ADR-007](ADR-007-subespacios-y-no-atendida.md) §2.2 y §2.3.
+
+> **Nota posterior de actualización (Fase 8, 2026-10-28; registrada aquí el 2026-11-17).** Evolución de la garantía en el repositorio: `20261002200000_ca06_sin_traslape` creó `Solicitud_sin_traslape_ca06` (esta Decisión Y: no ocupaban la franja `Rechazado` ni `Cancelado por el Usuario`); `20261023120000_ca06_subespacios` la reemplazó por las dos restricciones parciales `Solicitud_sin_traslape_ca06_cabina` y `Solicitud_sin_traslape_ca06_estudio` y sumó `No atendida` (nota anterior); y `20261028120000_ca06_edicion_postproduccion` recrea **esas dos con los mismos nombres**, en una sola transacción, cambiando solo su `WHERE`: suma `Edición y postproducción` al `NOT IN` y agrega `AND NOT (estado = 'Entregado' AND categoria IN ('PODCAST', 'VIDEO'))`.
+>
+> - **Por sub-espacio:** `CABINA_AUDIO` entra solo en `_cabina` y `ESTUDIO_GRABACION` solo en `_estudio`, así que pueden coexistir en la misma franja; `ESTUDIO_COMPLETO` entra en las dos y choca con cualquiera de ellos.
+> - **Por categoría:** el predicado excluye `Edición y postproducción` en toda categoría, pero solo PODCAST y VIDEO llegan a ese estado (T11, [ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) ED2 y ED3). El `Entregado` de PODCAST y VIDEO deja de ocupar la franja; el de las demás categorías sigue ocupándola.
+> - **Lo que no garantiza la restricción:** que liberar la franja sea irreversible. Eso depende de las transiciones que permite la máquina de estados ([ADR-005](ADR-005-maquina-de-estados-ca10.md); T11 y T12 desde la Fase 8) y de la política por categoría (ADR-008 ED3), que verifica `maquina-estados.spec.ts`.
+> - **Sin cambios:** el principio de la Decisión Y, la ausencia de `btree_gist`, la Decisión Z, las Decisiones AA a AF y la lista de nombres del detector (AC). Detalle en ADR-008 §2.4 (ED3 y ED4).
 
 ### Migraciones versionadas (Decisiones AA y AB)
 
@@ -68,9 +77,13 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06"
 5. **`es_urgencia` se recalcula** con el `Reloj` al reprogramar (Opción A: la anticipación real que queda).
 6. **Estado y fechas se aplican juntos.** Con cambio de estado: actualización y log en una `$transaction` (CA-09). Sin cambio de estado: una sola sentencia, ya atómica.
 
+> **Nota posterior de actualización (2026-11-17).** La reactivación del paso 4 ya no existe: [ADR-005](ADR-005-maquina-de-estados-ca10.md) (D1) hizo finales absolutos `Rechazado` y `Cancelado por el Usuario`, y [ADR-007](ADR-007-subespacios-y-no-atendida.md) sumó `No atendida` como estado final; un cambio de estado por sí solo nunca vuelve a ocupar una franja. La forma del paso 6 la reemplazó ADR-005 (F1 y F2): un único camino de escritura, `escribirConCompareAndSet()` (`solicitudes.service.ts`), que en una transacción interactiva compara el estado y la franja leídos (*compare-and-set*) y, cuando hay transición, escribe el log de auditoría en la misma transacción; las ediciones sin cambio de estado usan el mismo camino. Desde la Fase 7, CA-06 en `update()` se evalúa si la solicitud ocupa la franja y cambian las fechas **o el sub-espacio** (ADR-007). Los pasos 1, 2, 3 y 5 siguen vigentes.
+
 ### Fuente única de los estados que liberan la franja (Decisión AH)
 
 `ESTADOS_QUE_LIBERAN_FRANJA` (`reglas/estados.ts`) alimenta `create()`, `update()` y `ocupaFranja()`. Un estado desconocido **ocupa** la franja, igual que en el motor. La lista existe dos veces (TypeScript y el `WHERE` de la migración), así que se vigila dos veces: `estados.spec.ts` **lee el SQL de la migración** en cada `npm test`, y la prueba de integración I-6 lee `pg_get_constraintdef` de la base real.
+
+> **Nota posterior de actualización (Fase 8; registrada el 2026-11-17).** Desde la Fase 8 la fuente única tiene dos partes ([ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) ED3): `ESTADOS_QUE_LIBERAN_FRANJA` (`Rechazado`, `Cancelado por el Usuario`, `No atendida` y `Edición y postproducción`, en toda categoría) y `ESTADO_QUE_LIBERA_SEGUN_CATEGORIA` (`Entregado`, solo en `CATEGORIAS_CON_EDICION`, que hoy son PODCAST y VIDEO). `ocupaFranja(estado, categoria)` las combina para el servicio y `FILTRO_OCUPA_FRANJA` las expresa como filtro de Prisma para la consulta previa. `estados.spec.ts` lee ahora la migración `20261028120000_ca06_edicion_postproduccion` y compara la regla con el `WHERE` de cada una de las dos restricciones. Un estado desconocido sigue ocupando la franja (*fail-closed*), igual que en el motor.
 
 ### Pruebas de integración seguras (Decisiones AI y AJ)
 
@@ -108,6 +121,8 @@ ALTER TABLE "Solicitud" ADD CONSTRAINT "Solicitud_sin_traslape_ca06"
 | Quitar `NOT: { radicado }` | U-5 |
 | Agregar `'Entregado'` a los estados que liberan la franja | `estados.spec.ts` (contra el SQL) |
 | **Reintroducir la guardia vieja** (identidad solo por el usuario) | 9 pruebas de `guardia-bd.spec.ts` |
+
+> **Nota posterior de actualización (Fase 8; registrada el 2026-11-17).** Desde la Fase 8, `Entregado` deja de ocupar la franja **solo en PODCAST y VIDEO**, por una cláusula propia del predicado (`AND NOT (estado = 'Entregado' AND categoria IN ('PODCAST', 'VIDEO'))`) y, en el código, por `ESTADO_QUE_LIBERA_SEGUN_CATEGORIA`. La mutación de la fila «Agregar `'Entregado'` a los estados que liberan la franja» seguiría siendo incorrecta: añadirlo a la lista general lo haría liberar también en STREAMING, ESPACIOS y ASESORIAS. Esta tabla registra las mutaciones del cierre de la Fase 4; no son una ejecución nueva.
 
 **Resultado al cierre:** `npm test` 300 pruebas (299 ✅ y 1 omitida por diseño) · `npm run test:e2e` 30 ✅ · `npm run test:tz` 4 zonas × 219 ✅ · `npm run test:integracion` 8 ✅ contra PostgreSQL 17.
 

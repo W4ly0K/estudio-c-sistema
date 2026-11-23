@@ -1,8 +1,22 @@
 import { BadRequestException, Type } from '@nestjs/common';
 import { CategoriaSolicitud, SubEspacio } from '@prisma/client';
 import { crearValidationPipe } from '../../common/pipes/crear-validation-pipe';
-import { CreateSolicitudeDto, MENSAJE_SUBESPACIO_DE_CREACION } from './create-solicitude.dto';
-import { ENLACE_ENTREGA_MAXIMO, MENSAJE_ENLACE_ENTREGA, MENSAJE_MOTIVO_RECHAZO, UpdateSolicitudeDto } from './update-solicitude.dto';
+import { CreateSolicitudeDto, MENSAJE_ENLACE_ANEXO, MENSAJE_SUBESPACIO_DE_CREACION } from './create-solicitude.dto';
+import {
+  ENLACES_ACEPTADOS,
+  ENLACES_RECHAZADOS_POR_EL_MOTOR,
+  ENLACES_RECHAZADOS_SOLO_POR_EL_DTO,
+  ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD,
+  ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD,
+  enlaceDeLongitud,
+} from '../../../test/utils/casos-enlace';
+import {
+  MENSAJE_ANEXO_REVISADO_FORMA,
+  MENSAJE_ENLACE_ENTREGA,
+  MENSAJE_MOTIVO_RECHAZO,
+  UpdateSolicitudeDto,
+} from './update-solicitude.dto';
+import { ENLACE_MAXIMO } from '../../common/validadores/enlace-seguro.decorator';
 import {
   MENSAJE_MOTIVO_REPROGRAMACION,
   MENSAJE_SUBESPACIO_PROPUESTO,
@@ -103,6 +117,39 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
     });
   });
 
+  describe('CreateSolicitudeDto · anexo del solicitante (Fase 9 · R9-1)', () => {
+    const conAnexo = (enlace: unknown) => erroresDe({ ...cuerpoDeServicio, enlace_anexo: enlace }, CreateSolicitudeDto);
+
+    it('es opcional: sin el campo o con null no hay errores', async () => {
+      expect(await erroresDe(cuerpoDeServicio, CreateSolicitudeDto)).toEqual([]);
+      expect(await conAnexo(null)).toEqual([]);
+    });
+
+    it.each(ENLACES_ACEPTADOS)('acepta %s', async (enlace) => {
+      expect(await conAnexo(enlace)).toEqual([]);
+    });
+
+    it.each([...ENLACES_RECHAZADOS_POR_EL_MOTOR, ...ENLACES_RECHAZADOS_SOLO_POR_EL_DTO])(
+      'rechaza %s con el mensaje del anexo',
+      async (_caso, enlace) => {
+        expect(await conAnexo(enlace)).toContain(MENSAJE_ENLACE_ANEXO);
+      },
+    );
+
+    it(`rechaza un anexo de ${ENLACE_MAXIMO + 1} caracteres`, async () => {
+      expect(await conAnexo(enlaceDeLongitud(ENLACE_MAXIMO + 1))).toContain(MENSAJE_ENLACE_ANEXO);
+    });
+
+    // Fase 9 · H8b-2 · Radicación: longitud en puntos de código, como char_length (fixtures compartidas).
+    it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s', async (_caso, enlace) => {
+      expect(await conAnexo(enlace)).toEqual([]);
+    });
+
+    it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+      expect(await conAnexo(enlace)).toEqual([MENSAJE_ENLACE_ANEXO]);
+    });
+  });
+
   describe('UpdateSolicitudeDto · enlace del producto final (Fase 8 · requisito 4)', () => {
     const conEnlace = (enlace: unknown) => erroresDe({ estado: 'Entregado', enlace_entrega: enlace }, UpdateSolicitudeDto);
 
@@ -129,13 +176,22 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(await conEnlace(enlace)).toContain(MENSAJE_ENLACE_ENTREGA);
     });
 
-    it(`rechaza un enlace de más de ${ENLACE_ENTREGA_MAXIMO} caracteres`, async () => {
-      const largo = `https://ejemplo.com/${'a'.repeat(ENLACE_ENTREGA_MAXIMO)}`;
+    it(`rechaza un enlace de más de ${ENLACE_MAXIMO} caracteres`, async () => {
+      const largo = `https://ejemplo.com/${'a'.repeat(ENLACE_MAXIMO)}`;
       expect(await conEnlace(largo)).toContain(MENSAJE_ENLACE_ENTREGA);
     });
 
     it('sin enlace el pipe no exige nada: si hace falta lo decide el servicio con la categoría', async () => {
       expect(await erroresDe({ estado: 'Entregado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    // Fase 9 · H8b-2 · PATCH del tablero (Fase 8): longitud en puntos de código, como char_length (fixtures compartidas).
+    it.each(ENLACES_DENTRO_DEL_LIMITE_DE_LONGITUD)('H8b-2 · acepta %s', async (_caso, enlace) => {
+      expect(await conEnlace(enlace)).toEqual([]);
+    });
+
+    it.each(ENLACES_FUERA_DEL_LIMITE_DE_LONGITUD)('H8b-2 · rechaza %s', async (_caso, enlace) => {
+      expect(await conEnlace(enlace)).toEqual([MENSAJE_ENLACE_ENTREGA]);
     });
   });
 
@@ -156,6 +212,16 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       expect(
         await erroresDe({ estado: 'Validado', categoria: CategoriaSolicitud.VIDEO }, UpdateSolicitudeDto),
       ).toContain('property categoria should not exist');
+    });
+
+    it('Fase 9 · R9-1: el anexo no se admite en el PATCH → 400 (regla de auditoría, pregunta 3)', async () => {
+      const anexo = 'https://drive.google.com/file/d/xyz/view?usp=sharing';
+      expect(await erroresDe({ enlace_anexo: anexo }, UpdateSolicitudeDto)).toContain(
+        'property enlace_anexo should not exist',
+      );
+      expect(await erroresDe({ estado: 'Validado', enlace_anexo: anexo }, UpdateSolicitudeDto)).toContain(
+        'property enlace_anexo should not exist',
+      );
     });
 
     it('rechaza con 400 un modificado_por en el body (Zero Trust en auditoría)', async () => {
@@ -303,6 +369,35 @@ describe('Validación de DTOs de solicitudes (crearValidationPipe)', () => {
       ])('acepta un motivo %s (límites exactos, contados como el motor)', async (_caso, motivo) => {
         expect(await erroresDe({ ...propuesta, motivo }, ProponerReprogramacionDto)).toEqual([]);
       });
+    });
+  });
+
+  describe('UpdateSolicitudeDto · anexo_revisado (Fase 9 · ADR-005 E7)', () => {
+    const conAnexoRevisado = (valor: unknown) =>
+      erroresDe({ estado: 'Validado', anexo_revisado: valor }, UpdateSolicitudeDto);
+    const URL = 'https://drive.google.com/file/d/guion/view';
+
+    it('ausente: el pipe no lo valida (si aplica lo decide el servicio)', async () => {
+      expect(await erroresDe({ estado: 'Validado' }, UpdateSolicitudeDto)).toEqual([]);
+    });
+
+    it.each([
+      ['null («vi que no había anexo»)', null],
+      ['una URL', URL],
+      ['una URL con un espacio final (se compara exacta, sin recortar)', `${URL} `],
+      [`exactamente ${ENLACE_MAXIMO} caracteres`, 'h'.repeat(ENLACE_MAXIMO)],
+    ])('acepta %s', async (_caso, valor) => {
+      expect(await conAnexoRevisado(valor)).toEqual([]);
+    });
+
+    it.each([
+      ['la cadena vacía', ''],
+      ['solo espacios', '   '],
+      ['un número', 5],
+      ['un booleano', true],
+      [`${ENLACE_MAXIMO + 1} caracteres`, 'h'.repeat(ENLACE_MAXIMO + 1)],
+    ])('rechaza %s con el mensaje de forma', async (_caso, valor) => {
+      expect(await conAnexoRevisado(valor)).toContain(MENSAJE_ANEXO_REVISADO_FORMA);
     });
   });
 });

@@ -4,15 +4,25 @@ import { TEXTO_NO_ENCONTRADA } from './DetalleSolicitud'
 import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
-import type { DetalleStaff as DatosDetalleStaff, UsuarioSesion } from './api/esquemas'
+import type { DetalleStaff as DatosDetalleStaff, RespuestaCorreccionEntrega, UsuarioSesion } from './api/esquemas'
 import { AccionesStaff } from './componentes/AccionesStaff'
+import { CorreccionEnlaceEntrega } from './componentes/CorreccionEnlaceEntrega'
+import { HistorialEnlaces } from './componentes/HistorialEnlaces'
 import { Encabezado } from './componentes/Encabezado'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
+import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
 import { LineaDeVida } from './componentes/LineaDeVida'
 import { formatearFranja } from './fechas/bogota'
 import { textoExito, type DestinoDelStaff } from './presentacion/acciones-staff'
 import { filasDeRecursos } from './presentacion/detalle-staff'
+import {
+  TEXTO_ENTREGA_SIN_ENLACE,
+  TEXTO_RECARGA_FALLIDA_SIN_CAMBIOS,
+  correccionDisponible,
+  entregaSinEnlacePrevio,
+  historialAplica,
+} from './presentacion/enlaces-staff'
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_TABLERO } from './rutas'
@@ -68,7 +78,12 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
     readonly estado: Respuesta
   } | null>(null)
   /** Aviso de la última acción, atado a su radicado: al navegar a otro no se arrastra. */
-  const [aviso, setAviso] = useState<{ readonly radicado: string; readonly texto: string } | null>(null)
+  const [aviso, setAviso] = useState<{
+    readonly radicado: string
+    readonly texto: string
+    /** K4: qué decir si la recarga posterior falla (una corrección sin cambios no «quedó registrada»). */
+    readonly recargaFallida?: string
+  } | null>(null)
 
   const delRadicado = respuesta !== null && respuesta.radicado === radicado ? respuesta : null
   const vigente = delRadicado !== null && delRadicado.version === version
@@ -77,6 +92,8 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   const recargando = delRadicado !== null && !vigente && delRadicado.estado.tipo === 'lista'
   const carga: EstadoCarga = delRadicado !== null && (vigente || recargando) ? delRadicado.estado : CARGANDO
   const avisoVisible = aviso !== null && aviso.radicado === radicado ? aviso.texto : null
+  const textoRecargaFallida =
+    aviso !== null && aviso.radicado === radicado ? (aviso.recargaFallida ?? TEXTO_RECARGA_FALLIDA) : TEXTO_RECARGA_FALLIDA
   const tituloRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -106,6 +123,16 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   const alCompletar = (destino: DestinoDelStaff) => {
     if (radicado === undefined) return
     setAviso({ radicado, texto: textoExito(destino) })
+    setVersion((v) => v + 1)
+  }
+
+  /**
+   * K4 (DK4-6): la corrección del enlace no es una transición. Se anuncia el `mensaje` del servidor
+   * y se recargan el detalle y el historial (DA2). Con `sin_cambios` no hubo escritura ni evento.
+   */
+  const alCorregir = ({ mensaje, sin_cambios }: RespuestaCorreccionEntrega) => {
+    if (radicado === undefined) return
+    setAviso({ radicado, texto: mensaje, ...(sin_cambios ? { recargaFallida: TEXTO_RECARGA_FALLIDA_SIN_CAMBIOS } : {}) })
     setVersion((v) => v + 1)
   }
 
@@ -149,7 +176,7 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             </h2>
             {/* DA2 · honestidad: si el PATCH ya se aplicó, lo que falló es solo la recarga. */}
             <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
-              {avisoVisible !== null ? `${TEXTO_RECARGA_FALLIDA} ${carga.texto}` : carga.texto}
+              {avisoVisible !== null ? `${textoRecargaFallida} ${carga.texto}` : carga.texto}
             </p>
             <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-semibold text-primary">
               Recargar la solicitud
@@ -161,7 +188,9 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             detalle={carga.detalle}
             tituloRef={tituloRef}
             recargando={recargando}
+            version={version}
             alCompletar={alCompletar}
+            alCorregir={alCorregir}
             alRecargar={recargarTrasConflicto}
           />
         )}
@@ -174,15 +203,23 @@ function Contenido({
   detalle,
   tituloRef,
   recargando,
+  version,
   alCompletar,
+  alCorregir,
   alRecargar,
 }: {
   detalle: DatosDetalleStaff
   tituloRef: RefObject<HTMLHeadingElement | null>
   recargando: boolean
+  /** K4: el historial se vuelve a pedir con cada recarga del detalle. */
+  version: number
   alCompletar: (destino: DestinoDelStaff) => void
+  alCorregir: (respuesta: RespuestaCorreccionEntrega) => void
   alRecargar: () => void
 }) {
+  // Fase 9 · K4: la corrección se ofrece solo en el caso válido (EN6 y EN8); el servidor decide.
+  const corregible = correccionDisponible(detalle.estado, detalle.categoria, detalle.enlace_entrega)
+  const sinEnlacePrevio = entregaSinEnlacePrevio(detalle.estado, detalle.categoria, detalle.enlace_entrega)
   const id = useId()
   const idRecursos = `${id}-recursos`
   const filas = filasDeRecursos(detalle.recursos)
@@ -251,12 +288,34 @@ function Contenido({
             <dt className="text-gray-500">Propósito</dt>
             <dd className="font-medium text-primary whitespace-pre-line">{detalle.proposito}</dd>
           </div>
-          {/* Fase 8 · requisito 4: el producto final, abierto de forma segura en una pestaña nueva. */}
-          {detalle.enlace_entrega !== null && (
+          {/* Fase 9 · R9-1: el guion que adjuntó el solicitante, abierto de forma segura. */}
+          {detalle.enlace_anexo !== null && (
+            <div className="sm:col-span-2">
+              <dt className="text-gray-500">{TEXTO_ANEXO}</dt>
+              <dd>
+                <EnlaceAnexo enlace={detalle.enlace_anexo} radicado={detalle.radicado} />
+              </dd>
+            </div>
+          )}
+          {/* Fase 8 · requisito 4: el producto final, abierto de forma segura en una pestaña nueva.
+              Fase 9 · K4: junto a él, la corrección auditada; en EN8, la nota que explica por qué no. */}
+          {(detalle.enlace_entrega !== null || sinEnlacePrevio) && (
             <div className="sm:col-span-2">
               <dt className="text-gray-500">{TEXTO_PRODUCTO_FINAL}</dt>
               <dd>
-                <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
+                {detalle.enlace_entrega !== null ? (
+                  <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
+                ) : (
+                  <span className="text-gray-600">{TEXTO_ENTREGA_SIN_ENLACE}</span>
+                )}
+                {corregible && (
+                  <CorreccionEnlaceEntrega
+                    detalle={detalle}
+                    deshabilitada={recargando}
+                    alCorregir={alCorregir}
+                    alRecargar={alRecargar}
+                  />
+                )}
               </dd>
             </div>
           )}
@@ -342,6 +401,10 @@ function Contenido({
       <AccionesStaff detalle={detalle} deshabilitadas={recargando} alCompletar={alCompletar} alRecargar={alRecargar} />
 
       <LineaDeVida linea={lineaDeVida(detalle, 'STAFF')} />
+      {/* Fase 9 · K4 (EV7): los eventos de enlace, SEPARADOS de la línea de vida y solo para el Staff. */}
+      {historialAplica(detalle.categoria) && (
+        <HistorialEnlaces radicado={detalle.radicado} idSolicitante={detalle.id_usuario} version={version} />
+      )}
     </>
   )
 }
