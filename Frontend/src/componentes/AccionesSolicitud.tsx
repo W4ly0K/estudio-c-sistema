@@ -14,6 +14,7 @@ import {
   type AccionSolicitante,
 } from '../presentacion/acciones-solicitante'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
+import { CajaError } from './CajaError'
 
 type Comando = Promise<Resultado<RespuestaComando<DetalleSolicitante>>>
 
@@ -140,7 +141,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
         onCerrar={cerrar}
       >
         {error !== null && (
-          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
+          <CajaError className="mt-4">
             <p className="font-bold">{textoDeError(error)}</p>
             {seleccionada === 'ACEPTAR_REPROGRAMACION' && <p className="mt-1">{TEXTO_AYUDA_ACEPTAR}</p>}
             {/* 409: la solicitud cambió mientras se veía (el Staff avanzó, otra pestaña...). */}
@@ -149,7 +150,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
                 Recargar la solicitud
               </button>
             )}
-          </div>
+          </CajaError>
         )}
       </DialogoConfirmacion>
     </>

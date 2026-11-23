@@ -26,6 +26,7 @@ import {
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_TABLERO } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_NO_ENCONTRADA_AYUDA_STAFF = 'Revisa el número de radicado o vuelve al tablero.'
 /** UI honesta: tras T5 la decisión es del solicitante (T7 o T8); el Staff no puede retirar la propuesta. */
@@ -175,9 +176,9 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
               No se pudo cargar la solicitud
             </h2>
             {/* DA2 · honestidad: si el PATCH ya se aplicó, lo que falló es solo la recarga. */}
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {avisoVisible !== null ? `${textoRecargaFallida} ${carga.texto}` : carga.texto}
-            </p>
+            </CajaError>
             <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-bold text-primary">
               Recargar la solicitud
             </button>

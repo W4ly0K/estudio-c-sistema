@@ -82,6 +82,7 @@ describe('Insignias (DV6)', () => {
     const { container } = render(<InsigniaUrgencia />)
 
     expect(container.firstElementChild).toHaveClass('text-urgencia', 'border-urgencia', 'border-dashed', 'border-2')
+    expect(container.firstElementChild).toHaveAttribute('data-insignia', 'urgencia')
   })
 
   describe('InsigniaSubEspacio (Fase 7 · PRD v2.2 §5.1)', () => {

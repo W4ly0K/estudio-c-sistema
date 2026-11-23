@@ -14,6 +14,7 @@ import {
   autorDelEvento,
   descripcionDelEvento,
 } from '../presentacion/enlaces-staff'
+import { CajaError } from './CajaError'
 
 interface HistorialEnlacesProps {
   radicado: string
@@ -73,9 +74,9 @@ export function HistorialEnlaces({ radicado, idSolicitante, version }: Historial
       {estado === null && <p className="mt-3 text-texto-secundario">{TEXTO_HISTORIAL_CARGANDO}</p>}
       {estado?.tipo === 'error' && (
         <div className="mt-3">
-          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm font-bold text-accent">
+          <CajaError className="font-bold">
             {TEXTO_HISTORIAL_ERROR} {estado.texto}
-          </p>
+          </CajaError>
           <button type="button" onClick={() => setIntento((n) => n + 1)} className="mt-2 underline font-bold text-primary">
             Reintentar
           </button>

@@ -18,6 +18,7 @@ import { TEXTO_FICHA_SIN_ANEXO, edicionDelAnexoDisponible } from './presentacion
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_MIS_SOLICITUDES } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 /**
  * README del backend §8: ajena o inexistente responden el MISMO 404. La UI tampoco los
@@ -128,9 +129,9 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
             <h2 ref={tituloRef} tabIndex={-1} className="sr-only">
               No se pudo cargar la solicitud
             </h2>
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {carga.texto}
-            </p>
+            </CajaError>
           </div>
         )}
         {aviso !== null && (

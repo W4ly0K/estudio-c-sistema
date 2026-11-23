@@ -7,6 +7,7 @@ import { Encabezado } from './componentes/Encabezado'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_TABLERO = 'Tablero de solicitudes'
 export const TEXTO_CARGANDO_TABLERO = 'Cargando el tablero...'
@@ -95,9 +96,9 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
         )}
         {actualizando && solicitudes === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_TABLERO}</p>}
         {error !== null && (
-          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+          <CajaError className="text-sm font-bold">
             {error}
-          </p>
+          </CajaError>
         )}
 
         {tablero !== null && (

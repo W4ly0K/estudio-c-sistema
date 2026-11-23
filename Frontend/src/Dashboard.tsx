@@ -33,6 +33,7 @@ import {
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
+import { CajaError } from './componentes/CajaError';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
@@ -218,9 +219,9 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
         {loading ? (
           <p className="text-sm text-texto-secundario">Cargando radicados...</p>
         ) : errorCarga ? (
-          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+          <CajaError className="text-sm font-bold">
             {errorCarga}
-          </p>
+          </CajaError>
         ) : solicitudes.length === 0 ? (
           <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
             <p className="text-texto-secundario text-sm">No tienes solicitudes registradas aún.</p>
@@ -338,10 +339,13 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
 
+              {/* R9-3 (D-R3-3): antes esta caja no tenía role="alert" y un rechazo al radicar (CA-04, CA-06,
+                  anexo, sub-espacio) no se anunciaba. Ningún campo del formulario anuncia su propio error:
+                  la alerta no se duplica. */}
               {errorValidacion && (
-                <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded-sm text-xs font-bold text-accent">
+                <CajaError className="mt-2 text-xs font-bold">
                   {errorValidacion}
-                </div>
+                </CajaError>
               )}
 
               <div className="flex justify-end gap-3 pt-4">

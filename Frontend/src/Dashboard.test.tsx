@@ -135,6 +135,9 @@ describe('Dashboard con la api inyectada', () => {
 
     expect(await screen.findByText(mensaje)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enviar Radicado' })).toBeInTheDocument()
+    // R9-3 (D-R3-3): el rechazo se anuncia como alerta, en la caja de error marcada.
+    expect(screen.getByRole('alert')).toHaveTextContent(mensaje)
+    expect(screen.getByRole('alert')).toHaveAttribute('data-aviso', 'error')
   })
 
   describe('sub-espacio en B2 (Fase 7 · PRD v2.2 §4.1 · Q-A4)', () => {

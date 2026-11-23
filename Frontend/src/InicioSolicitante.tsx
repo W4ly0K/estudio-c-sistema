@@ -8,6 +8,7 @@ import { Encabezado } from './componentes/Encabezado'
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud'
 import { MAXIMO_PROXIMAS_INICIO, REGLAS_ESTUDIO_C, resumenInicioSolicitante } from './presentacion/inicio'
 import { RUTA_MIS_SOLICITUDES } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_INICIO_SOLICITANTE = 'Inicio'
 export const TEXTO_CARGANDO_INICIO_SOLICITANTE = 'Cargando tus solicitudes...'
@@ -77,9 +78,9 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
         {cargando && resumen === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
         {error !== null && (
           <div>
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {error}
-            </p>
+            </CajaError>
             <button
               type="button"
               onClick={() => setVersion((v) => v + 1)}

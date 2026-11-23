@@ -49,6 +49,7 @@ describe('Tema · invariantes de marca (R9-3)', () => {
     ['primary', 'cesmag-azul-2'],
     ['primary-hover', 'cesmag-azul-1'],
     ['accent', 'cesmag-rojo-2'],
+    ['borde-error', 'cesmag-rojo-2'],
     ['urgencia', 'cesmag-rojo-1'],
     ['surface', 'cesmag-blanco'],
     ['foco', 'cesmag-azul-1'],
@@ -56,7 +57,7 @@ describe('Tema · invariantes de marca (R9-3)', () => {
     expect(color(token).toUpperCase()).toBe(color(marca).toUpperCase())
   })
 
-  it.each(['texto-principal', 'texto-secundario', 'texto-terciario', 'borde-control', 'borde-suave', 'superficie-suave', 'foco'])(
+  it.each(['texto-principal', 'texto-secundario', 'borde-error', 'texto-terciario', 'borde-control', 'borde-suave', 'superficie-suave', 'foco'])(
     'declara --color-%s en hex',
     (token) => {
       expect(color(token)).toMatch(/^#[0-9a-fA-F]{6}$/)
@@ -80,6 +81,7 @@ const PARES: Par[] = [
   ['foco', 'surface', 3],
   // D-R3-3: las cajas de error pasan a bg-surface con text-accent.
   ['accent', 'surface', 4.5],
+  ['borde-error', 'surface', 3],
   // 9.3.3: texto blanco (text-surface) sobre los botones institucionales.
   ['surface', 'primary', 4.5],
   ['surface', 'accent', 4.5],
@@ -125,24 +127,10 @@ function usosDePaleta(fuente: string): string[] {
 const EXCEPCIONES: ReadonlySet<string> = new Set(['backdrop:bg-black/50'])
 
 /**
- * Trinquete de transición: usos que esperan su lote (cajas de error de D-R3-3 y el botón
- * deshabilitado de D-R3-4). Solo puede reducirse: un uso nuevo hace fallar la prueba y uno
- * resuelto obliga a retirarlo de aquí.
+ * Trinquete de D-R3-7: inventario exacto de usos pendientes por archivo y clase. Quedó vacío al
+ * cerrar 9.3.3; un uso nuevo de la paleta por defecto hace fallar la prueba.
  */
-const PENDIENTES: Record<string, Record<string, number>> = {
-  './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
-  './DetalleSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './DetalleStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './InicioStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './TableroStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2 },
-  './componentes/CorreccionEnlaceEntrega.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1 },
-  './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-  './componentes/HistorialEnlaces.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
-}
+const PENDIENTES: Record<string, Record<string, number>> = {}
 
 function contar(usos: string[]): Record<string, number> {
   const cuenta: Record<string, number> = {}
@@ -172,9 +160,9 @@ describe('Tema · guardia de la paleta por defecto (R9-3, D-R3-7)', () => {
     expect(usosDePaleta(fuente)).toEqual([])
   })
 
-  it('lee los 29 componentes de src/ sin las pruebas', () => {
+  it('lee los 30 componentes de src/ sin las pruebas (29 + CajaError)', () => {
     const rutas = Object.keys(componentes)
-    expect(rutas).toHaveLength(29)
+    expect(rutas).toHaveLength(30)
     expect(rutas.some((ruta) => ruta.endsWith('.test.tsx'))).toBe(false)
   })
 

@@ -17,6 +17,7 @@ import {
 import { CampoEnlace } from './CampoEnlace'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
 import { EnlaceAnexo } from './EnlaceAnexo'
+import { CajaError } from './CajaError'
 
 interface EdicionAnexoProps {
   /** El detalle vigente: de aquí sale la FOTO del anexo al abrir el diálogo. */
@@ -161,7 +162,7 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
           />
         )}
         {error !== null && (
-          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
+          <CajaError className="mt-4">
             <p className="font-bold">{textoDeError(error)}</p>
             {/* 409: el estado o el anexo cambiaron mientras se veían (el Staff avanzó, otra pestaña...). */}
             {error.tipo === 'http' && error.status === 409 && (
@@ -169,7 +170,7 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
                 Recargar la solicitud
               </button>
             )}
-          </div>
+          </CajaError>
         )}
       </DialogoConfirmacion>
     </>

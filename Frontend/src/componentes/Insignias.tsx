@@ -47,10 +47,14 @@ export function InsigniaEstado({ estado, perspectiva }: { estado: Estado; perspe
  * Urgencia (README del backend §9): reserva antes del 6.º día hábil. Borde discontinuo grueso.
  * Fase 8 · requisito 6: en el rojo institucional (token `urgencia`, contraste AA medido en
  * tema.test.ts). La forma sigue distinguiéndola de un error, que tiene borde continuo (DV6).
+ * R9-3 (D-R3-3): `data-insignia="urgencia"` es su marca; la caja de error usa `data-aviso="error"`.
  */
 export function InsigniaUrgencia() {
   return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-urgencia text-urgencia bg-surface">
+    <span
+      data-insignia="urgencia"
+      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-urgencia text-urgencia bg-surface"
+    >
       <span aria-hidden="true">⚠</span>
       Urgencia
     </span>

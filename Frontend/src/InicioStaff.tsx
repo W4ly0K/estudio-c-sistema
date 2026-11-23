@@ -7,6 +7,7 @@ import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
 import { Encabezado } from './componentes/Encabezado'
 import { atajosDelStaff, resumenInicioStaff, type AtajoInicio } from './presentacion/inicio'
 import { RUTA_TABLERO } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_INICIO_STAFF = 'Inicio del Staff'
 export const TEXTO_CARGANDO_INICIO = 'Cargando el resumen...'
@@ -69,9 +70,9 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
         {cargando && atajos === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO}</p>}
         {error !== null && (
           <div>
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {error}
-            </p>
+            </CajaError>
             <button
               type="button"
               onClick={() => setVersion((v) => v + 1)}

@@ -90,6 +90,9 @@ Decisiones tomadas por el responsable del proyecto durante 9.3.3, sobre la base 
 | I-2 | **`text-surface`** para el texto blanco sobre los botones institucionales (sin token nuevo) | 11,12 sobre `primary`; 4,89 sobre `accent` |
 | I-3 | **Trinquete de D-R3-7:** los usos pendientes se registran como inventario exacto de deuda técnica, por archivo y clase; no son excepciones permanentes y solo pueden reducirse | La guardia en `tema.test.ts` |
 | I-4 | **Pregunta 16 · insignias:** se conservan los 9 estados, las 5 columnas del tablero, los alias por rol, los símbolos y las diferencias de borde, con una **equivalencia neutra 1:1** de los grises (claro → `superficie-suave`/`surface`; bordes → `borde-control`/`borde-suave`; texto y bordes fuertes → `texto-principal`; «En Producción» sólido en `texto-principal` y «Edición y postproducción» en `texto-secundario`). Los estados en curso no usan el azul, reservado a las acciones, para que una insignia sólida no parezca un botón | Blanco sobre `texto-principal` 10,24 y sobre `texto-secundario` 6,49; bordes de forma ≥ 3,34 |
+| I-5 | **Cajas de error (D-R3-3):** componente único `CajaError` (el componente número 30): fondo `surface`, texto `accent`, borde continuo con **barra lateral de 4 px** en **`borde-error`**, alias de `accent` (`cesmag-rojo-2`), ícono ⚠ decorativo y marca `data-aviso="error"`. La urgencia conserva su píldora de borde discontinuo y recibe la marca `data-insignia="urgencia"`: se distinguen por la forma y por la marca, no por el tono | `accent` sobre `surface` 4,89; `borde-error` sobre `surface` 4,89 (umbral 3) |
+| I-6 | **Botón deshabilitado (D-R3-4):** `bg-gray-200` → `superficie-suave`, con el borde punteado, el cursor y la razón accesible (`aria-describedby`) sin cambios | `texto-secundario` sobre `superficie-suave` 5,85 |
+| I-7 | **Excepción revisada en `Dashboard`:** la caja de validación del formulario de radicación no tenía `role="alert"`, y un rechazo (CA-04, CA-06, anexo o sub-espacio) no se anunciaba. Como ningún campo anuncia su propio error, `CajaError` le da la alerta sin duplicar anuncios. No hay otras cajas de error sin alerta | Prueba de `Dashboard` (rechazo del servidor anunciado) |
 
 ---
 
@@ -152,8 +155,8 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | — | 9.3.0 · Revisión visual de unicesmag.edu.co y respuestas 14 a 16 ⏳ |
 | `fe012b3` · `21d295d` | 9.3.1 · `@fontsource/roboto` con pesos acotados; `font-semibold` → 700 ✅ |
 | `ef58c16` | 9.3.2 · Tokens neutros y `foco` en `index.css` + `tema.test.ts` con la tabla de pares ✅ |
-| `54dc57d` · `420b68d` · `2faafeb` · `c5095e8` · lote de insignias | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7 ⏳ |
+| `54dc57d` · `420b68d` · `2faafeb` · `c5095e8` · lote de insignias · lote de errores | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7; el trinquete queda vacío (solo la excepción `backdrop:bg-black/50`) ✅ |
 | `ddd30d7` | Fuera de los pasos de R9-3: actualización de `vite`, `undici` y `source-map-js` dentro de sus rangos (alertas altas de `npm audit`, solo de desarrollo) ✅ |
-| — | 9.3.4 · Marca: encabezado con escudo, acción principal en azul, errores sobre `surface` y foco ⏳ |
+| — | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6) |
 | — | 9.3.5 · Login institucional ⏳ |
 | — | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ |

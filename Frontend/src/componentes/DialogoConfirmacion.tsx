@@ -50,8 +50,10 @@ export function DialogoConfirmacion({
   const mostrarRazon = bloqueado && razonBloqueo !== undefined && razonBloqueo !== ''
   // B2: el bloqueo se ve por la forma (gris, borde punteado, cursor), no solo por la opacidad:
   // con opacity-60 el rojo de una acción irreversible seguía pareciendo activo.
+  // R9-3 (D-R3-4): fondo superficie-suave; texto-secundario sobre él mide 5,85:1 (WCAG exime al
+  // deshabilitado, pero se cumple igual) y el borde punteado lo separa del botón secundario activo.
   const estiloConfirmar = bloqueado
-    ? 'bg-gray-200 text-texto-secundario border border-dashed border-borde-control cursor-not-allowed'
+    ? 'bg-superficie-suave text-texto-secundario border border-dashed border-borde-control cursor-not-allowed'
     : `${irreversible ? 'bg-accent' : 'bg-primary'} text-surface disabled:opacity-60`
 
   // useLayoutEffect: abrir y cerrar ocurren en el MISMO commit que cambia el contenido; nunca

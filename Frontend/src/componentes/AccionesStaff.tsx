@@ -39,6 +39,7 @@ import { CampoSubEspacio } from './CampoSubEspacio'
 import { EnlaceAnexo } from './EnlaceAnexo'
 import { CamposFranja } from './CamposFranja'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
+import { CajaError } from './CajaError'
 
 // Fast Refresh (react/only-export-components): este archivo exporta componentes y literales.
 // Los textos que se CALCULAN (las ayudas, derivadas de los límites) viven en presentacion/motivo.
@@ -390,12 +391,12 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
           </>
         )}
         {errorLocal !== null && (
-          <p role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm font-bold text-accent">
+          <CajaError className="mt-4 font-bold">
             {errorLocal}
-          </p>
+          </CajaError>
         )}
         {error !== null && (
-          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
+          <CajaError className="mt-4">
             <p className="font-bold">{textoDeError(error)}</p>
             {/* 409: la solicitud cambió (otro miembro del Staff, el solicitante, la franja inició...). */}
             {error.tipo === 'http' && error.status === 409 && (
@@ -406,7 +407,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
                 </button>
               </>
             )}
-          </div>
+          </CajaError>
         )}
       </DialogoConfirmacion>
     </>
