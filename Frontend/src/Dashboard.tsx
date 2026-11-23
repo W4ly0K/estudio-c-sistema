@@ -210,7 +210,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
           </div>
           <button 
             onClick={() => setDialogo({ vista: 'formulario' })}
-            className="px-5 py-2.5 bg-accent text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"
+            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
           >
             <span className="text-lg">+</span> Nueva Solicitud
           </button>

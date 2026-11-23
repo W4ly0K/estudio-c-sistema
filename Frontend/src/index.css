@@ -67,6 +67,20 @@
   }
 
   /*
+   * R9-3 · D-R3-6: foco visible propio. Anillo de 2 px en el token foco (Azul 1) separado 2 px del
+   * control; la sombra blanca rellena esa separación, así el anillo se mide contra blanco (6,81:1)
+   * sobre cualquier fondo, incluido el Azul 2 del futuro encabezado. Solo con :focus-visible: el
+   * clic con ratón no lo muestra. Las cabeceras que reciben el foco por código (tabIndex={-1})
+   * conservan su outline-none a propósito. En un control con sombra de utilidad (shadow-*), esa
+   * sombra prevalece y la separación muestra el fondo; el anillo sigue visible sobre los fondos claros.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-foco);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--color-surface);
+  }
+
+  /*
    * Fase 7 · C8: desde md el encabezado es fijo (sticky). Al mover el foco o saltar a un
    * ancla, el navegador deja este margen arriba: nada enfocado queda escondido bajo el
    * encabezado. Holgado a propósito: entre md y lg el encabezado puede ocupar dos líneas.

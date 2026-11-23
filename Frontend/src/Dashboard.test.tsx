@@ -75,6 +75,15 @@ describe('Dashboard con la api inyectada', () => {
     expect(api.misSolicitudes).toHaveBeenCalledOnce()
   })
 
+  it('9.3.4 · D-R3-4: la acción principal «Nueva Solicitud» va en el azul institucional, no en el rojo de errores', async () => {
+    mostrar(apiFalsa())
+    await screen.findByText('No tienes solicitudes registradas aún.')
+
+    const accion = screen.getByRole('button', { name: /Nueva Solicitud/ })
+    expect(accion).toHaveClass('bg-primary', 'hover:bg-primary-hover', 'text-surface')
+    expect(accion).not.toHaveClass('bg-accent')
+  })
+
   it('lista vacía: lo dice', async () => {
     mostrar(apiFalsa())
 

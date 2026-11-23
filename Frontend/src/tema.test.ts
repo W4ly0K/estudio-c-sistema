@@ -79,6 +79,8 @@ const PARES: Par[] = [
   ]),
   // D-R3-6: el anillo siempre queda junto a su desplazamiento blanco, sobre cualquier fondo.
   ['foco', 'surface', 3],
+  // 9.3.4 · D-R3-4: acción principal en Azul 2 y su hover en Azul 1, con texto blanco.
+  ['surface', 'primary-hover', 4.5],
   // D-R3-3: las cajas de error pasan a bg-surface con text-accent.
   ['accent', 'surface', 4.5],
   ['borde-error', 'surface', 3],
@@ -93,6 +95,20 @@ const PARES: Par[] = [
 describe('Tema · contraste medido (R9-3)', () => {
   it.each(PARES)('%s sobre %s alcanza %s:1', (primerPlano, fondo, minimo) => {
     expect(contraste(color(primerPlano), color(fondo))).toBeGreaterThanOrEqual(minimo)
+  })
+})
+
+/** 9.3.4 · D-R3-6: la regla de foco visible del tema, leída como texto. */
+describe('Tema · foco visible (R9-3, D-R3-6)', () => {
+  const regla = /:focus-visible\s*\{([^}]*)\}/.exec(hojaDeEstilos)?.[1] ?? ''
+
+  it('declara un anillo de 2 px en el token foco, separado 2 px del control', () => {
+    expect(regla).toMatch(/outline:\s*2px solid var\(--color-foco\);/)
+    expect(regla).toMatch(/outline-offset:\s*2px;/)
+  })
+
+  it('rellena la separación con blanco (surface), contra el que se mide el anillo', () => {
+    expect(regla).toMatch(/box-shadow:\s*0 0 0 2px var\(--color-surface\);/)
   })
 })
 
