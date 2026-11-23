@@ -86,3 +86,118 @@ describe('Tema · contraste medido (R9-3)', () => {
     expect(contraste(color(primerPlano), color(fondo))).toBeGreaterThanOrEqual(minimo)
   })
 })
+
+/**
+ * Fase 9 · R9-3 (ADR-010, D-R3-7): guardia contra la paleta por defecto de Tailwind. Lee como texto
+ * los componentes .tsx de src/ (sin pruebas) y falla si aparece una utilidad de color de esa paleta
+ * (OKLCH, que tema.test.ts no puede medir) o el token retirado outline.
+ */
+const componentes = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
+
+const PALETA =
+  'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose'
+const UTILIDADES =
+  'text|bg|border|ring|outline|divide|placeholder|fill|stroke|from|via|to|shadow|accent|caret|decoration'
+/** Utilidad de color de la paleta por defecto, con variantes (hover:, md:, backdrop:…) y opacidad. */
+const PATRON_PALETA = new RegExp(
+  `(?<![\\w-])(?:[\\w-]+:)*(?:${UTILIDADES})(?:-[trblxyse])?-(?:(?:${PALETA})-\\d{2,3}|black|white)(?:/\\d{1,3})?(?![\\w-])`,
+  'g',
+)
+/** outline (#c6c6cd, 1,70:1) se retiró del tema en 9.3.3: una clase que lo use ya no pinta nada. */
+const PATRON_RETIRADO = new RegExp(`(?<![\\w-])(?:[\\w-]+:)*(?:${UTILIDADES})(?:-[trblxyse])?-outline(?![\\w-])`, 'g')
+
+function usosDePaleta(fuente: string): string[] {
+  return fuente.match(PATRON_PALETA) ?? []
+}
+
+/** Excepciones explícitas (ADR-010 §2.5): el fondo translúcido de los modales nativos. */
+const EXCEPCIONES: ReadonlySet<string> = new Set(['backdrop:bg-black/50'])
+
+/**
+ * Trinquete de transición: usos que esperan una decisión visual (texto principal gray-700/900,
+ * insignias de estado, blanco sobre primario, cajas de error de D-R3-3 en 9.3.4). Solo puede
+ * reducirse: un uso nuevo hace fallar la prueba y uno resuelto obliga a retirarlo de aquí.
+ */
+const PENDIENTES: Record<string, Record<string, number>> = {
+  './App.tsx': { 'text-white': 1 },
+  './Dashboard.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-white': 2 },
+  './DetalleSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
+  './DetalleStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2 },
+  './InicioSolicitante.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 2, 'text-white': 1 },
+  './InicioStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-white': 1 },
+  './TableroStaff.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './componentes/AccionesSolicitud.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1, 'text-white': 1 },
+  './componentes/AccionesStaff.tsx': { 'bg-red-50': 2, 'border-red-200': 2, 'text-gray-700': 2, 'text-white': 1 },
+  './componentes/CorreccionEnlaceEntrega.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
+  './componentes/DialogoConfirmacion.tsx': { 'bg-gray-200': 1, 'text-gray-700': 2, 'text-white': 1 },
+  './componentes/EdicionAnexo.tsx': { 'bg-red-50': 1, 'border-red-200': 1, 'text-gray-700': 1 },
+  './componentes/ExitoRadicado.tsx': { 'text-white': 1 },
+  './componentes/HistorialEnlaces.tsx': { 'bg-red-50': 1, 'border-red-200': 1 },
+  './componentes/Insignias.tsx': {
+    'bg-gray-100': 3, 'bg-gray-200': 1, 'bg-gray-700': 1, 'bg-gray-900': 1,
+    'bg-white': 3, 'border-gray-200': 1, 'border-gray-400': 3, 'border-gray-500': 1,
+    'border-gray-700': 1, 'border-gray-900': 4, 'text-gray-500': 1, 'text-gray-600': 1,
+    'text-gray-700': 3, 'text-gray-900': 3, 'text-white': 2,
+  },
+  './componentes/LineaDeVida.tsx': { 'text-gray-700': 3, 'text-white': 1 },
+  './componentes/TarjetaTablero.tsx': { 'text-gray-700': 2 },
+}
+
+function contar(usos: string[]): Record<string, number> {
+  const cuenta: Record<string, number> = {}
+  for (const uso of [...usos].sort()) cuenta[uso] = (cuenta[uso] ?? 0) + 1
+  return cuenta
+}
+
+describe('Tema · guardia de la paleta por defecto (R9-3, D-R3-7)', () => {
+  it.each([
+    ['text-gray-500', 'text-gray-500'],
+    ['hover:bg-gray-50 px-4', 'hover:bg-gray-50'],
+    ['p-3 bg-red-50 border border-red-200', 'bg-red-50'],
+    ['md:border-l-slate-300', 'md:border-l-slate-300'],
+    ['backdrop:bg-black/50', 'backdrop:bg-black/50'],
+    ['bg-primary text-white', 'text-white'],
+    ['focus-visible:ring-blue-600', 'focus-visible:ring-blue-600'],
+  ])('detecta la paleta por defecto en "%s"', (fuente, esperado) => {
+    expect(usosDePaleta(fuente)).toContain(esperado)
+  })
+
+  it.each([
+    'text-texto-secundario bg-superficie-suave border-borde-control',
+    'bg-primary hover:bg-primary-hover text-urgencia',
+    'outline-none font-bold grayscale',
+    'border-l-2 border-borde-suave text-accent bg-surface',
+  ])('no confunde tokens propios ni otras utilidades: "%s"', (fuente) => {
+    expect(usosDePaleta(fuente)).toEqual([])
+  })
+
+  it('lee los 29 componentes de src/ sin las pruebas', () => {
+    const rutas = Object.keys(componentes)
+    expect(rutas).toHaveLength(29)
+    expect(rutas.some((ruta) => ruta.endsWith('.test.tsx'))).toBe(false)
+  })
+
+  it('ningún componente usa la paleta por defecto fuera de las excepciones y los pendientes', () => {
+    const usos: Record<string, Record<string, number>> = {}
+    for (const [ruta, fuente] of Object.entries(componentes)) {
+      const propios = usosDePaleta(fuente).filter((uso) => !EXCEPCIONES.has(uso))
+      if (propios.length > 0) usos[ruta] = contar(propios)
+    }
+    expect(usos).toEqual(PENDIENTES)
+  })
+
+  it('ningún componente usa el token retirado outline', () => {
+    const restos = Object.entries(componentes).flatMap(([ruta, fuente]) =>
+      (fuente.match(PATRON_RETIRADO) ?? []).map((uso) => `${ruta}: ${uso}`),
+    )
+    expect(restos).toEqual([])
+  })
+
+  it('el tema ya no declara --color-outline', () => {
+    expect(hojaDeEstilos).not.toMatch(/--color-outline:/)
+  })
+})
