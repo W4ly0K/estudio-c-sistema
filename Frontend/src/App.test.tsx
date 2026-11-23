@@ -58,6 +58,8 @@ describe('App', () => {
     expect(screen.getByText(/exclusivamente con tu correo institucional CESMAG/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument()
     expect(screen.getByAltText('Logo Estudio C')).toBeInTheDocument()
+    // R9-3 · 9.3.5: sin encabezado, el título es el h1 de la página.
+    expect(screen.getByRole('heading', { level: 1, name: 'Acceso al Sistema' })).toHaveClass('font-black', 'text-primary')
     expect(screen.queryByText('Panel de Solicitudes')).not.toBeInTheDocument()
   })
 
@@ -129,7 +131,8 @@ describe('App', () => {
       mostrarApp()
 
       expect(await screen.findByRole('alert')).toHaveTextContent(TEXTO_SIN_VERIFICAR)
-      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+      // R9-3 · 9.3.5: acción principal en Azul 2 con su hover institucional (Azul 1).
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toHaveClass('bg-primary', 'hover:bg-primary-hover')
       expect(localStorage.getItem('estudio_c_token')).toBe('jwt-guardado')
 
       fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }))

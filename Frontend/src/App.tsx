@@ -93,7 +93,7 @@ function App() {
         <PantallaCentrada>
           <p role="alert" className="text-sm text-primary mb-6">{TEXTO_SIN_VERIFICAR}</p>
           <div className="flex gap-3">
-            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary text-surface rounded-sm font-bold hover:opacity-90">
+            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors">
               Reintentar
             </button>
             <button type="button" onClick={handleLogout} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">
@@ -145,12 +145,13 @@ function App() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
       <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
-        
-        {/* Logo (Verifica que la ruta sea correcta) */}
+        {/* R9-3 · 9.3.5: el título es el h1 de la página (no hay encabezado sin sesión); Roboto 900 en
+            Azul 2 y la indicación en texto-secundario, en tamaño legible. El escudo espera las preguntas
+            14 y 15 (ADR-010). */}
         <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         
-        <h2 className="text-xl font-bold text-primary mb-1">Acceso al Sistema</h2>
-        <p className="text-xs text-texto-secundario mb-6">
+        <h1 className="text-2xl font-black text-primary mb-2">Acceso al Sistema</h1>
+        <p className="text-sm text-texto-secundario mb-6">
           Inicia sesión exclusivamente con tu correo institucional CESMAG.
         </p>
         
