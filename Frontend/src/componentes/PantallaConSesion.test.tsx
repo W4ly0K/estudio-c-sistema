@@ -10,7 +10,7 @@ const USUARIO: UsuarioSesion = { id: 'uuid', nombre: 'Ana Pérez', rol: 'SOLICIT
 function mostrar() {
   render(
     <MemoryRouter>
-      <PantallaConSesion usuario={USUARIO} onLogout={() => undefined} titulo="Inicio" claseContenido="flex-1 p-8">
+      <PantallaConSesion usuario={USUARIO} onLogout={() => undefined} claseContenido="flex-1 p-8">
         <p>Contenido de prueba</p>
       </PantallaConSesion>
     </MemoryRouter>,
@@ -44,5 +44,15 @@ describe('PantallaConSesion (R9-3 · V1-A)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Saltar al contenido' }))
 
     expect(screen.getByRole('main')).toHaveFocus()
+  })
+})
+
+describe('PantallaConSesion · pie al fondo (R9-3 · V1-B)', () => {
+  it('con poco contenido el pie queda al fondo: columna de alto mínimo de pantalla y contenido que crece', () => {
+    mostrar()
+    const raiz = screen.getByRole('main').parentElement
+
+    expect(raiz).toHaveClass('min-h-screen', 'flex', 'flex-col')
+    expect(screen.getByRole('main')).toHaveClass('flex-1')
   })
 })

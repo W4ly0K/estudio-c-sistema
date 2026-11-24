@@ -4,6 +4,7 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
 import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { atajosDelStaff, resumenInicioStaff, type AtajoInicio } from './presentacion/inicio'
 import { RUTA_TABLERO } from './rutas'
@@ -54,16 +55,17 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
   const error = !cargando && resultado !== undefined && !resultado.ok ? textoDeError(resultado.error) : null
 
   return (
-    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_STAFF} claseContenido="flex-1 p-8 max-w-[1100px] mx-auto w-full space-y-6">
-        <div className="flex flex-wrap justify-between items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-texto-secundario">Esto es lo que espera tu atención en el Estudio C.</p>
-          </div>
-          <Link to={RUTA_TABLERO} className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm text-sm font-bold transition-colors">
-            {TEXTO_IR_AL_TABLERO}
-          </Link>
-        </div>
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1100px] mx-auto w-full space-y-6">
+        <CabeceraPagina
+          contexto={TEXTO_TITULO_INICIO_STAFF}
+          titulo={`Hola, ${usuario.nombre}`}
+          descripcion="Esto es lo que espera tu atención en el Estudio C."
+          accion={
+            <Link to={RUTA_TABLERO} className="inline-block px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm text-sm font-bold transition-colors">
+              {TEXTO_IR_AL_TABLERO}
+            </Link>
+          }
+        />
 
         {cargando && atajos === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO}</p>}
         {error !== null && (

@@ -176,9 +176,9 @@ describe('Tema · guardia de la paleta por defecto (R9-3, D-R3-7)', () => {
     expect(usosDePaleta(fuente)).toEqual([])
   })
 
-  it('lee los 32 componentes de src/ sin las pruebas (29 + CajaError, PantallaConSesion y PieInstitucional)', () => {
+  it('lee los 33 componentes de src/ sin las pruebas (29 + CajaError, PantallaConSesion, PieInstitucional y CabeceraPagina)', () => {
     const rutas = Object.keys(componentes)
-    expect(rutas).toHaveLength(32)
+    expect(rutas).toHaveLength(33)
     expect(rutas.some((ruta) => ruta.endsWith('.test.tsx'))).toBe(false)
   })
 

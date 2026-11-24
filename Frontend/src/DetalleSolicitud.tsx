@@ -8,6 +8,7 @@ import type { Rol } from './api/maquina-estados'
 import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { EdicionAnexo } from './componentes/EdicionAnexo'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
 import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
@@ -109,10 +110,12 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
   if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
-    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Seguimiento de solicitud" claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
         <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al panel
         </Link>
+        {/* V1-B: el h1 nombra la pantalla; el radicado sigue siendo el h2 que recibe el foco al cargar. */}
+        <CabeceraPagina titulo="Seguimiento de solicitud" />
         {carga.tipo === 'cargando' && <p className="text-sm text-texto-secundario">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
           <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">

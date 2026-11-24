@@ -9,7 +9,6 @@ import { navegacionDelRol } from '../presentacion/navegacion'
 interface EncabezadoProps {
   usuario: UsuarioSesion
   onLogout: () => void
-  titulo: string
 }
 
 /** Destino de «Saltar al contenido»: el `<main>` de PantallaConSesion. */
@@ -45,10 +44,11 @@ const AREA_TACTIL = 'inline-flex min-h-11 items-center'
  *   No hay escudo ni marcador que lo simule (preguntas 14 y 15). La franja es el primer elemento
  *   del mismo contenedor flexible y ocupa su propia línea de borde a borde (ancho más el relleno,
  *   sin encogerse): el orden C8 de lo que sigue (marca → navegación → nombre → Salir) no cambia.
- * - Nivel 2: el logo de Estudio C, el sistema y la página, la navegación y el usuario. El rol se
+ * - Nivel 2: el logo de Estudio C, el nombre del sistema, la navegación y el usuario. El título de
+ *   la página ya no se repite aquí: es el `h1` de CabeceraPagina (V1-B). El rol se
  *   muestra en palabras y sin el rojo de error (D-R3-4).
  */
-export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
+export function Encabezado({ usuario, onLogout }: EncabezadoProps) {
   const saltarAlContenido = (evento: MouseEvent<HTMLAnchorElement>) => {
     evento.preventDefault()
     document.getElementById(ID_CONTENIDO)?.focus()
@@ -75,10 +75,7 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
         <div data-parte="marca" className="flex min-w-0 items-center gap-4">
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
-          <div className="min-w-0 border-l border-borde-suave pl-4">
-            <p className="text-xs text-texto-secundario">{DESCRIPTOR_SISTEMA}</p>
-            <p className="font-bold text-primary tracking-wide">{titulo}</p>
-          </div>
+          <p className="min-w-0 border-l border-borde-suave pl-4 font-bold text-primary tracking-wide">{DESCRIPTOR_SISTEMA}</p>
         </div>
         <nav aria-label="Navegación principal" className="md:border-l md:border-borde-suave md:pl-4">
           <ul className="flex flex-wrap items-center gap-2 text-sm">

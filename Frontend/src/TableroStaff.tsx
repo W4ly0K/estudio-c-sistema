@@ -3,6 +3,7 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
 import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
@@ -68,22 +69,23 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
   const totalCerradas = tablero === null ? 0 : tablero.cerradas.reduce((total, c) => total + c.solicitudes.length, 0)
 
   return (
-    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Tablero del Staff" claseContenido="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
-        <div className="flex flex-wrap justify-between items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-primary">{TEXTO_TITULO_TABLERO}</h2>
-            <p className="text-sm text-texto-secundario">Urgentes primero y luego por la franja más próxima (hora de Colombia).</p>
-          </div>
-          {/* Deshabilitado mientras viaja la petición: un doble clic no dispara dos GET. */}
-          <button
-            type="button"
-            onClick={() => setVersion((v) => v + 1)}
-            disabled={actualizando}
-            className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-superficie-suave disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {actualizando ? 'Actualizando…' : 'Actualizar'}
-          </button>
-        </div>
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
+        {/* Deshabilitado mientras viaja la petición: un doble clic no dispara dos GET. */}
+        <CabeceraPagina
+          contexto="Staff"
+          titulo={TEXTO_TITULO_TABLERO}
+          descripcion="Urgentes primero y luego por la franja más próxima (hora de Colombia)."
+          accion={
+            <button
+              type="button"
+              onClick={() => setVersion((v) => v + 1)}
+              disabled={actualizando}
+              className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-superficie-suave disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {actualizando ? 'Actualizando…' : 'Actualizar'}
+            </button>
+          }
+        />
 
         {/* Solo tras pedirlo (versión > 0): la carga inicial no se anuncia. */}
         {!actualizando && version > 0 && solicitudes !== null && (

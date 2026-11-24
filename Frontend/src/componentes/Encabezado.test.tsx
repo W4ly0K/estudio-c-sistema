@@ -19,7 +19,7 @@ const STAFF: UsuarioSesion = { id: 'uuid-staff', nombre: NOMBRE_LARGO, rol: 'STA
 function mostrar(usuario: UsuarioSesion = STAFF, ruta = RUTA_INICIO) {
   render(
     <MemoryRouter initialEntries={[ruta]}>
-      <Encabezado usuario={usuario} onLogout={() => undefined} titulo="Inicio del Staff" />
+      <Encabezado usuario={usuario} onLogout={() => undefined} />
     </MemoryRouter>,
   )
   return screen.getByRole('banner')
@@ -137,5 +137,14 @@ describe('Encabezado · identidad institucional (R9-3 · V1-A)', () => {
     expect(ETIQUETAS_ROL[rol]).toBe(palabra)
     expect(etiqueta).not.toHaveClass('text-accent')
     expect(within(encabezado).queryByText(rol)).not.toBeInTheDocument()
+  })
+})
+
+describe('Encabezado · sin título de página (R9-3 · V1-B)', () => {
+  it('muestra el nombre del sistema y no contiene encabezados: el h1 es de la cabecera de la pantalla', () => {
+    const encabezado = mostrar()
+
+    expect(within(encabezado).getByText('Sistema de Solicitudes y Reservas')).toBeInTheDocument()
+    expect(within(encabezado).queryAllByRole('heading')).toHaveLength(0)
   })
 })

@@ -58,7 +58,10 @@ describe('App', () => {
     expect(screen.getByText(/exclusivamente con tu correo institucional CESMAG/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument()
     expect(screen.getByAltText('Logo Estudio C')).toBeInTheDocument()
-    // R9-3 · 9.3.5: sin encabezado, el título es el h1 de la página.
+    // R9-3 · 9.3.5: el título es el h1 de la página. V1-B: el panel institucional va en texto, sin escudo.
+    expect(screen.getByRole('banner')).toHaveTextContent('Universidad CESMAG · CIDU · Estudio C')
+    expect(screen.getByRole('banner')).toHaveClass('bg-primary', 'text-surface')
+    expect(screen.getAllByRole('img')).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 1, name: 'Acceso al Sistema' })).toHaveClass('font-black', 'text-primary')
     expect(screen.queryByText('Panel de Solicitudes')).not.toBeInTheDocument()
   })

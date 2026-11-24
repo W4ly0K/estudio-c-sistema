@@ -4,6 +4,7 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudPropia, UsuarioSesion } from './api/esquemas'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
 import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud'
 import { MAXIMO_PROXIMAS_INICIO, REGLAS_ESTUDIO_C, resumenInicioSolicitante } from './presentacion/inicio'
@@ -59,19 +60,20 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
   const error = !cargando && resultado !== undefined && !resultado.ok ? textoDeError(resultado.error) : null
 
   return (
-    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_SOLICITANTE} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
-        <div className="flex flex-wrap justify-between items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-texto-secundario">Reserva los espacios del Estudio C y sigue tus solicitudes.</p>
-          </div>
-          <Link
-            to={RUTA_MIS_SOLICITUDES}
-            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors"
-          >
-            {TEXTO_NUEVA_SOLICITUD}
-          </Link>
-        </div>
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
+        <CabeceraPagina
+          contexto={TEXTO_TITULO_INICIO_SOLICITANTE}
+          titulo={`Hola, ${usuario.nombre}`}
+          descripcion="Reserva los espacios del Estudio C y sigue tus solicitudes."
+          accion={
+            <Link
+              to={RUTA_MIS_SOLICITUDES}
+              className="inline-block px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors"
+            >
+              {TEXTO_NUEVA_SOLICITUD}
+            </Link>
+          }
+        />
 
         {cargando && resumen === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
         {error !== null && (

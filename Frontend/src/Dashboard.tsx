@@ -20,6 +20,7 @@ import {
 } from './componentes/CampoSubEspacio';
 import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
+import { CabeceraPagina } from './componentes/CabeceraPagina';
 import { PantallaConSesion } from './componentes/PantallaConSesion';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
@@ -195,23 +196,24 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
 
   return (
     <>
-      <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" claseContenido="flex-1 p-8 max-w-[1200px] mx-auto w-full">
-        <div className="flex justify-between items-end border-b border-borde-suave pb-4 mb-8">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
-            <p className="text-sm text-texto-secundario mt-1">
-              {!loading && !errorCarga && solicitudes.length > 0
-                ? textoResumen(resumen)
-                : 'Seguimiento de tus reservas de espacios y equipos.'}
-            </p>
-          </div>
-          <button 
-            onClick={() => setDialogo({ vista: 'formulario' })}
-            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
-          >
-            <span className="text-lg">+</span> Nueva Solicitud
-          </button>
-        </div>
+      <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1200px] mx-auto w-full space-y-8">
+        <CabeceraPagina
+          contexto="Panel de Solicitudes"
+          titulo="Historial de Radicados"
+          descripcion={
+            !loading && !errorCarga && solicitudes.length > 0
+              ? textoResumen(resumen)
+              : 'Seguimiento de tus reservas de espacios y equipos.'
+          }
+          accion={
+            <button 
+              onClick={() => setDialogo({ vista: 'formulario' })}
+              className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
+            >
+              <span className="text-lg">+</span> Nueva Solicitud
+            </button>
+          }
+        />
 
         {loading ? (
           <p className="text-sm text-texto-secundario">Cargando radicados...</p>

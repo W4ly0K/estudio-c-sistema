@@ -6,7 +6,6 @@ import { PieInstitucional } from './PieInstitucional'
 interface PantallaConSesionProps {
   usuario: UsuarioSesion
   onLogout: () => void
-  titulo: string
   /** Clases del `<main>` (ancho máximo y espaciado de cada pantalla). */
   claseContenido: string
   children: ReactNode
@@ -18,10 +17,10 @@ interface PantallaConSesionProps {
  * contenido») y el pie. El `<main>` admite el foco por código (`tabIndex={-1}`) y no muestra el
  * anillo: el foco llega desde el enlace de salto, no desde el recorrido con Tab.
  */
-export function PantallaConSesion({ usuario, onLogout, titulo, claseContenido, children }: PantallaConSesionProps) {
+export function PantallaConSesion({ usuario, onLogout, claseContenido, children }: PantallaConSesionProps) {
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo={titulo} />
+      <Encabezado usuario={usuario} onLogout={onLogout} />
       <main id={ID_CONTENIDO} tabIndex={-1} className={`outline-none ${claseContenido}`}>
         {children}
       </main>
