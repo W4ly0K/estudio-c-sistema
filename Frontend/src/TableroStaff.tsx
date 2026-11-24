@@ -8,6 +8,7 @@ import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
+import type { Estado } from './api/maquina-estados'
 import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_TABLERO = 'Tablero de solicitudes'
@@ -27,6 +28,13 @@ function aRespuesta(resultado: Resultado<SolicitudTablero[]>): Respuesta {
   if (resultado.ok) return { tipo: 'lista', solicitudes: resultado.datos }
   return { tipo: 'error', texto: textoDeError(resultado.error) }
 }
+
+/**
+ * Composición (ADR-010 §2.8 C-13): el estado de espera se pinta DEBAJO de las cuatro etapas
+ * operativas, a ancho completo. Es solo presentación: el estado, su nombre y su pertenencia a
+ * las activas no cambian (agruparTablero sigue devolviendo las 5 columnas).
+ */
+const ESTADO_EN_ESPERA: Estado = 'Pendiente de Reprogramación'
 
 const contarSolicitudes = (n: number): string => (n === 1 ? '1 solicitud' : `${n} solicitudes`)
 
@@ -66,6 +74,8 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
   const error = !actualizando && estado !== undefined && estado.tipo === 'error' ? estado.texto : null
   const tablero = solicitudes === null ? null : agruparTablero(solicitudes)
   const avisoUrgentes = tablero === null ? null : textoUrgentes(tablero.urgentesEnRecibido)
+  const operativas = tablero === null ? [] : tablero.activas.filter((c) => c.estado !== ESTADO_EN_ESPERA)
+  const enEspera = tablero === null ? undefined : tablero.activas.find((c) => c.estado === ESTADO_EN_ESPERA)
   const totalCerradas = tablero === null ? 0 : tablero.cerradas.reduce((total, c) => total + c.solicitudes.length, 0)
 
   return (
@@ -110,11 +120,13 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
                 {avisoUrgentes}
               </p>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
-              {tablero.activas.map((columna) => (
+            {/* Orden del DOM = orden de lectura: primero las cuatro etapas, luego la espera (también en móvil). */}
+            <div data-fila="operativa" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+              {operativas.map((columna) => (
                 <Columna key={columna.estado} columna={columna} cerrada={false} />
               ))}
             </div>
+            {enEspera !== undefined && <Columna columna={enEspera} cerrada={false} ancha />}
             {/* DE3 · DT1: las cerradas son historial; plegadas para no competir con el trabajo pendiente. */}
             <details className="border border-borde-suave rounded-lg bg-surface p-4">
               <summary className="cursor-pointer font-bold text-primary">Solicitudes cerradas ({totalCerradas})</summary>
@@ -130,15 +142,31 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
   )
 }
 
-/** Una columna: región con nombre (su estado), contador y la lista de tarjetas. */
-function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTablero>; cerrada: boolean }) {
+/**
+ * Una columna: región con nombre (su estado), contador y la lista de tarjetas. «ancha» la pinta
+ * como sección de ancho completo (la espera): tarjetas en rejilla y, vacía, en una sola línea compacta.
+ */
+function Columna({
+  columna,
+  cerrada,
+  ancha = false,
+}: {
+  columna: ColumnaTablero<SolicitudTablero>
+  cerrada: boolean
+  ancha?: boolean
+}) {
   const id = useId()
   const { estado, solicitudes } = columna
   return (
     // V1-D (ADR-010 §2.8 C-12): la cabecera de la columna va sobre blanco y separada por un borde;
     // el contador queda FUERA del h3 (el nombre de la región sigue siendo solo el estado). El vacío
     // se muestra como una caja proporcionada, no como texto suelto.
-    <section aria-labelledby={id} data-columna={estado} className="rounded-lg border border-borde-suave bg-superficie-suave">
+    <section
+      aria-labelledby={id}
+      data-columna={estado}
+      data-ancha={ancha ? 'true' : undefined}
+      className="rounded-lg border border-borde-suave bg-superficie-suave"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b border-borde-suave bg-surface px-3 py-2.5">
         <h3 id={id} className="font-bold text-primary">
           {etiquetaEstado(estado, 'STAFF')}
@@ -147,14 +175,21 @@ function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTabler
           {contarSolicitudes(solicitudes.length)}
         </p>
       </div>
-      <div className="space-y-3 p-3">
-        {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-texto-secundario">{TEXTO_COLUMNA_PENDIENTE}</p>}
+      <div className={ancha && solicitudes.length === 0 ? 'flex flex-wrap items-center gap-x-4 gap-y-2 p-3' : 'space-y-3 p-3'}>
+        {estado === ESTADO_EN_ESPERA && <p className="text-xs text-texto-secundario">{TEXTO_COLUMNA_PENDIENTE}</p>}
         {solicitudes.length === 0 ? (
-          <p data-vacio="true" className="rounded-md border border-borde-suave bg-surface px-3 py-4 text-center text-sm text-texto-secundario">
+          <p
+            data-vacio="true"
+            className={
+              ancha
+                ? 'rounded-md border border-borde-suave bg-surface px-3 py-1.5 text-sm text-texto-secundario'
+                : 'rounded-md border border-borde-suave bg-surface px-3 py-4 text-center text-sm text-texto-secundario'
+            }
+          >
             {TEXTO_COLUMNA_VACIA}
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className={ancha ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 items-start' : 'space-y-3'}>
             {solicitudes.map((solicitud) => (
               <li key={solicitud.radicado}>
                 <TarjetaTablero solicitud={solicitud} mostrarEstado={cerrada} />

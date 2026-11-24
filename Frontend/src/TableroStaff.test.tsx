@@ -190,3 +190,55 @@ describe('TableroStaff · composición (R9-3 · V1-D)', () => {
     expect(within(columna).getByText(TEXTO_COLUMNA_VACIA)).toHaveAttribute('data-vacio', 'true')
   })
 })
+
+describe('TableroStaff · composición del tablero (R9-3 · C-13)', () => {
+  const OPERATIVAS = ['Recibido', 'Revisado y aprobado', 'En Producción', 'Edición y postproducción']
+
+  it('fila principal con las cuatro etapas operativas, en orden; la espera queda fuera de ella', async () => {
+    mostrar(responde())
+    const pendiente = await screen.findByRole('region', { name: 'Pendiente de Reprogramación' })
+    const fila = pendiente.ownerDocument.querySelector('[data-fila="operativa"]')
+    if (!(fila instanceof HTMLElement)) throw new Error('falta la fila operativa')
+
+    const nombres = within(fila)
+      .getAllByRole('region')
+      .map((r) => within(r).getByRole('heading', { level: 3 }).textContent)
+    expect(nombres).toEqual(OPERATIVAS)
+    expect(fila.contains(pendiente)).toBe(false)
+    expect(pendiente).toHaveAttribute('data-ancha', 'true')
+  })
+
+  it('orden de lectura: la sección de espera va después de las cuatro etapas y antes de las cerradas', async () => {
+    mostrar(responde())
+    const pendiente = await screen.findByRole('region', { name: 'Pendiente de Reprogramación' })
+    const ultima = screen.getByRole('region', { name: 'Edición y postproducción' })
+    const cerradas = screen.getByText(/^Solicitudes cerradas/)
+
+    expect(ultima.compareDocumentPosition(pendiente) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(pendiente.compareDocumentPosition(cerradas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('la espera conserva su nombre, su contador, su aviso y sus tarjetas cuando existen', async () => {
+    mostrar(
+      responde(
+        solicitud({ radicado: 'EC-8', estado: 'Pendiente de Reprogramación' }),
+        solicitud({ radicado: 'EC-9', estado: 'Pendiente de Reprogramación' }),
+      ),
+    )
+    const pendiente = await screen.findByRole('region', { name: 'Pendiente de Reprogramación' })
+
+    expect(within(pendiente).getByRole('heading', { level: 3 })).toHaveTextContent(/^Pendiente de Reprogramación$/)
+    expect(within(pendiente).getByText('2 solicitudes')).toBeInTheDocument()
+    expect(within(pendiente).getByText(TEXTO_COLUMNA_PENDIENTE)).toBeInTheDocument()
+    expect(radicadosEn(pendiente)).toHaveLength(2)
+    expect(within(pendiente).queryByText(TEXTO_COLUMNA_VACIA)).toBeNull()
+  })
+
+  it('vacía, la espera se muestra compacta y lo dice', async () => {
+    mostrar(responde())
+    const pendiente = await screen.findByRole('region', { name: 'Pendiente de Reprogramación' })
+
+    expect(within(pendiente).getByText('0 solicitudes')).toBeInTheDocument()
+    expect(within(pendiente).getByText(TEXTO_COLUMNA_VACIA)).toHaveAttribute('data-vacio', 'true')
+  })
+})
