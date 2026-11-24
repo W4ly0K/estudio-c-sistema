@@ -3,7 +3,7 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
-import { Encabezado } from './componentes/Encabezado'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
@@ -68,9 +68,7 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
   const totalCerradas = tablero === null ? 0 : tablero.cerradas.reduce((total, c) => total + c.solicitudes.length, 0)
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Tablero del Staff" />
-      <main className="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Tablero del Staff" claseContenido="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
         <div className="flex flex-wrap justify-between items-end gap-4">
           <div>
             <h2 className="text-2xl font-black text-primary">{TEXTO_TITULO_TABLERO}</h2>
@@ -126,8 +124,7 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
             </details>
           </>
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 

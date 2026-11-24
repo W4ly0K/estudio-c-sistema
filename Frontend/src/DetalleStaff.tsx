@@ -8,7 +8,7 @@ import type { DetalleStaff as DatosDetalleStaff, RespuestaCorreccionEntrega, Usu
 import { AccionesStaff } from './componentes/AccionesStaff'
 import { CorreccionEnlaceEntrega } from './componentes/CorreccionEnlaceEntrega'
 import { HistorialEnlaces } from './componentes/HistorialEnlaces'
-import { Encabezado } from './componentes/Encabezado'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
@@ -149,9 +149,7 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Revisión de solicitud" />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Revisión de solicitud" claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
         <Link to={RUTA_TABLERO} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al tablero
         </Link>
@@ -195,8 +193,7 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             alRecargar={recargarTrasConflicto}
           />
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 

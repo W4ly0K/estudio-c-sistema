@@ -20,7 +20,7 @@ import {
 } from './componentes/CampoSubEspacio';
 import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
-import { Encabezado } from './componentes/Encabezado';
+import { PantallaConSesion } from './componentes/PantallaConSesion';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
 import {
@@ -194,11 +194,8 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   const avisoPorDecidir = textoPorDecidir(resumen);
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" />
-
-      {/* Área de Trabajo - Tabla Intacta */}
-      <main className="flex-1 p-8 max-w-[1200px] mx-auto w-full">
+    <>
+      <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" claseContenido="flex-1 p-8 max-w-[1200px] mx-auto w-full">
         <div className="flex justify-between items-end border-b border-borde-suave pb-4 mb-8">
           <div>
             <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
@@ -240,7 +237,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             ))}
           </div>
         )}
-      </main>
+      </PantallaConSesion>
 
       {/* Diálogo B2 (formulario) y B1b (éxito). Siempre montado: `showModal()` necesita el
           elemento. El contenido solo existe abierto, así un diálogo cerrado no deja campos
@@ -356,6 +353,6 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
           </>
         )}
       </dialog>
-    </div>
+    </>
   );
 }

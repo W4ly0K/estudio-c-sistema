@@ -56,3 +56,12 @@ export const ALIAS_DE_ESTADO: Readonly<Record<Rol, Readonly<Partial<Record<Estad
 export function etiquetaEstado(estado: Estado, perspectiva: Rol): string {
   return ALIAS_DE_ESTADO[perspectiva][estado] ?? estado
 }
+
+/**
+ * Fase 9 · R9-3 · V1-A: el rol en palabras en el encabezado (no el valor guardado ni el rojo de
+ * error). `Record<Rol, …>`: un rol nuevo no compila hasta tener su nombre visible.
+ */
+export const ETIQUETAS_ROL: Readonly<Record<Rol, string>> = {
+  SOLICITANTE: 'Solicitante',
+  STAFF: 'Staff',
+}

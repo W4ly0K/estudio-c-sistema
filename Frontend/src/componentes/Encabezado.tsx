@@ -1,6 +1,9 @@
+import type { MouseEvent } from 'react'
 import { NavLink } from 'react-router'
 import type { UsuarioSesion } from '../api/esquemas'
 import logoEstudioC from '../assets/logo-estudio-c-horizontal.png'
+import { ETIQUETAS_ROL } from '../presentacion/etiquetas'
+import { DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL } from '../presentacion/identidad'
 import { navegacionDelRol } from '../presentacion/navegacion'
 
 interface EncabezadoProps {
@@ -8,6 +11,9 @@ interface EncabezadoProps {
   onLogout: () => void
   titulo: string
 }
+
+/** Destino de «Saltar al contenido»: el `<main>` de PantallaConSesion. */
+export const ID_CONTENIDO = 'contenido'
 
 /** Área táctil de 44 px (WCAG 2.5.5) para cada control del encabezado. */
 const AREA_TACTIL = 'inline-flex min-h-11 items-center'
@@ -31,14 +37,48 @@ const AREA_TACTIL = 'inline-flex min-h-11 items-center'
  * - El nombre envuelve (`min-w-0` + `break-words`) y nunca se trunca: cortarlo esconde datos.
  * - Fijo (`sticky`) solo desde `md`: en móvil se desplaza con la página y no tapa el contenido.
  *   El `scroll-padding-top` de `index.css` evita que el foco quede bajo el encabezado fijo.
+ *
+ * Fase 9 · R9-3 · V1-A (ADR-010 §2.8): dos niveles.
+ * - «Saltar al contenido» es el primer elemento enfocable; lleva el foco al `<main>` por código
+ *   (sin cambiar la URL ni depender del router).
+ * - Nivel 1: franja en Azul 2 con la pertenencia en texto (Universidad CESMAG · CIDU · Estudio C).
+ *   No hay escudo ni marcador que lo simule (preguntas 14 y 15). La franja es el primer elemento
+ *   del mismo contenedor flexible y ocupa su propia línea de borde a borde (ancho más el relleno,
+ *   sin encogerse): el orden C8 de lo que sigue (marca → navegación → nombre → Salir) no cambia.
+ * - Nivel 2: el logo de Estudio C, el sistema y la página, la navegación y el usuario. El rol se
+ *   muestra en palabras y sin el rojo de error (D-R3-4).
  */
 export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
+  const saltarAlContenido = (evento: MouseEvent<HTMLAnchorElement>) => {
+    evento.preventDefault()
+    document.getElementById(ID_CONTENIDO)?.focus()
+  }
   return (
-    <header className="w-full bg-surface border-b border-borde-suave px-4 py-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
+    <header className="relative w-full bg-surface border-b border-borde-suave px-4 pb-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
+      <a
+        href={`#${ID_CONTENIDO}`}
+        onClick={saltarAlContenido}
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-[60] focus:rounded-sm focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-primary"
+      >
+        Saltar al contenido
+      </a>
+      <div data-parte="identidad" className="-mx-4 sm:-mx-8 md:shrink-0 md:basis-[calc(100%_+_4rem)] bg-primary px-4 py-2 sm:px-8 text-surface">
+        <p className="text-sm font-bold tracking-wide break-words">
+          {JERARQUIA_INSTITUCIONAL.map((parte, i) => (
+            <span key={parte}>
+              {i > 0 && <span aria-hidden="true"> · </span>}
+              {parte}
+            </span>
+          ))}
+        </p>
+      </div>
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
         <div data-parte="marca" className="flex min-w-0 items-center gap-4">
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
-          <span className="font-bold text-primary border-l border-borde-suave pl-4 tracking-wide">{titulo}</span>
+          <div className="min-w-0 border-l border-borde-suave pl-4">
+            <p className="text-xs text-texto-secundario">{DESCRIPTOR_SISTEMA}</p>
+            <p className="font-bold text-primary tracking-wide">{titulo}</p>
+          </div>
         </div>
         <nav aria-label="Navegación principal" className="md:border-l md:border-borde-suave md:pl-4">
           <ul className="flex flex-wrap items-center gap-2 text-sm">
@@ -66,7 +106,7 @@ export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
         <div className="min-w-0 md:max-w-xs md:text-right">
           <p className="text-sm font-bold text-primary break-words">{usuario.nombre}</p>
           <p className="text-xs text-texto-secundario">
-            Rol: <span className="font-bold text-accent">{usuario.rol}</span>
+            Rol: <span className="font-bold text-texto-principal">{ETIQUETAS_ROL[usuario.rol]}</span>
           </p>
         </div>
         <button

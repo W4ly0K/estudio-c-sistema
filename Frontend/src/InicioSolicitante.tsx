@@ -4,7 +4,7 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudPropia, UsuarioSesion } from './api/esquemas'
-import { Encabezado } from './componentes/Encabezado'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud'
 import { MAXIMO_PROXIMAS_INICIO, REGLAS_ESTUDIO_C, resumenInicioSolicitante } from './presentacion/inicio'
 import { RUTA_MIS_SOLICITUDES } from './rutas'
@@ -59,9 +59,7 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
   const error = !cargando && resultado !== undefined && !resultado.ok ? textoDeError(resultado.error) : null
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_SOLICITANTE} />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_SOLICITANTE} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
         <div className="flex flex-wrap justify-between items-end gap-4">
           <div>
             <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
@@ -143,7 +141,6 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
             ))}
           </ul>
         </section>
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }

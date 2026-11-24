@@ -3,7 +3,9 @@ import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import type { UsuarioSesion } from '../api/esquemas'
 import { RUTA_INICIO, RUTA_TABLERO } from '../rutas'
-import { Encabezado } from './Encabezado'
+import { ETIQUETAS_ROL } from '../presentacion/etiquetas'
+import { TEXTO_IDENTIDAD } from '../presentacion/identidad'
+import { Encabezado, ID_CONTENIDO } from './Encabezado'
 
 /**
  * Fase 7 · C8. jsdom no calcula el diseño (no hay anchos ni desbordes): estas pruebas fijan el
@@ -87,5 +89,53 @@ describe('Encabezado · responsivo (Fase 7 · C8)', () => {
 
     expect(within(navegacion).getByRole('link', { current: 'page' })).toHaveTextContent('Tablero')
     expect(within(navegacion).getByRole('link', { name: 'Inicio' })).not.toHaveAttribute('aria-current')
+  })
+})
+
+describe('Encabezado · identidad institucional (R9-3 · V1-A)', () => {
+  it('nivel 1: franja en Azul 2 con texto blanco y la jerarquía Universidad CESMAG · CIDU · Estudio C', () => {
+    const encabezado = mostrar()
+    const franja = encabezado.querySelector('[data-parte="identidad"]')
+
+    expect(franja).toHaveClass('bg-primary', 'text-surface')
+    expect(franja).toHaveTextContent(TEXTO_IDENTIDAD)
+  })
+
+  it('la franja va antes que la marca y no reordena lo que sigue (C8)', () => {
+    const encabezado = mostrar()
+    const franja = encabezado.querySelector('[data-parte="identidad"]')
+    const logo = within(encabezado).getByAltText('Logo Estudio C')
+
+    expect(franja).not.toBeNull()
+    if (franja !== null) expect(vaAntes(franja, logo)).toBe(true)
+  })
+
+  it('sin escudo simulado: el logo de Estudio C es la única imagen del encabezado', () => {
+    const encabezado = mostrar()
+
+    expect(within(encabezado).getAllByRole('img')).toHaveLength(1)
+    expect(within(encabezado).queryByAltText(/escudo/i)).not.toBeInTheDocument()
+  })
+
+  it('«Saltar al contenido» es el primer elemento enfocable y apunta al contenido principal', () => {
+    const encabezado = mostrar()
+    const enfocables = encabezado.querySelectorAll('a[href], button')
+    const salto = within(encabezado).getByRole('link', { name: 'Saltar al contenido' })
+
+    expect(enfocables[0]).toBe(salto)
+    expect(salto).toHaveAttribute('href', `#${ID_CONTENIDO}`)
+    expect(salto).toHaveClass('sr-only', 'focus:not-sr-only')
+  })
+
+  it.each([
+    ['STAFF', 'Staff'],
+    ['SOLICITANTE', 'Solicitante'],
+  ] as const)('el rol %s se muestra en palabras («%s») y sin el rojo de error', (rol, palabra) => {
+    const encabezado = mostrar({ id: 'uuid', nombre: 'Ana Pérez', rol })
+    const etiqueta = within(encabezado).getByText(palabra)
+
+    expect(ETIQUETAS_ROL[rol]).toBe(palabra)
+    expect(etiqueta).not.toHaveClass('text-accent')
+    expect(within(encabezado).queryByText(rol)).not.toBeInTheDocument()
   })
 })

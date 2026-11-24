@@ -14,6 +14,7 @@ import logoEstudioC from './assets/logo-estudio-c-horizontal.png';
 import { textoDeError } from './api/errores';
 import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
+import { LEMA, UNIVERSIDAD } from './presentacion/identidad';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
 /** Estado informativo mientras el servidor valida la credencial de Google (no es un error). */
@@ -179,7 +180,7 @@ function App() {
       </div>
       
       <p className="mt-6 text-xs text-texto-terciario font-medium">
-        Universidad CESMAG · Ciencia y Servicio
+        {UNIVERSIDAD} · {LEMA}
       </p>
     </div>
   );

@@ -8,7 +8,7 @@ import type { Rol } from './api/maquina-estados'
 import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { EdicionAnexo } from './componentes/EdicionAnexo'
-import { Encabezado } from './componentes/Encabezado'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
@@ -109,9 +109,7 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
   if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Seguimiento de solicitud" />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} titulo="Seguimiento de solicitud" claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
         <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al panel
         </Link>
@@ -149,8 +147,7 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
             alRecargar={() => setVersion((v) => v + 1)}
           />
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 
