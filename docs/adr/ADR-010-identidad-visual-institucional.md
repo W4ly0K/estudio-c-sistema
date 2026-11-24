@@ -160,8 +160,8 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | — | 9.3.0 · Revisión visual de unicesmag.edu.co y respuestas 14 a 16 ⏳ |
 | `fe012b3` · `21d295d` | 9.3.1 · `@fontsource/roboto` con pesos acotados; `font-semibold` → 700 ✅ |
 | `ef58c16` | 9.3.2 · Tokens neutros y `foco` en `index.css` + `tema.test.ts` con la tabla de pares ✅ |
-| `54dc57d` · `420b68d` · `2faafeb` · `c5095e8` · lote de insignias · lote de errores | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7; el trinquete queda vacío (solo la excepción `backdrop:bg-black/50`) ✅ |
+| `54dc57d` · `420b68d` · `2faafeb` · `c5095e8` · `87515ac` · `f416fb0` | 9.3.3 · Refactor mecánico de la paleta por defecto a tokens, por lotes, más la guardia D-R3-7; el trinquete queda vacío (solo la excepción `backdrop:bg-black/50`) ✅ |
 | `ddd30d7` | Fuera de los pasos de R9-3: actualización de `vite`, `undici` y `source-map-js` dentro de sus rangos (alertas altas de `npm audit`, solo de desarrollo) ✅ |
-| — | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
-| — | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
-| — | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
+| `d8a2e0b` | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
+| `8bc8b41` | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
+| `8c6d401` | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
