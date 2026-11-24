@@ -8,7 +8,8 @@ import type { DetalleStaff as DatosDetalleStaff, RespuestaCorreccionEntrega, Usu
 import { AccionesStaff } from './componentes/AccionesStaff'
 import { CorreccionEnlaceEntrega } from './componentes/CorreccionEnlaceEntrega'
 import { HistorialEnlaces } from './componentes/HistorialEnlaces'
-import { Encabezado } from './componentes/Encabezado'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
@@ -26,6 +27,7 @@ import {
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_TABLERO } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_NO_ENCONTRADA_AYUDA_STAFF = 'Revisa el número de radicado o vuelve al tablero.'
 /** UI honesta: tras T5 la decisión es del solicitante (T7 o T8); el Staff no puede retirar la propuesta. */
@@ -148,25 +150,25 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
   if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Revisión de solicitud" />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
         <Link to={RUTA_TABLERO} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al tablero
         </Link>
+        {/* V1-B: el h1 nombra la pantalla; el radicado sigue siendo el h2 que recibe el foco al cargar. */}
+        <CabeceraPagina titulo="Revisión de solicitud" />
         {avisoVisible !== null && (
           <output className="block p-3 border-2 border-primary rounded-sm bg-surface text-sm font-bold text-primary">
             <span aria-hidden="true">✓ </span>
             {avisoVisible}
           </output>
         )}
-        {carga.tipo === 'cargando' && <p className="text-sm text-gray-500">Cargando la solicitud...</p>}
+        {carga.tipo === 'cargando' && <p className="text-sm text-texto-secundario">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
-          <div className="border border-outline rounded-lg p-8 text-center bg-surface">
+          <div className="border border-borde-suave rounded-lg p-6 sm:p-8 text-center bg-surface">
             <h2 ref={tituloRef} tabIndex={-1} className="text-xl font-bold text-primary outline-none">
               {TEXTO_NO_ENCONTRADA}
             </h2>
-            <p className="text-sm text-gray-600 mt-2">{TEXTO_NO_ENCONTRADA_AYUDA_STAFF}</p>
+            <p className="text-sm text-texto-secundario mt-2">{TEXTO_NO_ENCONTRADA_AYUDA_STAFF}</p>
           </div>
         )}
         {carga.tipo === 'error' && (
@@ -175,10 +177,10 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
               No se pudo cargar la solicitud
             </h2>
             {/* DA2 · honestidad: si el PATCH ya se aplicó, lo que falló es solo la recarga. */}
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {avisoVisible !== null ? `${textoRecargaFallida} ${carga.texto}` : carga.texto}
-            </p>
-            <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-semibold text-primary">
+            </CajaError>
+            <button type="button" onClick={reintentar} className="mt-2 text-sm underline font-bold text-primary">
               Recargar la solicitud
             </button>
           </div>
@@ -194,8 +196,7 @@ export default function DetalleStaff({ usuario, onLogout }: DetalleStaffProps) {
             alRecargar={recargarTrasConflicto}
           />
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 
@@ -243,8 +244,8 @@ function Contenido({
 
   return (
     <>
-      <section className="border border-outline rounded-lg p-6 bg-surface">
-        <p className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</p>
+      <section className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
+        <p className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 ref={tituloRef} tabIndex={-1} className="text-2xl font-black text-primary outline-none">
             {detalle.radicado}
@@ -256,7 +257,7 @@ function Contenido({
         </div>
         <dl className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
-            <dt className="text-gray-500">Solicitante</dt>
+            <dt className="text-texto-secundario">Solicitante</dt>
             <dd className="font-medium text-primary">
               {detalle.usuario.nombre}
               {/* DD5: contactar es la acción más frecuente ante una duda; no autoriza nada. */}
@@ -266,32 +267,32 @@ function Contenido({
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500">Categoría</dt>
+            <dt className="text-texto-secundario">Categoría</dt>
             <dd className="font-medium text-primary">{ETIQUETAS_CATEGORIA[detalle.categoria]}</dd>
           </div>
           <div>
-            <dt className="text-gray-500">Fecha y horario (hora de Colombia)</dt>
+            <dt className="text-texto-secundario">Fecha y horario (hora de Colombia)</dt>
             <dd className="font-medium text-primary">{formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}</dd>
           </div>
           <div>
             {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial completo del lugar (Q-A1). */}
-            <dt className="text-gray-500">Sub-espacio</dt>
+            <dt className="text-texto-secundario">Sub-espacio</dt>
             <dd className="font-medium text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</dd>
           </div>
           {detalle.num_participantes !== null && (
             <div>
-              <dt className="text-gray-500">Participantes</dt>
+              <dt className="text-texto-secundario">Participantes</dt>
               <dd className="font-medium text-primary">{detalle.num_participantes}</dd>
             </div>
           )}
           <div className="sm:col-span-2">
-            <dt className="text-gray-500">Propósito</dt>
+            <dt className="text-texto-secundario">Propósito</dt>
             <dd className="font-medium text-primary whitespace-pre-line">{detalle.proposito}</dd>
           </div>
           {/* Fase 9 · R9-1: el guion que adjuntó el solicitante, abierto de forma segura. */}
           {detalle.enlace_anexo !== null && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">{TEXTO_ANEXO}</dt>
+              <dt className="text-texto-secundario">{TEXTO_ANEXO}</dt>
               <dd>
                 <EnlaceAnexo enlace={detalle.enlace_anexo} radicado={detalle.radicado} />
               </dd>
@@ -301,12 +302,12 @@ function Contenido({
               Fase 9 · K4: junto a él, la corrección auditada; en EN8, la nota que explica por qué no. */}
           {(detalle.enlace_entrega !== null || sinEnlacePrevio) && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">{TEXTO_PRODUCTO_FINAL}</dt>
+              <dt className="text-texto-secundario">{TEXTO_PRODUCTO_FINAL}</dt>
               <dd>
                 {detalle.enlace_entrega !== null ? (
                   <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
                 ) : (
-                  <span className="text-gray-600">{TEXTO_ENTREGA_SIN_ENLACE}</span>
+                  <span className="text-texto-secundario">{TEXTO_ENTREGA_SIN_ENLACE}</span>
                 )}
                 {corregible && (
                   <CorreccionEnlaceEntrega
@@ -323,34 +324,34 @@ function Contenido({
       </section>
 
       {propuesta !== null && (
-        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-6 bg-surface text-sm">
+        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-4 sm:p-6 bg-surface text-sm">
           <h3 className="font-bold text-primary">
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación
           </h3>
-          <p className="mt-1 text-gray-700">{TEXTO_PROPUESTA_EN_ESPERA_STAFF}</p>
+          <p className="mt-1 text-texto-principal">{TEXTO_PROPUESTA_EN_ESPERA_STAFF}</p>
           {propuesta.motivo !== null && (
-            <p className="mt-2 text-gray-700">
-              <span className="font-semibold">{ETIQUETAS_MOTIVO_PROPUESTA.STAFF}:</span> {propuesta.motivo}
+            <p className="mt-2 text-texto-principal">
+              <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.STAFF}:</span> {propuesta.motivo}
             </p>
           )}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="border border-outline rounded-sm p-3">
-              <p className="text-xs font-bold text-gray-500 uppercase">Franja original</p>
-              <p className={`text-gray-500 ${propuesta.cambiaFranja ? 'line-through' : ''}`}>
+            <div className="border border-borde-suave rounded-sm p-3">
+              <p className="text-xs font-bold text-texto-secundario uppercase">Franja original</p>
+              <p className={`text-texto-secundario ${propuesta.cambiaFranja ? 'line-through' : ''}`}>
                 {formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}
               </p>
               {/* Tachado solo si el lugar cambia: lo que se conserva no se presenta como descartado. */}
-              <p className={`text-gray-500 ${propuesta.subEspacio !== detalle.sub_espacio ? 'line-through' : ''}`}>
+              <p className={`text-texto-secundario ${propuesta.subEspacio !== detalle.sub_espacio ? 'line-through' : ''}`}>
                 {ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}
               </p>
             </div>
             <div className="border-2 border-primary rounded-sm p-3">
               <p className="text-xs font-bold text-primary uppercase">Franja propuesta</p>
-              <p className="font-semibold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
-              <p className="font-semibold text-primary">
+              <p className="font-bold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
+              <p className="font-bold text-primary">
                 {ETIQUETAS_SUB_ESPACIO[propuesta.subEspacio]}
                 {propuesta.subEspacio === detalle.sub_espacio && (
-                  <span className="font-normal text-gray-500"> (el mismo sub-espacio)</span>
+                  <span className="font-normal text-texto-secundario"> (el mismo sub-espacio)</span>
                 )}
               </p>
             </div>
@@ -358,16 +359,16 @@ function Contenido({
         </section>
       )}
 
-      <section aria-labelledby={idRecursos} className="border border-outline rounded-lg p-6 bg-surface">
-        <h3 id={idRecursos} className="text-sm font-bold text-primary mb-3">
+      <section aria-labelledby={idRecursos} className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
+        <h3 id={idRecursos} className="text-base font-bold text-primary mb-3">
           Recursos solicitados
         </h3>
         {filas.length === 0 ? (
-          <p className="text-sm text-gray-500">{TEXTO_SIN_RECURSOS}</p>
+          <p className="text-sm text-texto-secundario">{TEXTO_SIN_RECURSOS}</p>
         ) : (
           <>
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-gray-500 border-b border-outline">
+              <thead className="text-xs text-texto-secundario border-b border-borde-suave">
                 <tr>
                   <th scope="col" className="py-2">Recurso</th>
                   <th scope="col" className="py-2">Solicitada</th>
@@ -376,7 +377,7 @@ function Contenido({
               </thead>
               <tbody>
                 {filas.map((fila) => (
-                  <tr key={fila.id} className={`border-b border-outline ${fila.superaInventario ? 'bg-gray-50' : ''}`}>
+                  <tr key={fila.id} className={`border-b border-borde-suave ${fila.superaInventario ? 'bg-superficie-suave' : ''}`}>
                     <th scope="row" className="py-2 font-medium text-primary">{fila.nombre}</th>
                     <td className="py-2">{fila.solicitada}</td>
                     <td className="py-2">
@@ -393,7 +394,7 @@ function Contenido({
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-xs text-gray-500">{TEXTO_NOTA_INVENTARIO}</p>
+            <p className="mt-2 text-xs text-texto-secundario">{TEXTO_NOTA_INVENTARIO}</p>
           </>
         )}
       </section>

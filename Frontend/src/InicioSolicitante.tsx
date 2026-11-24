@@ -1,13 +1,16 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudPropia, UsuarioSesion } from './api/esquemas'
-import { Encabezado } from './componentes/Encabezado'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
+import { Seccion } from './componentes/Seccion'
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud'
 import { MAXIMO_PROXIMAS_INICIO, REGLAS_ESTUDIO_C, resumenInicioSolicitante } from './presentacion/inicio'
 import { RUTA_MIS_SOLICITUDES } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_INICIO_SOLICITANTE = 'Inicio'
 export const TEXTO_CARGANDO_INICIO_SOLICITANTE = 'Cargando tus solicitudes...'
@@ -33,8 +36,6 @@ interface InicioSolicitanteProps {
  */
 export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitanteProps) {
   const api = useApi()
-  const id = useId()
-  const ids = { pendientes: `${id}-pendientes`, proximas: `${id}-proximas`, reglas: `${id}-reglas` }
   // Mismo patrón de carga por versión que InicioStaff y TableroStaff.
   const [version, setVersion] = useState(0)
   const [respuesta, setRespuesta] = useState<{
@@ -58,91 +59,96 @@ export default function InicioSolicitante({ usuario, onLogout }: InicioSolicitan
   const error = !cargando && resultado !== undefined && !resultado.ok ? textoDeError(resultado.error) : null
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_SOLICITANTE} />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
-        <div className="flex flex-wrap justify-between items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-gray-600">Reserva los espacios del Estudio C y sigue tus solicitudes.</p>
-          </div>
-          <Link
-            to={RUTA_MIS_SOLICITUDES}
-            className="px-5 py-2.5 bg-primary text-white rounded-sm font-bold hover:opacity-90"
-          >
-            {TEXTO_NUEVA_SOLICITUD}
-          </Link>
-        </div>
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-8">
+        <CabeceraPagina
+          contexto={TEXTO_TITULO_INICIO_SOLICITANTE}
+          titulo={`Hola, ${usuario.nombre}`}
+          descripcion="Reserva los espacios del Estudio C y sigue tus solicitudes."
+          accion={
+            <Link
+              to={RUTA_MIS_SOLICITUDES}
+              className="inline-block px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors"
+            >
+              {TEXTO_NUEVA_SOLICITUD}
+            </Link>
+          }
+        />
 
-        {cargando && resumen === null && <p className="text-sm text-gray-500">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
+        {cargando && resumen === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO_SOLICITANTE}</p>}
         {error !== null && (
           <div>
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {error}
-            </p>
+            </CajaError>
             <button
               type="button"
               onClick={() => setVersion((v) => v + 1)}
-              className="mt-2 text-sm underline font-semibold text-primary"
+              className="mt-2 text-sm underline font-bold text-primary"
             >
               Reintentar
             </button>
           </div>
         )}
 
-        {resumen !== null && (
-          <>
-            {/* Solo si hay alguna: es un llamado a la acción, no una sección permanente. */}
-            {resumen.pendientesDeTuRespuesta.length > 0 && (
-              <section aria-labelledby={ids.pendientes} className="space-y-3">
-                <h2 id={ids.pendientes} className="text-lg font-bold text-primary">
-                  <span aria-hidden="true">⚠ </span>
-                  {TEXTO_TITULO_PENDIENTES} ({resumen.pendientesDeTuRespuesta.length})
-                </h2>
-                <p className="text-sm text-gray-700">{TEXTO_AYUDA_PENDIENTES}</p>
-                <ul className="space-y-4">
-                  {resumen.pendientesDeTuRespuesta.map((solicitud) => (
-                    <li key={solicitud.radicado}>
-                      <TarjetaSolicitud solicitud={solicitud} />
-                    </li>
-                  ))}
-                </ul>
-              </section>
+        {/* V1-C (ADR-010 §2.8 C-11): dos columnas desde lg. El DOM conserva el orden de prioridad
+            (pendientes → próximas → recomendaciones), que es el mismo del recorrido con Tab y el de
+            la columna única en móvil. */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start">
+          <div className="space-y-8 lg:col-span-2">
+            {resumen !== null && (
+              <>
+                {/* Solo si hay alguna: es un llamado a la acción, no una sección permanente. */}
+                {resumen.pendientesDeTuRespuesta.length > 0 && (
+                  <Seccion
+                    variante="atencion"
+                    titulo={
+                      <>
+                        <span aria-hidden="true">⚠ </span>
+                        {TEXTO_TITULO_PENDIENTES} ({resumen.pendientesDeTuRespuesta.length})
+                      </>
+                    }
+                    descripcion={TEXTO_AYUDA_PENDIENTES}
+                  >
+                    <ul className="space-y-4">
+                      {resumen.pendientesDeTuRespuesta.map((solicitud) => (
+                        <li key={solicitud.radicado}>
+                          <TarjetaSolicitud solicitud={solicitud} />
+                        </li>
+                      ))}
+                    </ul>
+                  </Seccion>
+                )}
+
+                <Seccion titulo={TEXTO_TITULO_PROXIMAS}>
+                  {resumen.proximasValidadas.length === 0 ? (
+                    <p className="text-sm text-texto-secundario">{TEXTO_SIN_PROXIMAS}</p>
+                  ) : (
+                    <ul className="space-y-4">
+                      {resumen.proximasValidadas.slice(0, MAXIMO_PROXIMAS_INICIO).map((solicitud) => (
+                        <li key={solicitud.radicado}>
+                          <TarjetaSolicitud solicitud={solicitud} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
+                    {TEXTO_VER_TODAS}
+                  </Link>
+                </Seccion>
+              </>
             )}
+          </div>
 
-            <section aria-labelledby={ids.proximas} className="space-y-3">
-              <h2 id={ids.proximas} className="text-lg font-bold text-primary">
-                {TEXTO_TITULO_PROXIMAS}
-              </h2>
-              {resumen.proximasValidadas.length === 0 ? (
-                <p className="text-sm text-gray-500">{TEXTO_SIN_PROXIMAS}</p>
-              ) : (
-                <ul className="space-y-4">
-                  {resumen.proximasValidadas.slice(0, MAXIMO_PROXIMAS_INICIO).map((solicitud) => (
-                    <li key={solicitud.radicado}>
-                      <TarjetaSolicitud solicitud={solicitud} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
-                {TEXTO_VER_TODAS}
-              </Link>
-            </section>
-          </>
-        )}
-
-        <section aria-labelledby={ids.reglas} className="border border-outline rounded-lg p-6 bg-surface">
-          <h2 id={ids.reglas} className="font-bold text-primary mb-2">
-            {TEXTO_TITULO_REGLAS}
-          </h2>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
-            {REGLAS_ESTUDIO_C.map((regla) => (
-              <li key={regla}>{regla}</li>
-            ))}
-          </ul>
-        </section>
-      </main>
-    </div>
+          <aside aria-label="Recomendaciones" className="lg:col-span-1">
+            <Seccion variante="secundaria" titulo={TEXTO_TITULO_REGLAS}>
+              <ul className="list-disc pl-5 space-y-1 text-sm text-texto-principal">
+                {REGLAS_ESTUDIO_C.map((regla) => (
+                  <li key={regla}>{regla}</li>
+                ))}
+              </ul>
+            </Seccion>
+          </aside>
+        </div>
+      </PantallaConSesion>
   )
 }

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
-import App, { TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
+import App, { TEXTO_AUTENTICANDO, TEXTO_SIN_VERIFICAR, TEXTO_VERIFICANDO } from './App'
 import { TEXTO_SIN_PROXIMAS } from './InicioSolicitante'
 import { TEXTO_TITULO_TABLERO } from './TableroStaff'
 import { TEXTO_SESION_EXPIRADA } from './api/errores'
@@ -58,6 +58,20 @@ describe('App', () => {
     expect(screen.getByText(/exclusivamente con tu correo institucional CESMAG/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument()
     expect(screen.getByAltText('Logo Estudio C')).toBeInTheDocument()
+    // R9-3 · 9.3.5: el título es el h1 de la página. V1-B: el panel institucional va en texto, sin escudo.
+    expect(screen.getByRole('banner')).toHaveTextContent('Universidad CESMAG · CIDU · Estudio C')
+    expect(screen.getByRole('banner')).toHaveClass('bg-primary', 'text-surface')
+    // V2: el escudo oficial va en el panel institucional (sobre su disco blanco), antes de la identidad;
+    // la tarjeta de acceso conserva solo el logo de Estudio C.
+    const panel = screen.getByRole('banner')
+    const escudo = within(panel).getByAltText('Escudo de la Universidad CESMAG')
+    expect(escudo).toHaveClass('object-contain')
+    expect(escudo.parentElement).toHaveClass('rounded-full', 'bg-surface')
+    expect(escudo.compareDocumentPosition(within(panel).getByText('CIDU')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(screen.getByRole('main')).getAllByRole('img').map((img) => img.getAttribute('alt'))).toEqual(['Logo Estudio C'])
+    expect(screen.getAllByRole('img')).toHaveLength(2)
+    expect(screen.getByRole('banner')).toHaveTextContent('Hombres nuevos para tiempos nuevos')
+    expect(screen.getByRole('heading', { level: 1, name: 'Acceso al Sistema' })).toHaveClass('font-black', 'text-primary')
     expect(screen.queryByText('Panel de Solicitudes')).not.toBeInTheDocument()
   })
 
@@ -87,6 +101,33 @@ describe('App', () => {
 
     expect(await screen.findByText(`❌ ${mensaje}`)).toBeInTheDocument()
     expect(localStorage.getItem('estudio_c_token')).toBeNull()
+  })
+
+  it('9.3.6: «Autenticando...» es un estado informativo (rol status), no un error, y da paso al mensaje del servidor', async () => {
+    const mensaje = 'Acceso restringido al dominio @unicesmag.edu.co'
+    let responder: ((respuesta: Response) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolver) => {
+            responder = resolver
+          }),
+      ),
+    )
+    mostrarApp()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión con Google' }))
+
+    const estado = await screen.findByRole('status')
+    expect(estado).toHaveTextContent(TEXTO_AUTENTICANDO)
+    expect(estado).toHaveClass('text-texto-secundario')
+    expect(estado).not.toHaveClass('text-accent')
+
+    responder?.(json(401, { statusCode: 401, message: mensaje }))
+
+    expect(await screen.findByText(`❌ ${mensaje}`)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('token vencido (401 en una ruta privada): borra el token y vuelve al login con un aviso', async () => {
@@ -129,7 +170,8 @@ describe('App', () => {
       mostrarApp()
 
       expect(await screen.findByRole('alert')).toHaveTextContent(TEXTO_SIN_VERIFICAR)
-      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+      // R9-3 · 9.3.5: acción principal en Azul 2 con su hover institucional (Azul 1).
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toHaveClass('bg-primary', 'hover:bg-primary-hover')
       expect(localStorage.getItem('estudio_c_token')).toBe('jwt-guardado')
 
       fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }))

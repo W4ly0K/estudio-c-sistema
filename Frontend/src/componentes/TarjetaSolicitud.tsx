@@ -42,17 +42,17 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
   return (
     <article
       aria-labelledby={idRadicado}
-      className={`rounded-lg p-6 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-outline'}`}
+      className={`rounded-lg p-4 sm:p-6 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
     >
-      <div className="flex flex-wrap justify-between items-start gap-3 border-b border-outline pb-4 mb-4">
+      <div className="flex flex-wrap justify-between items-start gap-3 border-b border-borde-suave pb-4 mb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <span className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</span>
-            <h3 id={idRadicado} className="text-lg font-black text-primary">{radicado}</h3>
+            <span className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</span>
+            <h3 id={idRadicado} className="text-lg font-black tracking-wide text-primary">{radicado}</h3>
           </div>
           {/* Fase 7 · PRD v2.2 §5.1: el lugar va junto a la categoría (lo que se reservó). */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-gray-100 text-primary border border-gray-200">
+            <span className="inline-block px-2.5 py-1 rounded-sm text-xs font-medium bg-superficie-suave text-primary border border-borde-suave">
               {ETIQUETAS_CATEGORIA[categoria]}
             </span>
             <InsigniaSubEspacio subEspacio={subEspacio} />
@@ -66,18 +66,18 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div>
-          <p className="text-gray-500 mb-0.5">Fecha y horario (hora de Colombia)</p>
+          <p className="text-texto-secundario mb-0.5">Fecha y horario (hora de Colombia)</p>
           {/* DH2 · F2b: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
-          <p className="font-medium text-primary">{formatearFranja(inicio, fin)}</p>
+          <p className="font-bold text-primary">{formatearFranja(inicio, fin)}</p>
         </div>
         <div>
-          <p className="text-gray-500 mb-0.5">Propósito</p>
+          <p className="text-texto-secundario mb-0.5">Propósito</p>
           <p className="font-medium text-primary line-clamp-2">{proposito}</p>
         </div>
       </div>
 
       {recursos.length > 0 && (
-        <p className="mt-4 pt-3 border-t border-outline text-xs text-gray-600">
+        <p className="mt-4 pt-3 border-t border-borde-suave text-xs text-texto-secundario">
           Recursos: {recursos.map((r) => `${r.cantidad_solicitada} × ${r.recurso.nombre}`).join(' · ')}
         </p>
       )}
@@ -85,7 +85,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
       {/* Wireframe B1 · "intervención inmediata": la propuesta del Staff se ve sin abrir el
           detalle. El motivo no viaja en este listado; se mostrará en el detalle (B3/B4). */}
       {estado === 'Pendiente de Reprogramación' && (
-        <div data-aviso="reprogramacion" className="mt-4 p-3 border border-dotted border-gray-500 rounded-sm bg-gray-50 text-sm">
+        <div data-aviso="reprogramacion" className="mt-4 p-3 border border-dotted border-borde-control rounded-sm bg-superficie-suave text-sm">
           <p className="font-bold text-primary">
             <span aria-hidden="true">↻ </span>
             {TEXTO_PROPUESTA_STAFF}
@@ -101,14 +101,14 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
               Sub-espacio propuesto: <strong>{ETIQUETAS_SUB_ESPACIO[lugarPropuesto]}</strong>
             </p>
           )}
-          <p className="mt-1 text-gray-600">{TEXTO_PROPUESTA_EN_ESPERA}</p>
+          <p className="mt-1 text-texto-secundario">{TEXTO_PROPUESTA_EN_ESPERA}</p>
         </div>
       )}
 
       {/* Fase 8 · requisito 4: el producto final se abre desde el panel, sin entrar al detalle. */}
       {enlace !== null && (
-        <div className="mt-4 pt-3 border-t border-outline text-sm">
-          <p className="text-gray-500 mb-0.5">{TEXTO_PRODUCTO_FINAL}</p>
+        <div className="mt-4 pt-3 border-t border-borde-suave text-sm">
+          <p className="text-texto-secundario mb-0.5">{TEXTO_PRODUCTO_FINAL}</p>
           <EnlaceProductoFinal enlace={enlace} radicado={radicado} />
         </div>
       )}
@@ -118,7 +118,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
             no aparecen N "Ver seguimiento detallado" idénticos. */}
         <Link
           to={rutaDetalle(radicado)}
-          className="px-3 py-1.5 border border-primary rounded-sm text-sm font-medium text-primary hover:bg-gray-50"
+          className="px-3 py-1.5 border border-primary rounded-sm text-sm font-medium text-primary hover:bg-superficie-suave"
         >
           {/* El espacio va FUERA del span: el cálculo del nombre accesible recorta los
               espacios de los extremos de cada elemento hijo, pero no los de un texto suelto. */}

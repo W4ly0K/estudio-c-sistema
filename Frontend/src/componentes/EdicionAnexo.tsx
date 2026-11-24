@@ -17,6 +17,7 @@ import {
 import { CampoEnlace } from './CampoEnlace'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
 import { EnlaceAnexo } from './EnlaceAnexo'
+import { CajaError } from './CajaError'
 
 interface EdicionAnexoProps {
   /** El detalle vigente: de aquí sale la FOTO del anexo al abrir el diálogo. */
@@ -146,7 +147,7 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
       >
         {anteriorObservado !== null && (
           // div y no p: EnlaceAnexo pinta un <p> cuando el enlace guardado no es seguro.
-          <div className="mt-4 text-gray-700">
+          <div className="mt-4 text-texto-principal">
             {TEXTO_ANEXO_ACTUAL}: <EnlaceAnexo enlace={anteriorObservado} radicado={detalle.radicado} />
           </div>
         )}
@@ -161,15 +162,15 @@ export function EdicionAnexo({ detalle, alCompletar, alRecargar }: EdicionAnexoP
           />
         )}
         {error !== null && (
-          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
+          <CajaError className="mt-4">
             <p className="font-bold">{textoDeError(error)}</p>
             {/* 409: el estado o el anexo cambiaron mientras se veían (el Staff avanzó, otra pestaña...). */}
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
                 Recargar la solicitud
               </button>
             )}
-          </div>
+          </CajaError>
         )}
       </DialogoConfirmacion>
     </>
