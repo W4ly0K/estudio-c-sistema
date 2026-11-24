@@ -66,6 +66,7 @@
 ### 2.5 Marca, foco y guardia (D-R3-5 a D-R3-7)
 
 - **D-R3-5 · Encabezado institucional:** franja en Azul 2 con el **escudo**, «Universidad CESMAG» y el logo del Estudio C. **Pendiente:** depende de la pregunta 14 y del recurso del escudo (§3); no se implementa antes.
+  - **Enmienda (2026-11-24, §2.8 C-2):** mientras la pregunta 14 siga abierta, el encabezado se implementa en dos niveles con la identidad en **texto** y sin escudo ni marcador que lo simule. El escudo se integra en V2.
   - **Versión del escudo:** positiva sobre blanco o en una tinta blanca sobre azul (pág. 9). Nunca deformado ni recoloreado (pág. 15).
   - **Tamaño y área:** ≥ 24 px de alto en pantalla (equivalente a 6 mm), con su área de seguridad (pág. 10).
   - **Recurso:** recortado a su contenido real desde el original de 1201 px (lección 1 del PR #13). Si no existe la versión oficial en una tinta, se pide a la Oficina de Comunicaciones y Mercadeo.
@@ -79,6 +80,19 @@
 - La paleta complementaria por facultades, los degradados como fondo de texto y el modo oscuro.
 - El inventario (`Recurso` y `Solicitud_Recurso`, suspendido desde la Fase 7).
 - El backend y la base de datos: R9-3 es solo frontend.
+
+### 2.8 Composición institucional (V1, 2026-11-24)
+
+Objetivo aprobado por el responsable del proyecto: que el sistema se perciba como una plataforma de la Universidad CESMAG vinculada al CIDU, no como una aplicación genérica con colores institucionales. Las capturas del sitio institucional son referencia de **estructura**; los prototipos de otros sistemas, solo inspiración.
+
+| Id | Decisión |
+|---|---|
+| C-1 | **Identidad textual única** en `presentacion/identidad.ts`: «Universidad CESMAG · CIDU · Estudio C», «Sistema de Solicitudes y Reservas» y el lema «Ciencia y Servicio», confirmados por el responsable del proyecto. CIDU va solo como sigla. Ningún componente dibuja ni simula el escudo |
+| C-2 | **Encabezado de dos niveles** (enmienda de D-R3-5): franja en Azul 2 con la identidad en texto blanco (11,12:1) y barra blanca con el logo de Estudio C, el sistema y la página, la navegación por rol y el usuario. Se conserva el orden C8 (marca → navegación → nombre → Salir) y el comportamiento responsivo. «Saltar al contenido» es el primer elemento enfocable y lleva el foco al contenido principal |
+| C-3 | **Composición común** `PantallaConSesion`: encabezado, `<main id="contenido">` con foco por código y pie, en las 6 pantallas con sesión |
+| C-4 | **Pie discreto** `PieInstitucional`: pertenencia, sistema y lema; sin datos de contacto ni enlaces, porque ninguno está verificado |
+| C-5 | **Rol en palabras** («Solicitante», «Staff») y sin el rojo de error (D-R3-4) |
+| C-6 | **Dirección aprobada para los lotes siguientes:** V1-B (login de dos paneles y cabeceras de página con un `h1` por pantalla), V1-C (inicios del solicitante y del Staff), V1-D (tablero, detalles, tarjetas y formularios) y V2 (escudo oficial, tras las preguntas 14 y 15). Tema claro con superficies blancas; sin rojo decorativo mientras D-R3-4 no cambie |
 
 ### 2.7 Registro de decisiones de implementación (2026-11-23)
 
@@ -165,3 +179,4 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | `d8a2e0b` | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
 | `8bc8b41` | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
 | `8c6d401` | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
+| — | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ⏳ |
