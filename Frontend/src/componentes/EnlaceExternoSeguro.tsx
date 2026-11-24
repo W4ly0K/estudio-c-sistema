@@ -22,7 +22,7 @@ interface EnlaceExternoSeguroProps {
 export function EnlaceExternoSeguro({ enlace, radicado, texto, textoNoDisponible, marca }: EnlaceExternoSeguroProps) {
   if (!esEnlaceSeguro(enlace)) {
     return (
-      <p data-enlace="no-disponible" className="text-sm text-gray-600">
+      <p data-enlace="no-disponible" className="text-sm text-texto-secundario">
         {textoNoDisponible}
       </p>
     )

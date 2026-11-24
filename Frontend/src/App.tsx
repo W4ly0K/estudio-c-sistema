@@ -16,6 +16,8 @@ import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from '.
 import { useSesion } from './sesion/use-sesion';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
+/** Estado informativo mientras el servidor valida la credencial de Google (no es un error). */
+export const TEXTO_AUTENTICANDO = 'Autenticando...';
 export const TEXTO_SIN_VERIFICAR =
   'No pudimos verificar tu sesión con el servidor. Tu sesión sigue guardada: intenta de nuevo en un momento.';
 
@@ -23,7 +25,7 @@ export const TEXTO_SIN_VERIFICAR =
 function PantallaCentrada({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-outline rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
         <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         {children}
       </div>
@@ -67,7 +69,7 @@ function App() {
       return;
     }
 
-    setStatus('Autenticando...');
+    setStatus(TEXTO_AUTENTICANDO);
     const error = await iniciarSesion(credencial);
     // Mensaje del servidor tal cual (por ejemplo, el del dominio institucional).
     setStatus(error === null ? '' : `❌ ${textoDeError(error)}`);
@@ -84,7 +86,7 @@ function App() {
       // Evita el parpadeo de la pantalla de login antes de saltar al panel.
       return (
         <PantallaCentrada>
-          <output className="block text-sm text-gray-500">{TEXTO_VERIFICANDO}</output>
+          <output className="block text-sm text-texto-secundario">{TEXTO_VERIFICANDO}</output>
         </PantallaCentrada>
       );
 
@@ -93,10 +95,10 @@ function App() {
         <PantallaCentrada>
           <p role="alert" className="text-sm text-primary mb-6">{TEXTO_SIN_VERIFICAR}</p>
           <div className="flex gap-3">
-            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">
+            <button type="button" onClick={reintentar} className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors">
               Reintentar
             </button>
-            <button type="button" onClick={handleLogout} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">
+            <button type="button" onClick={handleLogout} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">
               Cerrar sesión
             </button>
           </div>
@@ -141,16 +143,21 @@ function App() {
 
   // Aviso de la máquina (sesión expirada) o resultado del último intento de login.
   const mensaje = status !== '' ? status : sesion.aviso === null ? '' : `⚠️ ${sesion.aviso}`;
+  // R9-3 · 9.3.6: «Autenticando...» es un estado informativo, no un error. Se pinta aparte, en un
+  // <output> (rol status) que existe solo mientras dura: nunca convive con el mensaje de error, así
+  // que no hay dos anuncios del mismo intento. El flujo de autenticación no cambia.
+  const autenticando = status === TEXTO_AUTENTICANDO;
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-outline rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
-        
-        {/* Logo (Verifica que la ruta sea correcta) */}
+      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+        {/* R9-3 · 9.3.5: el título es el h1 de la página (no hay encabezado sin sesión); Roboto 900 en
+            Azul 2 y la indicación en texto-secundario, en tamaño legible. El escudo espera las preguntas
+            14 y 15 (ADR-010). */}
         <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
         
-        <h2 className="text-xl font-bold text-primary mb-1">Acceso al Sistema</h2>
-        <p className="text-xs text-gray-500 mb-6">
+        <h1 className="text-2xl font-black text-primary mb-2">Acceso al Sistema</h1>
+        <p className="text-sm text-texto-secundario mb-6">
           Inicia sesión exclusivamente con tu correo institucional CESMAG.
         </p>
         
@@ -164,12 +171,14 @@ function App() {
           />
         </div>
         
-        {mensaje && (
-          <p className="mt-3 text-xs font-bold text-accent">{mensaje}</p>
+        {autenticando ? (
+          <output className="block mt-3 text-xs text-texto-secundario">{TEXTO_AUTENTICANDO}</output>
+        ) : (
+          mensaje && <p className="mt-3 text-xs font-bold text-accent">{mensaje}</p>
         )}
       </div>
       
-      <p className="mt-6 text-xs text-gray-400 font-medium">
+      <p className="mt-6 text-xs text-texto-terciario font-medium">
         Universidad CESMAG · Ciencia y Servicio
       </p>
     </div>

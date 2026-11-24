@@ -14,6 +14,7 @@ import {
   autorDelEvento,
   descripcionDelEvento,
 } from '../presentacion/enlaces-staff'
+import { CajaError } from './CajaError'
 
 interface HistorialEnlacesProps {
   radicado: string
@@ -30,7 +31,7 @@ type Estado =
 /** Un valor histórico como TEXTO (DK4-3): nunca un enlace ejecutable, aunque fuera seguro. */
 function Valor({ valor }: { valor: string | null }) {
   return valor === null ? (
-    <span className="text-gray-500">{TEXTO_SIN_ENLACE}</span>
+    <span className="text-texto-secundario">{TEXTO_SIN_ENLACE}</span>
   ) : (
     <code className="break-all text-xs text-primary">{valor}</code>
   )
@@ -65,48 +66,48 @@ export function HistorialEnlaces({ radicado, idSolicitante, version }: Historial
   }, [api, radicado, clave])
 
   return (
-    <section aria-labelledby={`${id}-titulo`} className="border border-outline rounded-lg p-6 bg-surface text-sm">
+    <section aria-labelledby={`${id}-titulo`} className="border border-borde-suave rounded-lg p-6 bg-surface text-sm">
       <h3 id={`${id}-titulo`} className="text-sm font-bold text-primary">
         {TEXTO_TITULO_HISTORIAL}
       </h3>
-      <p className="mt-1 text-xs text-gray-500">{TEXTO_NOTA_HISTORIAL}</p>
-      {estado === null && <p className="mt-3 text-gray-500">{TEXTO_HISTORIAL_CARGANDO}</p>}
+      <p className="mt-1 text-xs text-texto-secundario">{TEXTO_NOTA_HISTORIAL}</p>
+      {estado === null && <p className="mt-3 text-texto-secundario">{TEXTO_HISTORIAL_CARGANDO}</p>}
       {estado?.tipo === 'error' && (
         <div className="mt-3">
-          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm font-bold text-accent">
+          <CajaError className="font-bold">
             {TEXTO_HISTORIAL_ERROR} {estado.texto}
-          </p>
-          <button type="button" onClick={() => setIntento((n) => n + 1)} className="mt-2 underline font-semibold text-primary">
+          </CajaError>
+          <button type="button" onClick={() => setIntento((n) => n + 1)} className="mt-2 underline font-bold text-primary">
             Reintentar
           </button>
         </div>
       )}
       {estado?.tipo === 'lista' && estado.datos.eventos.length === 0 && (
-        <p className="mt-3 text-gray-500">{TEXTO_HISTORIAL_VACIO}</p>
+        <p className="mt-3 text-texto-secundario">{TEXTO_HISTORIAL_VACIO}</p>
       )}
       {estado?.tipo === 'lista' && estado.datos.eventos.length > 0 && (
         <ol className="mt-3 space-y-3">
           {estado.datos.eventos.map((evento) => (
-            <li key={evento.id_log} className="border border-outline rounded-sm p-3">
+            <li key={evento.id_log} className="border border-borde-suave rounded-sm p-3">
               <p className="font-bold text-primary">{descripcionDelEvento(evento)}</p>
               <dl className="mt-2 grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                <dt className="text-gray-500">Fecha (hora de Colombia)</dt>
+                <dt className="text-texto-secundario">Fecha (hora de Colombia)</dt>
                 <dd>{formatearMomento(evento.fecha_modificacion)}</dd>
-                <dt className="text-gray-500">Antes</dt>
+                <dt className="text-texto-secundario">Antes</dt>
                 <dd>
                   <Valor valor={evento.enlace_anterior} />
                 </dd>
-                <dt className="text-gray-500">Después</dt>
+                <dt className="text-texto-secundario">Después</dt>
                 <dd>
                   <Valor valor={evento.enlace_nuevo} />
                 </dd>
                 {evento.motivo_correccion !== null && (
                   <>
-                    <dt className="text-gray-500">Motivo</dt>
+                    <dt className="text-texto-secundario">Motivo</dt>
                     <dd className="whitespace-pre-line">{evento.motivo_correccion}</dd>
                   </>
                 )}
-                <dt className="text-gray-500">Registrado por</dt>
+                <dt className="text-texto-secundario">Registrado por</dt>
                 <dd>{autorDelEvento(evento, idSolicitante)}</dd>
               </dl>
             </li>

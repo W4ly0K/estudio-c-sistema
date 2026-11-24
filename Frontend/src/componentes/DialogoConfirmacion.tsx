@@ -50,9 +50,11 @@ export function DialogoConfirmacion({
   const mostrarRazon = bloqueado && razonBloqueo !== undefined && razonBloqueo !== ''
   // B2: el bloqueo se ve por la forma (gris, borde punteado, cursor), no solo por la opacidad:
   // con opacity-60 el rojo de una acción irreversible seguía pareciendo activo.
+  // R9-3 (D-R3-4): fondo superficie-suave; texto-secundario sobre él mide 5,85:1 (WCAG exime al
+  // deshabilitado, pero se cumple igual) y el borde punteado lo separa del botón secundario activo.
   const estiloConfirmar = bloqueado
-    ? 'bg-gray-200 text-gray-600 border border-dashed border-gray-400 cursor-not-allowed'
-    : `${irreversible ? 'bg-accent' : 'bg-primary'} text-white disabled:opacity-60`
+    ? 'bg-superficie-suave text-texto-secundario border border-dashed border-borde-control cursor-not-allowed'
+    : `${irreversible ? 'bg-accent' : 'bg-primary'} text-surface disabled:opacity-60`
 
   // useLayoutEffect: abrir y cerrar ocurren en el MISMO commit que cambia el contenido; nunca
   // queda un fotograma con el resultado pintado y el modal todavía abierto encima (ver 6.4.5).
@@ -73,19 +75,19 @@ export function DialogoConfirmacion({
         // Escape con la petición en vuelo: cerrar haría creer que se canceló la acción.
         if (enCurso) evento.preventDefault()
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50 text-sm"
+      className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-borde-suave rounded-xl p-6 shadow-xl backdrop:bg-black/50 text-sm"
     >
       {abierto && (
         <>
           <h3 id={`${id}-titulo`} className="text-lg font-bold text-primary mb-3">
             {titulo}
           </h3>
-          <p id={`${id}-descripcion`} className="text-gray-700">
+          <p id={`${id}-descripcion`} className="text-texto-principal">
             {descripcion}
           </p>
           {children}
           {mostrarRazon && (
-            <p id={idRazon} className="mt-4 text-sm font-semibold text-primary">
+            <p id={idRazon} className="mt-4 text-sm font-bold text-primary">
               {razonBloqueo}
             </p>
           )}
@@ -94,7 +96,7 @@ export function DialogoConfirmacion({
               type="button"
               onClick={onCerrar}
               disabled={enCurso}
-              className="px-4 py-2 border border-outline rounded-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="px-4 py-2 border border-borde-control rounded-sm text-texto-principal hover:bg-superficie-suave disabled:opacity-50"
             >
               {TEXTO_VOLVER_SIN_CAMBIOS}
             </button>

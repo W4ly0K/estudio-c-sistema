@@ -7,6 +7,7 @@ import { Encabezado } from './componentes/Encabezado'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
+import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_TABLERO = 'Tablero de solicitudes'
 export const TEXTO_CARGANDO_TABLERO = 'Cargando el tablero...'
@@ -73,14 +74,14 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
         <div className="flex flex-wrap justify-between items-end gap-4">
           <div>
             <h2 className="text-2xl font-black text-primary">{TEXTO_TITULO_TABLERO}</h2>
-            <p className="text-sm text-gray-600">Urgentes primero y luego por la franja más próxima (hora de Colombia).</p>
+            <p className="text-sm text-texto-secundario">Urgentes primero y luego por la franja más próxima (hora de Colombia).</p>
           </div>
           {/* Deshabilitado mientras viaja la petición: un doble clic no dispara dos GET. */}
           <button
             type="button"
             onClick={() => setVersion((v) => v + 1)}
             disabled={actualizando}
-            className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-superficie-suave disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {actualizando ? 'Actualizando…' : 'Actualizar'}
           </button>
@@ -93,11 +94,11 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
             Tablero actualizado ({solicitudes.length} en total).
           </output>
         )}
-        {actualizando && solicitudes === null && <p className="text-sm text-gray-500">{TEXTO_CARGANDO_TABLERO}</p>}
+        {actualizando && solicitudes === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_TABLERO}</p>}
         {error !== null && (
-          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+          <CajaError className="text-sm font-bold">
             {error}
-          </p>
+          </CajaError>
         )}
 
         {tablero !== null && (
@@ -115,7 +116,7 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
               ))}
             </div>
             {/* DE3 · DT1: las cerradas son historial; plegadas para no competir con el trabajo pendiente. */}
-            <details className="border border-outline rounded-lg bg-surface p-4">
+            <details className="border border-borde-suave rounded-lg bg-surface p-4">
               <summary className="cursor-pointer font-bold text-primary">Solicitudes cerradas ({totalCerradas})</summary>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                 {tablero.cerradas.map((columna) => (
@@ -135,16 +136,16 @@ function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTabler
   const id = useId()
   const { estado, solicitudes } = columna
   return (
-    <section aria-labelledby={id} className="rounded-lg border border-outline bg-gray-50 p-3">
+    <section aria-labelledby={id} className="rounded-lg border border-borde-suave bg-superficie-suave p-3">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h3 id={id} className="font-bold text-primary">
           {etiquetaEstado(estado, 'STAFF')}
         </h3>
-        <p className="text-xs font-bold text-gray-600">{contarSolicitudes(solicitudes.length)}</p>
+        <p className="text-xs font-bold text-texto-secundario">{contarSolicitudes(solicitudes.length)}</p>
       </div>
-      {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-gray-600 mb-3">{TEXTO_COLUMNA_PENDIENTE}</p>}
+      {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-texto-secundario mb-3">{TEXTO_COLUMNA_PENDIENTE}</p>}
       {solicitudes.length === 0 ? (
-        <p className="text-sm text-gray-500">{TEXTO_COLUMNA_VACIA}</p>
+        <p className="text-sm text-texto-secundario">{TEXTO_COLUMNA_VACIA}</p>
       ) : (
         <ul className="space-y-3">
           {solicitudes.map((solicitud) => (

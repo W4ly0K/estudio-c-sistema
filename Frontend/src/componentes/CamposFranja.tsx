@@ -22,13 +22,13 @@ export function CamposFranja({ valores, onCambio, ahora }: CamposFranjaProps) {
   return (
     <>
       <div>
-        <label htmlFor={ids.fecha} className="block text-gray-600 mb-1">Fecha</label>
+        <label htmlFor={ids.fecha} className="block text-texto-secundario mb-1">Fecha</label>
         <input
           id={ids.fecha}
           type="date"
           required
           min={hoyEnBogota(ahora)} // DH3 · F2c: hoy en Bogotá, no en UTC
-          className="w-full border border-outline rounded-sm p-2 text-primary"
+          className="w-full border border-borde-control rounded-sm p-2 text-primary"
           value={valores.fecha}
           onChange={(e) => onCambio({ ...valores, fecha: e.target.value })}
         />
@@ -36,30 +36,30 @@ export function CamposFranja({ valores, onCambio, ahora }: CamposFranjaProps) {
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label htmlFor={ids.horaInicio} className="block text-gray-600 mb-1">Hora de inicio</label>
+          <label htmlFor={ids.horaInicio} className="block text-texto-secundario mb-1">Hora de inicio</label>
           <input
             id={ids.horaInicio}
             type="time"
             required
-            className="w-full border border-outline rounded-sm p-2 text-primary"
+            className="w-full border border-borde-control rounded-sm p-2 text-primary"
             value={valores.horaInicio}
             onChange={(e) => onCambio({ ...valores, horaInicio: e.target.value })}
           />
         </div>
         <div>
-          <label htmlFor={ids.horaFin} className="block text-gray-600 mb-1">Hora de finalización</label>
+          <label htmlFor={ids.horaFin} className="block text-texto-secundario mb-1">Hora de finalización</label>
           <input
             id={ids.horaFin}
             type="time"
             required
-            className="w-full border border-outline rounded-sm p-2 text-primary"
+            className="w-full border border-borde-control rounded-sm p-2 text-primary"
             value={valores.horaFin}
             onChange={(e) => onCambio({ ...valores, horaFin: e.target.value })}
           />
         </div>
       </div>
 
-      <p className="text-xs text-gray-500">{TEXTO_BLOQUES_ATENCION}</p>
+      <p className="text-xs text-texto-secundario">{TEXTO_BLOQUES_ATENCION}</p>
     </>
   )
 }

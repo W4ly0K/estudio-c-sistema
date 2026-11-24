@@ -18,6 +18,7 @@ import { TEXTO_FICHA_SIN_ANEXO, edicionDelAnexoDisponible } from './presentacion
 import { ETIQUETAS_CATEGORIA, ETIQUETAS_SUB_ESPACIO } from './presentacion/etiquetas'
 import { ETIQUETAS_MOTIVO_PROPUESTA, lineaDeVida, motivoDeLaPropuesta } from './presentacion/linea-de-vida'
 import { RUTA_INICIO, RUTA_MIS_SOLICITUDES } from './rutas'
+import { CajaError } from './componentes/CajaError'
 
 /**
  * README del backend §8: ajena o inexistente responden el MISMO 404. La UI tampoco los
@@ -114,13 +115,13 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
         <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al panel
         </Link>
-        {carga.tipo === 'cargando' && <p className="text-sm text-gray-500">Cargando la solicitud...</p>}
+        {carga.tipo === 'cargando' && <p className="text-sm text-texto-secundario">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
-          <div className="border border-outline rounded-lg p-8 text-center bg-surface">
+          <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
             <h2 ref={tituloRef} tabIndex={-1} className="text-xl font-bold text-primary outline-none">
               {TEXTO_NO_ENCONTRADA}
             </h2>
-            <p className="text-sm text-gray-600 mt-2">{TEXTO_NO_ENCONTRADA_AYUDA}</p>
+            <p className="text-sm text-texto-secundario mt-2">{TEXTO_NO_ENCONTRADA_AYUDA}</p>
           </div>
         )}
         {carga.tipo === 'error' && (
@@ -128,9 +129,9 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
             <h2 ref={tituloRef} tabIndex={-1} className="sr-only">
               No se pudo cargar la solicitud
             </h2>
-            <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
+            <CajaError className="text-sm font-bold">
               {carga.texto}
-            </p>
+            </CajaError>
           </div>
         )}
         {aviso !== null && (
@@ -188,8 +189,8 @@ function Contenido({
 
   return (
     <>
-      <section className="border border-outline rounded-lg p-6 bg-surface">
-        <p className="text-xs text-gray-500 font-bold tracking-wider">RADICADO</p>
+      <section className="border border-borde-suave rounded-lg p-6 bg-surface">
+        <p className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 ref={tituloRef} tabIndex={-1} className="text-2xl font-black text-primary outline-none">
             {detalle.radicado}
@@ -201,27 +202,27 @@ function Contenido({
         </div>
         <dl className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
-            <dt className="text-gray-500">Categoría</dt>
+            <dt className="text-texto-secundario">Categoría</dt>
             <dd className="font-medium text-primary">{ETIQUETAS_CATEGORIA[detalle.categoria]}</dd>
           </div>
           <div>
-            <dt className="text-gray-500">Fecha y horario (hora de Colombia)</dt>
+            <dt className="text-texto-secundario">Fecha y horario (hora de Colombia)</dt>
             <dd className="font-medium text-primary">{formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}</dd>
           </div>
           <div>
             {/* Fase 7 · PRD v2.2 §5.1: el nombre oficial completo del lugar (Q-A1). */}
-            <dt className="text-gray-500">Sub-espacio</dt>
+            <dt className="text-texto-secundario">Sub-espacio</dt>
             <dd className="font-medium text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</dd>
           </div>
           <div className="sm:col-span-2">
-            <dt className="text-gray-500">Propósito</dt>
+            <dt className="text-texto-secundario">Propósito</dt>
             <dd className="font-medium text-primary">{detalle.proposito}</dd>
           </div>
           {/* Fase 9 · R9-1: el guion que adjuntó el solicitante, abierto de forma segura. K3 (DK3-1):
               junto a él, la edición, solo cuando se ofrece; sin anexo, la fila aparece solo entonces. */}
           {(detalle.enlace_anexo !== null || anexoEditable) && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">{TEXTO_ANEXO}</dt>
+              <dt className="text-texto-secundario">{TEXTO_ANEXO}</dt>
               <dd>
                 {detalle.enlace_anexo !== null ? (
                   <EnlaceAnexo enlace={detalle.enlace_anexo} radicado={detalle.radicado} />
@@ -234,7 +235,7 @@ function Contenido({
           )}
           {detalle.recursos.length > 0 && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">Recursos</dt>
+              <dt className="text-texto-secundario">Recursos</dt>
               <dd className="font-medium text-primary">
                 {detalle.recursos.map((r) => `${r.cantidad_solicitada} × ${r.recurso.nombre}`).join(' · ')}
               </dd>
@@ -243,7 +244,7 @@ function Contenido({
           {/* Fase 8 · requisito 4: el producto final, abierto de forma segura en una pestaña nueva. */}
           {detalle.enlace_entrega !== null && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">{TEXTO_PRODUCTO_FINAL}</dt>
+              <dt className="text-texto-secundario">{TEXTO_PRODUCTO_FINAL}</dt>
               <dd>
                 <EnlaceProductoFinal enlace={detalle.enlace_entrega} radicado={detalle.radicado} />
               </dd>
@@ -259,28 +260,28 @@ function Contenido({
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación del Staff Estudio C
           </h3>
           {propuesta.motivo !== null && (
-            <p className="mt-2 text-gray-700">
-              <span className="font-semibold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
+            <p className="mt-2 text-texto-principal">
+              <span className="font-bold">{ETIQUETAS_MOTIVO_PROPUESTA.SOLICITANTE}:</span> {propuesta.motivo}
             </p>
           )}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="border border-outline rounded-sm p-3">
-              <p className="text-xs font-bold text-gray-500 uppercase">Franja original</p>
-              <p className={`text-gray-500 ${propuesta.cambiaFranja ? 'line-through' : ''}`}>
+            <div className="border border-borde-suave rounded-sm p-3">
+              <p className="text-xs font-bold text-texto-secundario uppercase">Franja original</p>
+              <p className={`text-texto-secundario ${propuesta.cambiaFranja ? 'line-through' : ''}`}>
                 {formatearFranja(detalle.fecha_inicio, detalle.fecha_fin)}
               </p>
               {/* Tachado solo si el lugar cambia: lo que se conserva no se presenta como descartado. */}
-              <p className={`text-gray-500 ${propuesta.subEspacio !== detalle.sub_espacio ? 'line-through' : ''}`}>
+              <p className={`text-texto-secundario ${propuesta.subEspacio !== detalle.sub_espacio ? 'line-through' : ''}`}>
                 {ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}
               </p>
             </div>
             <div className="border-2 border-primary rounded-sm p-3">
               <p className="text-xs font-bold text-primary uppercase">Nueva franja propuesta</p>
-              <p className="font-semibold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
-              <p className="font-semibold text-primary">
+              <p className="font-bold text-primary">{formatearFranja(propuesta.inicio, propuesta.fin)}</p>
+              <p className="font-bold text-primary">
                 {ETIQUETAS_SUB_ESPACIO[propuesta.subEspacio]}
                 {propuesta.subEspacio === detalle.sub_espacio && (
-                  <span className="font-normal text-gray-500"> (el mismo sub-espacio)</span>
+                  <span className="font-normal text-texto-secundario"> (el mismo sub-espacio)</span>
                 )}
               </p>
             </div>
