@@ -22,7 +22,7 @@ Registro de los documentos maestros de `docs/seguimiento/`, de sus copias de con
 
 | Archivo | Tipo | Commit que lo incorpora | SHA-256 (LF) | Estado |
 |---|---|---|---|---|
-| — | — | — | — | Sin registros |
+| [`bitacora-r9-3-identidad-institucional.md`](bitacora-r9-3-identidad-institucional.md) | Bitácora | `8a0a08c` | `e875a8f9e5e1551b61e654f119557f0b3f9ba1000932c9c55d39281ee6b14523` | pendiente de publicación |
 
 ## 2. Publicaciones
 
