@@ -10,11 +10,12 @@ import TableroStaff from './TableroStaff';
 import { SoloRol } from './componentes/SoloRol';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
+import escudoCesmag from './assets/escudo-universidad-cesmag.png';
 import logoEstudioC from './assets/logo-estudio-c-horizontal.png';
 import { textoDeError } from './api/errores';
 import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
-import { DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL, LEMA, SISTEMA } from './presentacion/identidad';
+import { ALT_ESCUDO, DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL, LEMA, SISTEMA } from './presentacion/identidad';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
 /** Estado informativo mientras el servidor valida la credencial de Google (no es un error). */
@@ -26,7 +27,7 @@ export const TEXTO_SIN_VERIFICAR =
  * Marco común de las pantallas sin sesión (login, verificación y reintento).
  *
  * R9-3 · V1-B (ADR-010 §2.8 C-8): dos paneles. El institucional, en Azul 2 con texto blanco
- * (11,12:1), identifica la pertenencia en TEXTO (sin escudo: preguntas 14 y 15), el sistema y el
+ * (11,12:1), identifica la pertenencia en TEXTO (el escudo va solo en la tarjeta blanca), el sistema y el
  * lema; en móvil se apila arriba como una banda. La tarjeta conserva el logo de Estudio C y todo lo
  * que ya hacía (Google, estados y mensajes). Relleno menor en móvil para que quepa en 320 px.
  */
@@ -50,6 +51,8 @@ function PantallaCentrada({ children }: { children: ReactNode }) {
       </header>
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="bg-surface p-6 sm:p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+          {/* V2 (ADR-010 §2.8 C-9): el escudo oficial sobre blanco y, separado, el logo de Estudio C. */}
+          <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-14 w-14 mx-auto mb-6 object-contain" />
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 max-w-full mx-auto mb-6 object-contain" />
           {children}
         </div>

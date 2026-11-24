@@ -15,4 +15,15 @@ export const JERARQUIA_INSTITUCIONAL = [UNIVERSIDAD, CENTRO, SISTEMA] as const
 export const TEXTO_IDENTIDAD = JERARQUIA_INSTITUCIONAL.join(' · ')
 
 export const DESCRIPTOR_SISTEMA = 'Sistema de Solicitudes y Reservas'
-export const LEMA = 'Ciencia y Servicio'
+/**
+ * Lema institucional según el Manual de Identidad (págs. 15 y 16): «Hombres nuevos para tiempos
+ * nuevos», de Fray Guillermo de Castellana, OFMCap. «Ciencia y Servicio» es la leyenda del escudo y
+ * solo aparece dentro de su imagen original.
+ */
+export const LEMA = 'Hombres nuevos para tiempos nuevos'
+
+/**
+ * Escudo oficial (V2, ADR-010 §2.8 C-9): archivo a color publicado por la Universidad en su dominio,
+ * usado sin recolorear, recortar, deformar ni aplicar efectos; solo se escala en proporción.
+ */
+export const ALT_ESCUDO = 'Escudo de la Universidad CESMAG'

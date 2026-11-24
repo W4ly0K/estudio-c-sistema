@@ -61,7 +61,10 @@ describe('App', () => {
     // R9-3 · 9.3.5: el título es el h1 de la página. V1-B: el panel institucional va en texto, sin escudo.
     expect(screen.getByRole('banner')).toHaveTextContent('Universidad CESMAG · CIDU · Estudio C')
     expect(screen.getByRole('banner')).toHaveClass('bg-primary', 'text-surface')
-    expect(screen.getAllByRole('img')).toHaveLength(1)
+    // V2: escudo oficial y, después, el logo de Estudio C, en la tarjeta blanca; el panel azul sin imágenes.
+    expect(screen.getAllByRole('img').map((img) => img.getAttribute('alt'))).toEqual(['Escudo de la Universidad CESMAG', 'Logo Estudio C'])
+    expect(within(screen.getByRole('banner')).queryAllByRole('img')).toHaveLength(0)
+    expect(screen.getByRole('banner')).toHaveTextContent('Hombres nuevos para tiempos nuevos')
     expect(screen.getByRole('heading', { level: 1, name: 'Acceso al Sistema' })).toHaveClass('font-black', 'text-primary')
     expect(screen.queryByText('Panel de Solicitudes')).not.toBeInTheDocument()
   })

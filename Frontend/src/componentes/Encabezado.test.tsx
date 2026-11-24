@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { UsuarioSesion } from '../api/esquemas'
 import { RUTA_INICIO, RUTA_TABLERO } from '../rutas'
 import { ETIQUETAS_ROL } from '../presentacion/etiquetas'
-import { TEXTO_IDENTIDAD } from '../presentacion/identidad'
+import { ALT_ESCUDO, TEXTO_IDENTIDAD } from '../presentacion/identidad'
 import { Encabezado, ID_CONTENIDO } from './Encabezado'
 
 /**
@@ -110,11 +110,31 @@ describe('Encabezado · identidad institucional (R9-3 · V1-A)', () => {
     if (franja !== null) expect(vaAntes(franja, logo)).toBe(true)
   })
 
-  it('sin escudo simulado: el logo de Estudio C es la única imagen del encabezado', () => {
+  it('V2: el escudo oficial y el logo de Estudio C son las dos únicas imágenes, cada uno con su nombre', () => {
     const encabezado = mostrar()
 
-    expect(within(encabezado).getAllByRole('img')).toHaveLength(1)
-    expect(within(encabezado).queryByAltText(/escudo/i)).not.toBeInTheDocument()
+    expect(within(encabezado).getAllByRole('img').map((img) => img.getAttribute('alt'))).toEqual([
+      ALT_ESCUDO,
+      'Logo Estudio C',
+    ])
+  })
+
+  it('V2: el escudo va a la izquierda del logo, en la barra blanca y no en la franja azul', () => {
+    const encabezado = mostrar()
+    const escudo = within(encabezado).getByAltText(ALT_ESCUDO)
+    const logo = within(encabezado).getByAltText('Logo Estudio C')
+
+    expect(vaAntes(escudo, logo)).toBe(true)
+    expect(encabezado.querySelector('[data-parte="identidad"] img')).toBeNull()
+    expect(escudo.closest('[data-parte="marca"]')).not.toBeNull()
+  })
+
+  it('V2: el escudo se escala en proporción (32 px en móvil, 40 px desde md) y sin efectos ni recortes', () => {
+    const escudo = within(mostrar()).getByAltText(ALT_ESCUDO)
+
+    expect(escudo).toHaveClass('h-8', 'w-8', 'md:h-10', 'md:w-10', 'object-contain')
+    const efectos = [...escudo.classList].filter((clase) => /(^|:)(shadow|filter|grayscale|invert|sepia|hue-rotate|opacity|rounded|object-cover|clip|mix-blend)/.test(clase))
+    expect(efectos).toEqual([])
   })
 
   it('«Saltar al contenido» es el primer elemento enfocable y apunta al contenido principal', () => {

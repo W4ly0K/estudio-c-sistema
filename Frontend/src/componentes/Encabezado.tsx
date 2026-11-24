@@ -1,9 +1,10 @@
 import type { MouseEvent } from 'react'
 import { NavLink } from 'react-router'
 import type { UsuarioSesion } from '../api/esquemas'
+import escudoCesmag from '../assets/escudo-universidad-cesmag.png'
 import logoEstudioC from '../assets/logo-estudio-c-horizontal.png'
 import { ETIQUETAS_ROL } from '../presentacion/etiquetas'
-import { DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL } from '../presentacion/identidad'
+import { ALT_ESCUDO, DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL } from '../presentacion/identidad'
 import { navegacionDelRol } from '../presentacion/navegacion'
 
 interface EncabezadoProps {
@@ -44,7 +45,11 @@ const AREA_TACTIL = 'inline-flex min-h-11 items-center'
  *   No hay escudo ni marcador que lo simule (preguntas 14 y 15). La franja es el primer elemento
  *   del mismo contenedor flexible y ocupa su propia línea de borde a borde (ancho más el relleno,
  *   sin encogerse): el orden C8 de lo que sigue (marca → navegación → nombre → Salir) no cambia.
- * - Nivel 2: el logo de Estudio C, el nombre del sistema, la navegación y el usuario. El título de
+ * - Nivel 2: el escudo oficial (32 px en móvil, 40 px desde md) y, separado por un divisor y su
+ *   área de respeto, el logo de Estudio C: dos identidades distintas, no un identificador nuevo
+ *   (Manual, págs. 9, 10 y 14). El escudo no se repite en la franja azul. El descriptor se oculta
+ *   por debajo de sm para que el encabezado móvil siga compacto (el pie lo muestra). Después, la
+ *   navegación y el usuario. El título de
  *   la página ya no se repite aquí: es el `h1` de CabeceraPagina (V1-B). El rol se
  *   muestra en palabras y sin el rojo de error (D-R3-4).
  */
@@ -73,9 +78,16 @@ export function Encabezado({ usuario, onLogout }: EncabezadoProps) {
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
-        <div data-parte="marca" className="flex min-w-0 items-center gap-4">
-          <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
-          <p className="min-w-0 border-l border-borde-suave pl-4 font-bold text-primary tracking-wide">{DESCRIPTOR_SISTEMA}</p>
+        <div data-parte="marca" className="flex min-w-0 items-center gap-3 md:gap-4">
+          <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-8 w-8 md:h-10 md:w-10 shrink-0 object-contain" />
+          <img
+            src={logoEstudioC}
+            alt="Logo Estudio C"
+            className="h-8 md:h-10 w-auto shrink-0 border-l border-borde-suave pl-3 md:pl-4"
+          />
+          <p className="hidden sm:block min-w-0 border-l border-borde-suave pl-4 font-bold text-primary tracking-wide">
+            {DESCRIPTOR_SISTEMA}
+          </p>
         </div>
         <nav aria-label="Navegación principal" className="md:border-l md:border-borde-suave md:pl-4">
           <ul className="flex flex-wrap items-center gap-2 text-sm">
