@@ -2,10 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 y 15 y el recurso oficial del escudo en una tinta (§3); la pregunta 16 se resolvió el 2026-11-23 (§2.7) |
+| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 y 15 y el recurso oficial del escudo en una tinta (§3); la pregunta 16 se resolvió el 2026-11-23 (§2.7). El escudo oficial a color está integrado (§2.8 C-9), pero su **uso institucional sigue condicionado al visto bueno de Comunicaciones**. El 2026-11-24 el responsable del proyecto autorizó integrar la ampliación en `develop` solo como integración de desarrollo: sin `main`, sin despliegue y sin publicación oficial |
 | **Fecha** | 2026-11-09 · diagnóstico actualizado el 2026-11-23 |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
-| **Rama** | `feat/fase-9-identidad-institucional`, creada desde `develop` @ `67a1fb2` (R9-1 integrado por el PR #17) |
+| **Rama** | `feat/fase-9-identidad-institucional`, creada desde `develop` @ `67a1fb2` (R9-1 integrado por el PR #17) e integrada por el PR #18 (`a5a74ed`) · ampliación visual (V1-A a V1-D, V2 y C-13) en `feat/fase-9-identidad-v1a`, creada desde `develop` @ `a5a74ed` |
 | **Complementa a** | [ADR-006](ADR-006-frontend-contrato-tipado.md) (frontend tipado y pruebas de contrato que leen el código fuente) · [ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) (VI1 a VI3: alias por rol y urgencia en Rojo 1, AA medido en `tema.test.ts`) · [ADR-009](ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md) (`EnlaceExternoSeguro` y los campos que se reestilizan) |
 | **Relacionado con** | Backlog de la Fase 9 (R9-3) · PRD v2.5 (borrador) · *Manual de identidad visual* CESMAG (págs. 7 a 12 y 15) · *Manual de Roboto* · bitácora del PR #13 (identidad del Estudio C) |
 
@@ -126,10 +126,10 @@ Decisiones tomadas por el responsable del proyecto durante 9.3.3, sobre la base 
 
 | Pregunta | Opción vigente por defecto | Qué cambia si la respuesta es otra |
 |---|---|---|
-| **14** · ¿Escudo y logo del Estudio C juntos? ¿Cuál tiene más jerarquía? ¿Hace falta el visto bueno de Comunicaciones? | Escudo a la izquierda en el encabezado y logo del Estudio C como marca del sistema. **2026-11-24:** implementado así con autorización del responsable del proyecto y las reglas del Manual (§2.8 C-9); **sigue abierta** hasta el visto bueno de Comunicaciones | Cambia la composición del encabezado y del login; si Comunicaciones debe aprobar, la integración de 9.3.4 espera su visto bueno |
+| **14** · ¿Escudo y logo del Estudio C juntos? ¿Cuál tiene más jerarquía? ¿Hace falta el visto bueno de Comunicaciones? | Escudo a la izquierda en el encabezado y logo del Estudio C como marca del sistema. **2026-11-24:** implementado así con autorización del responsable del proyecto y las reglas del Manual (§2.8 C-9); **sigue abierta** hasta el visto bueno de Comunicaciones. El responsable autorizó integrar en `develop` sin ese visto bueno, solo para desarrollo; `main`, el despliegue y la publicación oficial lo esperan | Cambia la composición del encabezado y del login; si Comunicaciones debe aprobar, la integración de 9.3.4 espera su visto bueno |
 | **15** · ¿Los azules como marca y el rojo para el escudo y la urgencia? | Sí (H9-1) | — |
 | **16** · ¿Qué debe mantenerse sí o sí en el tablero? | ✅ **Resuelta el 2026-11-23** (§2.7, I-4): las 5 columnas, los alias por rol y las insignias, con la equivalencia neutra 1:1 | Criterio de aceptación: pruebas de `TableroStaff`, `Insignias` y de los alias, sin cambios de comportamiento |
-| Recurso oficial del escudo en una tinta | Pendiente de verificar en los archivos | Si no existe: el escudo en positivo sobre una placa blanca dentro de la franja azul, respetando el área de seguridad |
+| Recurso oficial del escudo en una tinta | Se usa el archivo oficial **a color**, sin alteraciones, sobre una superficie blanca dentro de la franja azul (§2.8 C-9). La versión en una tinta **sigue pendiente** de conseguirse | Si se obtiene la versión en una tinta y Comunicaciones la indica para fondos azules, sustituye a la placa blanca |
 
 ---
 
@@ -170,6 +170,8 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 
 - Las respuestas 14 a 16 y la revisión visual conjunta del sitio institucional (paso 9.3.0).
 - El recurso oficial del escudo en una tinta.
+- El visto bueno de Comunicaciones para el uso institucional del escudo: condición para `main`, el despliegue y cualquier publicación oficial.
+- La revisión visual manual de la ampliación (V1-A a V1-D, V2 y C-13) a 320, 768 y 1280 px y con zoom al 200 %, con evidencia por punto.
 - `public/icons.svg` y `src/assets/Logo_Estudio_C_2-02.svg` (pendiente heredado del PR #13): el 2026-11-23 un `grep` no encontró referencias en `.ts`, `.tsx`, `.html` ni `.css`. **Pendientes de revisión: no se eliminan todavía**; su retiro es una decisión aparte.
 
 ---
@@ -186,9 +188,9 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | `d8a2e0b` | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
 | `8bc8b41` | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
 | `8c6d401` | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
-| `39ccc11` | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ✅ |
-| `598407c` | V1-B · Acceso de dos paneles y cabeceras de página con un `h1` por pantalla (§2.8 C-7 y C-8) ✅ |
-| `b651a3e` · `8ae70c5` | V2 · Escudo oficial en el encabezado y en el panel del acceso; lema institucional (§2.8 C-9 y C-10) ✅ (visto bueno de Comunicaciones pendiente) |
-| `9254f35` | V1-C · Inicios del solicitante y del Staff con `Seccion` (§2.8 C-11) ✅ |
-| `3bccf2d` | V1-D · Tablero, tarjetas, detalles y formulario (§2.8 C-12) ✅ |
-| — | V1-D · Composición del tablero: cuatro etapas operativas y la espera debajo (§2.8 C-13) ⏳ |
+| `39ccc11` · `5de6743` | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ✅ |
+| `598407c` · `7dab6db` | V1-B · Acceso de dos paneles y cabeceras de página con un `h1` por pantalla (§2.8 C-7 y C-8) ✅ |
+| `b651a3e` · `14be0c6` · `8ae70c5` · `ca30e90` | V2 · Escudo oficial en el encabezado y en el panel del acceso; lema institucional (§2.8 C-9 y C-10) ✅ (uso institucional condicionado al visto bueno de Comunicaciones) |
+| `9254f35` · `6221666` | V1-C · Inicios del solicitante y del Staff con `Seccion` (§2.8 C-11) ✅ |
+| `3bccf2d` · `60a46e9` · `656d3e3` · `4158496` · `d409ef3` | V1-D · Tablero, tarjetas, detalles y formulario (§2.8 C-12): pruebas automatizadas conformes (935/935); revisión visual pendiente ⏳ |
+| `df27714` · `dc15056` | C-13 · Composición del tablero: cuatro etapas operativas y la espera debajo (§2.8 C-13): pruebas automatizadas conformes (939/939, 54 archivos; lint y build conformes); revisión visual pendiente ⏳ |
