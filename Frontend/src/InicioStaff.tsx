@@ -86,7 +86,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
         {atajos !== null && (
           <>
             <nav aria-label="Atajos del Staff">
-              <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {atajos.map((atajo) => (
                   <li key={atajo.clave}>
                     <TarjetaAtajo atajo={atajo} />
@@ -115,15 +115,17 @@ function TarjetaAtajo({ atajo }: { atajo: AtajoInicio }) {
   const borde = resaltado ? (urgente ? 'border-2 border-urgencia' : 'border-2 border-primary') : 'border border-borde-suave'
   const texto = urgente ? 'text-urgencia' : 'text-primary'
   return (
-    <div data-atencion={resaltado} data-urgencia={urgente} className={`h-full rounded-lg bg-surface p-4 ${borde}`}>
+    <div data-atencion={resaltado} data-urgencia={urgente} className={`flex h-full flex-col rounded-lg bg-surface p-5 ${borde}`}>
+      {/* V1-C (ADR-010 §2.8 C-11): la cifra domina; el título la nombra y la ayuda queda abajo,
+          alineada entre tarjetas. El nombre accesible del enlace sigue siendo "número + título". */}
       <Link to={RUTA_TABLERO} aria-describedby={idAyuda} className={`block ${texto} hover:underline`}>
-        <span className="block text-3xl font-black">
+        <span className="block text-4xl font-black leading-none">
           {resaltado && <span aria-hidden="true">⚠ </span>}
           {atajo.cantidad}
         </span>{' '}
-        <span className="block font-bold">{atajo.titulo}</span>
+        <span className="mt-2 block font-bold">{atajo.titulo}</span>
       </Link>
-      <p id={idAyuda} className="mt-2 text-xs text-texto-secundario">
+      <p id={idAyuda} className="mt-auto pt-3 text-xs text-texto-secundario">
         {atajo.ayuda}
       </p>
     </div>
