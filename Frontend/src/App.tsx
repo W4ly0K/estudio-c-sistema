@@ -27,15 +27,23 @@ export const TEXTO_SIN_VERIFICAR =
  * Marco común de las pantallas sin sesión (login, verificación y reintento).
  *
  * R9-3 · V1-B (ADR-010 §2.8 C-8): dos paneles. El institucional, en Azul 2 con texto blanco
- * (11,12:1), identifica la pertenencia en TEXTO (el escudo va solo en la tarjeta blanca), el sistema y el
- * lema; en móvil se apila arriba como una banda. La tarjeta conserva el logo de Estudio C y todo lo
- * que ya hacía (Google, estados y mensajes). Relleno menor en móvil para que quepa en 320 px.
+ * (11,12:1), reúne el escudo oficial y la identidad (Universidad CESMAG · CIDU · Estudio C, el
+ * descriptor y el lema) en un solo grupo, centrado en horizontal y en vertical; en móvil se apila
+ * arriba como una banda compacta. La tarjeta conserva solo el logo de Estudio C y lo que ya hacía
+ * (Google, estados y mensajes). Relleno menor en móvil para que quepa en 320 px.
+ *
+ * V2 (§2.8 C-9): el escudo es el PNG oficial sin efectos; solo se escala en proporción. Va sobre un
+ * disco blanco (`bg-surface`) que lo separa del Azul 2 y sirve de área de respeto; el disco es del
+ * contenedor, no de la imagen.
  */
 function PantallaCentrada({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col md:flex-row">
-      <header className="bg-primary text-surface px-6 py-8 sm:px-10 md:w-2/5 md:flex md:flex-col md:justify-center md:py-12">
-        <div className="max-w-md space-y-3">
+      <header className="bg-primary text-surface px-6 py-6 sm:px-10 md:w-2/5 md:py-12 flex flex-col items-center justify-center">
+        <div className="mx-auto flex w-full max-w-md flex-col items-center gap-2 md:gap-3 text-center">
+          <div data-parte="escudo" className="rounded-full bg-surface p-2 md:p-3">
+            <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-12 w-12 md:h-20 md:w-20 object-contain" />
+          </div>
           <p data-parte="identidad" className="text-sm font-bold tracking-wide break-words">
             {JERARQUIA_INSTITUCIONAL.map((parte, i) => (
               <span key={parte}>
@@ -44,15 +52,13 @@ function PantallaCentrada({ children }: { children: ReactNode }) {
               </span>
             ))}
           </p>
-          <p className="text-3xl sm:text-4xl font-black">{SISTEMA}</p>
+          <p className="text-2xl md:text-4xl font-black">{SISTEMA}</p>
           <p className="text-base">{DESCRIPTOR_SISTEMA}</p>
           <p className="text-sm italic">{LEMA}</p>
         </div>
       </header>
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="bg-surface p-6 sm:p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
-          {/* V2 (ADR-010 §2.8 C-9): el escudo oficial sobre blanco y, separado, el logo de Estudio C. */}
-          <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-14 w-14 mx-auto mb-6 object-contain" />
           <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 max-w-full mx-auto mb-6 object-contain" />
           {children}
         </div>
