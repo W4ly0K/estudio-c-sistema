@@ -36,6 +36,10 @@ import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentac
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
 import { CajaError } from './componentes/CajaError';
 
+/** V1-D (ADR-010 §2.8 C-12): grupos del formulario B2. Solo agrupan; no cambian campos ni reglas. */
+export const TEXTO_GRUPO_DATOS = 'Datos de la solicitud';
+export const TEXTO_GRUPO_FRANJA = 'Fecha y horario';
+
 interface DashboardProps {
   usuario: UsuarioSesion;
   onLogout: () => void;
@@ -264,7 +268,8 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             <h3 id={ids.titulo} className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
             
             <form onSubmit={handleCrearSolicitud} className="space-y-4 text-sm">
-              
+              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
+              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_DATOS}</legend>
               <div>
                 <label htmlFor={ids.categoria} className="block text-texto-secundario mb-1">Categoría</label>
                 <select 
@@ -336,7 +341,12 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                 />
               )}
 
+              </fieldset>
+
+              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
+              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_FRANJA}</legend>
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
+              </fieldset>
 
               {/* R9-3 (D-R3-3): antes esta caja no tenía role="alert" y un rechazo al radicar (CA-04, CA-06,
                   anexo, sub-espacio) no se anunciaba. Ningún campo del formulario anuncia su propio error:
