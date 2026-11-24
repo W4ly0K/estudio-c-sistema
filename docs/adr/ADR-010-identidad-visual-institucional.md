@@ -92,6 +92,8 @@ Objetivo aprobado por el responsable del proyecto: que el sistema se perciba com
 | C-3 | **Composición común** `PantallaConSesion`: encabezado, `<main id="contenido">` con foco por código y pie, en las 6 pantallas con sesión |
 | C-4 | **Pie discreto** `PieInstitucional`: pertenencia, sistema y lema; sin datos de contacto ni enlaces, porque ninguno está verificado |
 | C-5 | **Rol en palabras** («Solicitante», «Staff») y sin el rojo de error (D-R3-4) |
+| C-7 | **Cabecera de página** `CabeceraPagina` (V1-B): el único `h1` de cada pantalla con sesión, con rótulo de contexto, descripción y acción principal opcionales. El encabezado deja de repetir el título de la página y muestra el nombre del sistema. En los detalles, el `h1` nombra la pantalla y el radicado sigue siendo el `h2` que recibe el foco al cargar |
+| C-8 | **Acceso de dos paneles** (V1-B): panel institucional en Azul 2 con la pertenencia en texto, el sistema, el descriptor y el lema (apilado arriba en móvil), y la tarjeta de acceso con el logo de Estudio C. Lo comparten el login, la verificación y el reintento. Sin cambios en Google, la sesión ni los mensajes |
 | C-6 | **Dirección aprobada para los lotes siguientes:** V1-B (login de dos paneles y cabeceras de página con un `h1` por pantalla), V1-C (inicios del solicitante y del Staff), V1-D (tablero, detalles, tarjetas y formularios) y V2 (escudo oficial, tras las preguntas 14 y 15). Tema claro con superficies blancas; sin rojo decorativo mientras D-R3-4 no cambie |
 
 ### 2.7 Registro de decisiones de implementación (2026-11-23)
@@ -179,4 +181,5 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | `d8a2e0b` | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
 | `8bc8b41` | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
 | `8c6d401` | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
-| — | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ⏳ |
+| `39ccc11` | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ✅ |
+| — | V1-B · Acceso de dos paneles y cabeceras de página con un `h1` por pantalla (§2.8 C-7 y C-8) ⏳ |
