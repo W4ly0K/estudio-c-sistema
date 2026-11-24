@@ -104,7 +104,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
   return (
     <>
       {acciones.length > 0 ? (
-        <section aria-label="Acciones sobre la solicitud" className="border border-borde-suave rounded-lg p-6 bg-surface">
+        <section aria-label="Acciones sobre la solicitud" className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
           <div className="flex flex-wrap justify-end gap-3">
             {acciones.map((transicion) => {
               const { boton, irreversible } = textosDe(transicion.accion, detalle.radicado, franjaPropuesta)

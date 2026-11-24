@@ -118,7 +118,7 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
         <CabeceraPagina titulo="Seguimiento de solicitud" />
         {carga.tipo === 'cargando' && <p className="text-sm text-texto-secundario">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
-          <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
+          <div className="border border-borde-suave rounded-lg p-6 sm:p-8 text-center bg-surface">
             <h2 ref={tituloRef} tabIndex={-1} className="text-xl font-bold text-primary outline-none">
               {TEXTO_NO_ENCONTRADA}
             </h2>
@@ -189,7 +189,7 @@ function Contenido({
 
   return (
     <>
-      <section className="border border-borde-suave rounded-lg p-6 bg-surface">
+      <section className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
         <p className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 ref={tituloRef} tabIndex={-1} className="text-2xl font-black text-primary outline-none">
@@ -255,7 +255,7 @@ function Contenido({
 
       {/* B4: la propuesta y su motivo; la decisión, en las acciones de abajo. */}
       {propuesta !== null && (
-        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-6 bg-surface text-sm">
+        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-4 sm:p-6 bg-surface text-sm">
           <h3 className="font-bold text-primary">
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación del Staff Estudio C
           </h3>
