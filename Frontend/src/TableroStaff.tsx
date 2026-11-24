@@ -135,25 +135,34 @@ function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTabler
   const id = useId()
   const { estado, solicitudes } = columna
   return (
-    <section aria-labelledby={id} className="rounded-lg border border-borde-suave bg-superficie-suave p-3">
-      <div className="flex items-baseline justify-between gap-2 mb-3">
+    // V1-D (ADR-010 §2.8 C-12): la cabecera de la columna va sobre blanco y separada por un borde;
+    // el contador queda FUERA del h3 (el nombre de la región sigue siendo solo el estado). El vacío
+    // se muestra como una caja proporcionada, no como texto suelto.
+    <section aria-labelledby={id} data-columna={estado} className="rounded-lg border border-borde-suave bg-superficie-suave">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b border-borde-suave bg-surface px-3 py-2.5">
         <h3 id={id} className="font-bold text-primary">
           {etiquetaEstado(estado, 'STAFF')}
         </h3>
-        <p className="text-xs font-bold text-texto-secundario">{contarSolicitudes(solicitudes.length)}</p>
+        <p className="shrink-0 rounded-full border border-borde-suave bg-superficie-suave px-2 py-0.5 text-xs font-bold text-texto-principal">
+          {contarSolicitudes(solicitudes.length)}
+        </p>
       </div>
-      {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-texto-secundario mb-3">{TEXTO_COLUMNA_PENDIENTE}</p>}
-      {solicitudes.length === 0 ? (
-        <p className="text-sm text-texto-secundario">{TEXTO_COLUMNA_VACIA}</p>
-      ) : (
-        <ul className="space-y-3">
-          {solicitudes.map((solicitud) => (
-            <li key={solicitud.radicado}>
-              <TarjetaTablero solicitud={solicitud} mostrarEstado={cerrada} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="space-y-3 p-3">
+        {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-texto-secundario">{TEXTO_COLUMNA_PENDIENTE}</p>}
+        {solicitudes.length === 0 ? (
+          <p data-vacio="true" className="rounded-md border border-borde-suave bg-surface px-3 py-4 text-center text-sm text-texto-secundario">
+            {TEXTO_COLUMNA_VACIA}
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {solicitudes.map((solicitud) => (
+              <li key={solicitud.radicado}>
+                <TarjetaTablero solicitud={solicitud} mostrarEstado={cerrada} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }

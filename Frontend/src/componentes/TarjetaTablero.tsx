@@ -45,7 +45,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
       className={`rounded-md p-4 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h4 id={idRadicado} className="font-black text-primary">
+        <h4 id={idRadicado} className="font-black tracking-wide text-primary">
           {radicado}
         </h4>
         <div className="flex flex-wrap gap-1">
@@ -58,7 +58,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         <div>
           <dt className="sr-only">Franja (hora de Colombia)</dt>
           {/* DH2: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
-          <dd className="font-medium text-primary">{formatearFranja(inicio, fin)}</dd>
+          <dd className="font-bold text-primary">{formatearFranja(inicio, fin)}</dd>
         </div>
         <div>
           {/* Fase 7 · PRD v2.2 §5.1: el lugar, junto a la franja (las dos definen CA-06). */}
@@ -92,7 +92,8 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         </div>
       </dl>
 
-      <div className="mt-3 flex justify-end">
+      {/* V1-D (§2.8 C-12): la acción va al pie de la tarjeta, separada de los datos. */}
+      <div className="mt-3 flex justify-end border-t border-borde-suave pt-3">
         {/* Nombre accesible único por tarjeta; el espacio va FUERA del span (ver TarjetaSolicitud). */}
         <Link
           to={rutaDetalle(radicado)}

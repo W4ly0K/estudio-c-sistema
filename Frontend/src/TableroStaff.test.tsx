@@ -179,3 +179,14 @@ describe('TableroStaff (6.5.1)', () => {
     expect(screen.getByRole('button', { name: 'Actualizar' })).toBeEnabled()
   })
 })
+
+describe('TableroStaff · composición (R9-3 · V1-D)', () => {
+  it('cada columna se nombra solo por su estado: el contador va fuera del h3 y el vacío es una caja', async () => {
+    mostrar(responde())
+    const columna = await screen.findByRole('region', { name: 'En Producción' })
+
+    expect(within(columna).getByRole('heading', { level: 3 })).toHaveTextContent(/^En Producción$/)
+    expect(within(columna).getByText('0 solicitudes')).toBeInTheDocument()
+    expect(within(columna).getByText(TEXTO_COLUMNA_VACIA)).toHaveAttribute('data-vacio', 'true')
+  })
+})
