@@ -3,13 +3,10 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
-import { CabeceraPagina } from './componentes/CabeceraPagina'
-import { PantallaConSesion } from './componentes/PantallaConSesion'
+import { Encabezado } from './componentes/Encabezado'
 import { TarjetaTablero } from './componentes/TarjetaTablero'
 import { etiquetaEstado } from './presentacion/etiquetas'
 import { agruparTablero, textoUrgentes, type ColumnaTablero } from './presentacion/tablero'
-import type { Estado } from './api/maquina-estados'
-import { CajaError } from './componentes/CajaError'
 
 export const TEXTO_TITULO_TABLERO = 'Tablero de solicitudes'
 export const TEXTO_CARGANDO_TABLERO = 'Cargando el tablero...'
@@ -28,13 +25,6 @@ function aRespuesta(resultado: Resultado<SolicitudTablero[]>): Respuesta {
   if (resultado.ok) return { tipo: 'lista', solicitudes: resultado.datos }
   return { tipo: 'error', texto: textoDeError(resultado.error) }
 }
-
-/**
- * Composición (ADR-010 §2.8 C-13): el estado de espera se pinta DEBAJO de las cuatro etapas
- * operativas, a ancho completo. Es solo presentación: el estado, su nombre y su pertenencia a
- * las activas no cambian (agruparTablero sigue devolviendo las 5 columnas).
- */
-const ESTADO_EN_ESPERA: Estado = 'Pendiente de Reprogramación'
 
 const contarSolicitudes = (n: number): string => (n === 1 ? '1 solicitud' : `${n} solicitudes`)
 
@@ -74,28 +64,27 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
   const error = !actualizando && estado !== undefined && estado.tipo === 'error' ? estado.texto : null
   const tablero = solicitudes === null ? null : agruparTablero(solicitudes)
   const avisoUrgentes = tablero === null ? null : textoUrgentes(tablero.urgentesEnRecibido)
-  const operativas = tablero === null ? [] : tablero.activas.filter((c) => c.estado !== ESTADO_EN_ESPERA)
-  const enEspera = tablero === null ? undefined : tablero.activas.find((c) => c.estado === ESTADO_EN_ESPERA)
   const totalCerradas = tablero === null ? 0 : tablero.cerradas.reduce((total, c) => total + c.solicitudes.length, 0)
 
   return (
-    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
-        {/* Deshabilitado mientras viaja la petición: un doble clic no dispara dos GET. */}
-        <CabeceraPagina
-          contexto="Staff"
-          titulo={TEXTO_TITULO_TABLERO}
-          descripcion="Urgentes primero y luego por la franja más próxima (hora de Colombia)."
-          accion={
-            <button
-              type="button"
-              onClick={() => setVersion((v) => v + 1)}
-              disabled={actualizando}
-              className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-superficie-suave disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {actualizando ? 'Actualizando…' : 'Actualizar'}
-            </button>
-          }
-        />
+    <div className="min-h-screen bg-background font-sans flex flex-col">
+      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Tablero del Staff" />
+      <main className="flex-1 p-8 max-w-[1400px] mx-auto w-full space-y-6">
+        <div className="flex flex-wrap justify-between items-end gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-primary">{TEXTO_TITULO_TABLERO}</h2>
+            <p className="text-sm text-gray-600">Urgentes primero y luego por la franja más próxima (hora de Colombia).</p>
+          </div>
+          {/* Deshabilitado mientras viaja la petición: un doble clic no dispara dos GET. */}
+          <button
+            type="button"
+            onClick={() => setVersion((v) => v + 1)}
+            disabled={actualizando}
+            className="px-4 py-2 border border-primary rounded-sm text-sm font-bold text-primary hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {actualizando ? 'Actualizando…' : 'Actualizar'}
+          </button>
+        </div>
 
         {/* Solo tras pedirlo (versión > 0): la carga inicial no se anuncia. */}
         {!actualizando && version > 0 && solicitudes !== null && (
@@ -104,11 +93,11 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
             Tablero actualizado ({solicitudes.length} en total).
           </output>
         )}
-        {actualizando && solicitudes === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_TABLERO}</p>}
+        {actualizando && solicitudes === null && <p className="text-sm text-gray-500">{TEXTO_CARGANDO_TABLERO}</p>}
         {error !== null && (
-          <CajaError className="text-sm font-bold">
+          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
             {error}
-          </CajaError>
+          </p>
         )}
 
         {tablero !== null && (
@@ -120,15 +109,13 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
                 {avisoUrgentes}
               </p>
             )}
-            {/* Orden del DOM = orden de lectura: primero las cuatro etapas, luego la espera (también en móvil). */}
-            <div data-fila="operativa" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-              {operativas.map((columna) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
+              {tablero.activas.map((columna) => (
                 <Columna key={columna.estado} columna={columna} cerrada={false} />
               ))}
             </div>
-            {enEspera !== undefined && <Columna columna={enEspera} cerrada={false} ancha />}
             {/* DE3 · DT1: las cerradas son historial; plegadas para no competir con el trabajo pendiente. */}
-            <details className="border border-borde-suave rounded-lg bg-surface p-4">
+            <details className="border border-outline rounded-lg bg-surface p-4">
               <summary className="cursor-pointer font-bold text-primary">Solicitudes cerradas ({totalCerradas})</summary>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                 {tablero.cerradas.map((columna) => (
@@ -138,66 +125,35 @@ export default function TableroStaff({ usuario, onLogout }: TableroStaffProps) {
             </details>
           </>
         )}
-      </PantallaConSesion>
+      </main>
+    </div>
   )
 }
 
-/**
- * Una columna: región con nombre (su estado), contador y la lista de tarjetas. «ancha» la pinta
- * como sección de ancho completo (la espera): tarjetas en rejilla y, vacía, en una sola línea compacta.
- */
-function Columna({
-  columna,
-  cerrada,
-  ancha = false,
-}: {
-  columna: ColumnaTablero<SolicitudTablero>
-  cerrada: boolean
-  ancha?: boolean
-}) {
+/** Una columna: región con nombre (su estado), contador y la lista de tarjetas. */
+function Columna({ columna, cerrada }: { columna: ColumnaTablero<SolicitudTablero>; cerrada: boolean }) {
   const id = useId()
   const { estado, solicitudes } = columna
   return (
-    // V1-D (ADR-010 §2.8 C-12): la cabecera de la columna va sobre blanco y separada por un borde;
-    // el contador queda FUERA del h3 (el nombre de la región sigue siendo solo el estado). El vacío
-    // se muestra como una caja proporcionada, no como texto suelto.
-    <section
-      aria-labelledby={id}
-      data-columna={estado}
-      data-ancha={ancha ? 'true' : undefined}
-      className="rounded-lg border border-borde-suave bg-superficie-suave"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b border-borde-suave bg-surface px-3 py-2.5">
+    <section aria-labelledby={id} className="rounded-lg border border-outline bg-gray-50 p-3">
+      <div className="flex items-baseline justify-between gap-2 mb-3">
         <h3 id={id} className="font-bold text-primary">
           {etiquetaEstado(estado, 'STAFF')}
         </h3>
-        <p className="shrink-0 rounded-full border border-borde-suave bg-superficie-suave px-2 py-0.5 text-xs font-bold text-texto-principal">
-          {contarSolicitudes(solicitudes.length)}
-        </p>
+        <p className="text-xs font-bold text-gray-600">{contarSolicitudes(solicitudes.length)}</p>
       </div>
-      <div className={ancha && solicitudes.length === 0 ? 'flex flex-wrap items-center gap-x-4 gap-y-2 p-3' : 'space-y-3 p-3'}>
-        {estado === ESTADO_EN_ESPERA && <p className="text-xs text-texto-secundario">{TEXTO_COLUMNA_PENDIENTE}</p>}
-        {solicitudes.length === 0 ? (
-          <p
-            data-vacio="true"
-            className={
-              ancha
-                ? 'rounded-md border border-borde-suave bg-surface px-3 py-1.5 text-sm text-texto-secundario'
-                : 'rounded-md border border-borde-suave bg-surface px-3 py-4 text-center text-sm text-texto-secundario'
-            }
-          >
-            {TEXTO_COLUMNA_VACIA}
-          </p>
-        ) : (
-          <ul className={ancha ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 items-start' : 'space-y-3'}>
-            {solicitudes.map((solicitud) => (
-              <li key={solicitud.radicado}>
-                <TarjetaTablero solicitud={solicitud} mostrarEstado={cerrada} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {estado === 'Pendiente de Reprogramación' && <p className="text-xs text-gray-600 mb-3">{TEXTO_COLUMNA_PENDIENTE}</p>}
+      {solicitudes.length === 0 ? (
+        <p className="text-sm text-gray-500">{TEXTO_COLUMNA_VACIA}</p>
+      ) : (
+        <ul className="space-y-3">
+          {solicitudes.map((solicitud) => (
+            <li key={solicitud.radicado}>
+              <TarjetaTablero solicitud={solicitud} mostrarEstado={cerrada} />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

@@ -14,7 +14,6 @@ import {
   type AccionSolicitante,
 } from '../presentacion/acciones-solicitante'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
-import { CajaError } from './CajaError'
 
 type Comando = Promise<Resultado<RespuestaComando<DetalleSolicitante>>>
 
@@ -104,7 +103,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
   return (
     <>
       {acciones.length > 0 ? (
-        <section aria-label="Acciones sobre la solicitud" className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
+        <section aria-label="Acciones sobre la solicitud" className="border border-outline rounded-lg p-6 bg-surface">
           <div className="flex flex-wrap justify-end gap-3">
             {acciones.map((transicion) => {
               const { boton, irreversible } = textosDe(transicion.accion, detalle.radicado, franjaPropuesta)
@@ -114,7 +113,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
                   type="button"
                   onClick={() => abrir(transicion.accion)}
                   className={`px-4 py-2 rounded-sm text-sm font-bold ${
-                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-surface'
+                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-white'
                   }`}
                 >
                   {boton}
@@ -126,7 +125,7 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
       ) : (
         detalle.estado === 'En Producción' &&
         rol === 'SOLICITANTE' && (
-          <p className="p-3 border border-borde-suave rounded-sm bg-superficie-suave text-sm text-texto-principal">{TEXTO_SIN_CANCELACION}</p>
+          <p className="p-3 border border-outline rounded-sm bg-gray-50 text-sm text-gray-700">{TEXTO_SIN_CANCELACION}</p>
         )
       )}
 
@@ -141,16 +140,16 @@ export function AccionesSolicitud({ detalle, rol, alCompletar, alRecargar }: Acc
         onCerrar={cerrar}
       >
         {error !== null && (
-          <CajaError className="mt-4">
+          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
             <p className="font-bold">{textoDeError(error)}</p>
             {seleccionada === 'ACEPTAR_REPROGRAMACION' && <p className="mt-1">{TEXTO_AYUDA_ACEPTAR}</p>}
             {/* 409: la solicitud cambió mientras se veía (el Staff avanzó, otra pestaña...). */}
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
                 Recargar la solicitud
               </button>
             )}
-          </CajaError>
+          </div>
         )}
       </DialogoConfirmacion>
     </>

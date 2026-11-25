@@ -42,10 +42,10 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
   return (
     <article
       aria-labelledby={idRadicado}
-      className={`rounded-md p-4 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
+      className={`rounded-md p-4 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-outline'}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h4 id={idRadicado} className="font-black tracking-wide text-primary">
+        <h4 id={idRadicado} className="font-black text-primary">
           {radicado}
         </h4>
         <div className="flex flex-wrap gap-1">
@@ -58,7 +58,7 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         <div>
           <dt className="sr-only">Franja (hora de Colombia)</dt>
           {/* DH2: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
-          <dd className="font-bold text-primary">{formatearFranja(inicio, fin)}</dd>
+          <dd className="font-medium text-primary">{formatearFranja(inicio, fin)}</dd>
         </div>
         <div>
           {/* Fase 7 · PRD v2.2 §5.1: el lugar, junto a la franja (las dos definen CA-06). */}
@@ -70,13 +70,13 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         {/* Si el contrato llegara sin la franja propuesta, se omite: nunca "Invalid Date". */}
         {estado === 'Pendiente de Reprogramación' && propuestaInicio !== null && propuestaFin !== null && (
           <div>
-            <dt className="text-xs text-texto-secundario">Franja propuesta</dt>
+            <dt className="text-xs text-gray-500">Franja propuesta</dt>
             <dd className="text-primary">{formatearFranja(propuestaInicio, propuestaFin)}</dd>
           </div>
         )}
         {lugarPropuesto !== null && (
           <div>
-            <dt className="text-xs text-texto-secundario">Sub-espacio propuesto</dt>
+            <dt className="text-xs text-gray-500">Sub-espacio propuesto</dt>
             <dd>
               <InsigniaSubEspacio subEspacio={lugarPropuesto} />
             </dd>
@@ -84,20 +84,19 @@ export function TarjetaTablero({ solicitud, mostrarEstado }: TarjetaTableroProps
         )}
         <div>
           <dt className="sr-only">Categoría</dt>
-          <dd className="text-texto-principal">{ETIQUETAS_CATEGORIA[categoria]}</dd>
+          <dd className="text-gray-700">{ETIQUETAS_CATEGORIA[categoria]}</dd>
         </div>
         <div>
           <dt className="sr-only">Solicitante</dt>
-          <dd className="text-texto-principal">{usuario.nombre}</dd>
+          <dd className="text-gray-700">{usuario.nombre}</dd>
         </div>
       </dl>
 
-      {/* V1-D (§2.8 C-12): la acción va al pie de la tarjeta, separada de los datos. */}
-      <div className="mt-3 flex justify-end border-t border-borde-suave pt-3">
+      <div className="mt-3 flex justify-end">
         {/* Nombre accesible único por tarjeta; el espacio va FUERA del span (ver TarjetaSolicitud). */}
         <Link
           to={rutaDetalle(radicado)}
-          className="px-3 py-1.5 border border-primary rounded-sm text-xs font-medium text-primary hover:bg-superficie-suave"
+          className="px-3 py-1.5 border border-primary rounded-sm text-xs font-medium text-primary hover:bg-gray-50"
         >
           Abrir detalle{' '}
           <span className="sr-only">de {radicado}</span>

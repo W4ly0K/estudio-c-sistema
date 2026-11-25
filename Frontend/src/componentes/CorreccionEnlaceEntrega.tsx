@@ -19,7 +19,6 @@ import { CampoEnlace } from './CampoEnlace'
 import { CampoMotivo } from './CampoMotivo'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
 import { EnlaceProductoFinal } from './EnlaceProductoFinal'
-import { CajaError } from './CajaError'
 
 interface CorreccionEnlaceEntregaProps {
   /** El detalle vigente: el enlace que muestra es la FOTO que viaja como anterior. */
@@ -134,7 +133,7 @@ export function CorreccionEnlaceEntrega({ detalle, deshabilitada, alCorregir, al
         onCerrar={cerrar}
       >
         {/* div y no p: EnlaceProductoFinal pinta un <p> cuando el enlace guardado no es seguro. */}
-        <div className="mt-4 text-texto-principal">
+        <div className="mt-4 text-gray-700">
           {TEXTO_ENLACE_ACTUAL}: <EnlaceProductoFinal enlace={anteriorObservado} radicado={detalle.radicado} />
         </div>
         <CampoEnlace
@@ -154,14 +153,14 @@ export function CorreccionEnlaceEntrega({ detalle, deshabilitada, alCorregir, al
           soloLectura={enCurso}
         />
         {error !== null && (
-          <CajaError className="mt-4">
+          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
             <p className="font-bold">{textoDeError(error)}</p>
             {error.tipo === 'http' && error.status === 409 && (
-              <button type="button" onClick={recargar} className="mt-2 underline font-bold">
+              <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
                 Recargar la solicitud
               </button>
             )}
-          </CajaError>
+          </div>
         )}
       </DialogoConfirmacion>
     </>

@@ -29,24 +29,14 @@ describe('Insignias (DV6)', () => {
   it.each([
     ['Rechazado', 'border-dashed'],
     ['Pendiente de Reprogramación', 'border-dotted'],
-    ['En Producción', 'bg-texto-principal'],
-    ['Edición y postproducción', 'bg-texto-secundario'],
+    ['En Producción', 'bg-gray-900'],
+    ['Edición y postproducción', 'bg-gray-700'],
     ['No atendida', 'border-2'],
   ] as const)('"%s" se distingue por la forma o el contraste (%s), no solo por el color', (estado, clase) => {
     const { container } = render(<InsigniaEstado estado={estado} perspectiva="STAFF" />)
 
     expect(container.firstElementChild).toHaveClass(clase)
   })
-
-  it.each(['En Producción', 'Edición y postproducción'] as const)(
-    'R9-3: "%s" va sólido en un neutro con texto blanco (pares medidos en tema.test.ts), no en el azul de las acciones',
-    (estado) => {
-      const { container } = render(<InsigniaEstado estado={estado} perspectiva="STAFF" />)
-
-      expect(container.firstElementChild).toHaveClass('text-surface')
-      expect(container.firstElementChild).not.toHaveClass('bg-primary')
-    },
-  )
 
   it('el símbolo es decorativo: queda oculto para los lectores de pantalla', () => {
     const { container } = render(<InsigniaEstado estado="Rechazado" perspectiva="STAFF" />)
@@ -82,7 +72,6 @@ describe('Insignias (DV6)', () => {
     const { container } = render(<InsigniaUrgencia />)
 
     expect(container.firstElementChild).toHaveClass('text-urgencia', 'border-urgencia', 'border-dashed', 'border-2')
-    expect(container.firstElementChild).toHaveAttribute('data-insignia', 'urgencia')
   })
 
   describe('InsigniaSubEspacio (Fase 7 · PRD v2.2 §5.1)', () => {

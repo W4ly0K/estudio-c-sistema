@@ -27,10 +27,10 @@ export function CampoMotivo({ etiqueta, ayuda, valor, onCambio, limites, soloLec
 
   return (
     <div className="mt-4">
-      <label htmlFor={id} className="block font-bold text-primary">
+      <label htmlFor={id} className="block font-semibold text-primary">
         {etiqueta}
       </label>
-      <p id={idAyuda} className="text-xs text-texto-secundario mb-1">
+      <p id={idAyuda} className="text-xs text-gray-600 mb-1">
         {ayuda}
       </p>
       <textarea
@@ -41,12 +41,12 @@ export function CampoMotivo({ etiqueta, ayuda, valor, onCambio, limites, soloLec
         rows={4}
         aria-describedby={`${idAyuda} ${idContador}`}
         aria-invalid={excede || undefined}
-        className={`w-full p-2 rounded-sm text-sm ${excede ? 'border-2 border-dashed border-primary' : 'border border-borde-control'}`}
+        className={`w-full p-2 rounded-sm text-sm ${excede ? 'border-2 border-dashed border-primary' : 'border border-outline'}`}
       />
       <p
         id={idContador}
         data-estado={evaluacion.estado}
-        className={`text-xs ${evaluacion.valido ? 'text-texto-secundario' : 'font-bold text-primary'}`}
+        className={`text-xs ${evaluacion.valido ? 'text-gray-600' : 'font-bold text-primary'}`}
       >
         {textoContador(evaluacion, limites)}
       </p>

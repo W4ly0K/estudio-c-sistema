@@ -155,20 +155,3 @@ describe('InicioSolicitante (Fase 7 · C5)', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
-
-describe('InicioSolicitante · composición (R9-3 · V1-C)', () => {
-  it('pendientes y próximas van en la columna principal; las recomendaciones, después y como sección secundaria', async () => {
-    mostrar(responde(pendiente('EC-P', 22), validadaEl('EC-V', 3)))
-    const pendientes = await screen.findByRole('region', { name: new RegExp(TEXTO_TITULO_PENDIENTES) })
-    const proximas = seccion(TEXTO_TITULO_PROXIMAS)
-    const reglas = seccion(TEXTO_TITULO_REGLAS)
-    const recomendaciones = screen.getByRole('complementary', { name: 'Recomendaciones' })
-
-    expect(pendientes).toHaveAttribute('data-variante', 'atencion')
-    expect(reglas).toHaveAttribute('data-variante', 'secundaria')
-    expect(recomendaciones).toContainElement(reglas)
-    const antes = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-    expect(antes(pendientes, proximas)).toBe(true)
-    expect(antes(proximas, reglas)).toBe(true)
-  })
-})
