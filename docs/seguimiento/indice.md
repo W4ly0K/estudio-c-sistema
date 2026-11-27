@@ -24,6 +24,7 @@ Registro de los documentos maestros de `docs/seguimiento/`, de sus copias de con
 |---|---|---|---|---|
 | [`bitacora-r9-3-identidad-institucional.md`](bitacora-r9-3-identidad-institucional.md) | Bitácora | `8a0a08c` | `e875a8f9e5e1551b61e654f119557f0b3f9ba1000932c9c55d39281ee6b14523` | pendiente de publicación |
 | [`bitacora-r9-3-ampliacion-visual.md`](bitacora-r9-3-ampliacion-visual.md) | Bitácora | `2c95429` | `eb09892259346d9effe2b48a85fe69cde8d9c8b98261b1baee94c07f536dc2b1` | pendiente de publicación |
+| [`incidente-r9-3-pr19-main.md`](incidente-r9-3-pr19-main.md) | Incidente | `c4ee1b6` | `d2621df6018d4ccacfbf30643101bcbc549d7017dc88cb391757d261d9e92ef6` | pendiente de publicación |
 
 ## 2. Publicaciones
 
