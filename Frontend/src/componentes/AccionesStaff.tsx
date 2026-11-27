@@ -39,7 +39,6 @@ import { CampoSubEspacio } from './CampoSubEspacio'
 import { EnlaceAnexo } from './EnlaceAnexo'
 import { CamposFranja } from './CamposFranja'
 import { DialogoConfirmacion } from './DialogoConfirmacion'
-import { CajaError } from './CajaError'
 
 // Fast Refresh (react/only-export-components): este archivo exporta componentes y literales.
 // Los textos que se CALCULAN (las ayudas, derivadas de los límites) viven en presentacion/motivo.
@@ -270,8 +269,8 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
   return (
     <>
       {acciones.length > 0 && (
-        <section aria-labelledby={`${id}-titulo`} className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
-          <h3 id={`${id}-titulo`} className="text-base font-bold text-primary mb-3">
+        <section aria-labelledby={`${id}-titulo`} className="border border-outline rounded-lg p-6 bg-surface">
+          <h3 id={`${id}-titulo`} className="text-sm font-bold text-primary mb-3">
             Resolución
           </h3>
           {advertirFranja && (
@@ -290,7 +289,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
                   onClick={() => abrir(opcion)}
                   disabled={deshabilitadas}
                   className={`px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 ${
-                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-surface'
+                    irreversible ? 'border-2 border-primary text-primary bg-surface' : 'bg-primary text-white'
                   }`}
                 >
                   {boton}
@@ -298,7 +297,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
               )
             })}
           </div>
-          {deshabilitadas && <p className="mt-2 text-xs text-texto-secundario text-right">{TEXTO_ACTUALIZANDO}</p>}
+          {deshabilitadas && <p className="mt-2 text-xs text-gray-500 text-right">{TEXTO_ACTUALIZANDO}</p>}
         </section>
       )}
 
@@ -318,13 +317,13 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         {confirmaAnexo && (
           // fieldset/legend: grupo con nombre accesible nativo (sin role ni aria-labelledby).
           <fieldset className="mt-4 min-w-0 border-0 p-0">
-            <legend className="p-0 text-texto-secundario">{TEXTO_ETIQUETA_ANEXO_REVISADO}</legend>
+            <legend className="p-0 text-gray-500">{TEXTO_ETIQUETA_ANEXO_REVISADO}</legend>
             {anexoObservado === null ? (
               <p className="font-medium text-primary">{TEXTO_SIN_ANEXO}</p>
             ) : (
               <EnlaceAnexo enlace={anexoObservado} radicado={detalle.radicado} />
             )}
-            <p className="mt-1 text-xs text-texto-secundario">{TEXTO_AYUDA_ANEXO_REVISADO}</p>
+            <p className="mt-1 text-xs text-gray-500">{TEXTO_AYUDA_ANEXO_REVISADO}</p>
           </fieldset>
         )}
         {accion === 'RECHAZAR' && (
@@ -349,7 +348,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
         )}
         {ajustando && (
           <>
-            <p className="mt-4 text-texto-principal">
+            <p className="mt-4 text-gray-700">
               Pedido por el solicitante (hora de Colombia): <strong className="text-primary">{franjaActual}</strong>, en{' '}
               <strong className="text-primary">{ETIQUETAS_SUB_ESPACIO[detalle.sub_espacio]}</strong>
             </p>
@@ -361,13 +360,13 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
                 onCambio={setSubEspacio}
                 soloLectura={enCurso}
               />
-              <p className="text-xs text-texto-secundario">{TEXTO_AYUDA_AJUSTE}</p>
+              <p className="text-xs text-gray-500">{TEXTO_AYUDA_AJUSTE}</p>
             </div>
           </>
         )}
         {accion === 'PROPONER_REPROGRAMACION' && (
           <>
-            <p className="mt-4 text-texto-principal">
+            <p className="mt-4 text-gray-700">
               Franja actual (hora de Colombia): <strong className="text-primary">{franjaActual}</strong>
             </p>
             <div className="mt-4 space-y-4">
@@ -378,7 +377,7 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
                 onCambio={setSubEspacio}
                 soloLectura={enCurso}
               />
-              <p className="text-xs text-texto-secundario">{TEXTO_AYUDA_PROPUESTA_DE_LUGAR}</p>
+              <p className="text-xs text-gray-500">{TEXTO_AYUDA_PROPUESTA_DE_LUGAR}</p>
             </div>
             <CampoMotivo
               etiqueta={TEXTO_ETIQUETA_MOTIVO_REPROGRAMACION}
@@ -391,23 +390,23 @@ export function AccionesStaff({ detalle, deshabilitadas, alCompletar, alRecargar
           </>
         )}
         {errorLocal !== null && (
-          <CajaError className="mt-4 font-bold">
+          <p role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm font-bold text-accent">
             {errorLocal}
-          </CajaError>
+          </p>
         )}
         {error !== null && (
-          <CajaError className="mt-4">
+          <div role="alert" className="mt-4 p-3 bg-red-50 border border-red-200 rounded-sm text-accent">
             <p className="font-bold">{textoDeError(error)}</p>
             {/* 409: la solicitud cambió (otro miembro del Staff, el solicitante, la franja inició...). */}
             {error.tipo === 'http' && error.status === 409 && (
               <>
                 <p className="mt-1">{TEXTO_AYUDA_CONFLICTO}</p>
-                <button type="button" onClick={recargar} className="mt-2 underline font-bold">
+                <button type="button" onClick={recargar} className="mt-2 underline font-semibold">
                   Recargar la solicitud
                 </button>
               </>
             )}
-          </CajaError>
+          </div>
         )}
       </DialogoConfirmacion>
     </>

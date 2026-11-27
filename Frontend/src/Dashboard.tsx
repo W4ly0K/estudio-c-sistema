@@ -20,8 +20,7 @@ import {
 } from './componentes/CampoSubEspacio';
 import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
-import { CabeceraPagina } from './componentes/CabeceraPagina';
-import { PantallaConSesion } from './componentes/PantallaConSesion';
+import { Encabezado } from './componentes/Encabezado';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
 import {
@@ -34,11 +33,6 @@ import {
 import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
-import { CajaError } from './componentes/CajaError';
-
-/** V1-D (ADR-010 §2.8 C-12): grupos del formulario B2. Solo agrupan; no cambian campos ni reglas. */
-export const TEXTO_GRUPO_DATOS = 'Datos de la solicitud';
-export const TEXTO_GRUPO_FRANJA = 'Fecha y horario';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
@@ -199,41 +193,43 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   const avisoPorDecidir = textoPorDecidir(resumen);
 
   return (
-    <>
-      <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1200px] mx-auto w-full space-y-8">
-        <CabeceraPagina
-          contexto="Panel de Solicitudes"
-          titulo="Historial de Radicados"
-          descripcion={
-            !loading && !errorCarga && solicitudes.length > 0
-              ? textoResumen(resumen)
-              : 'Seguimiento de tus reservas de espacios y equipos.'
-          }
-          accion={
-            <button 
-              onClick={() => setDialogo({ vista: 'formulario' })}
-              className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
-            >
-              <span className="text-lg">+</span> Nueva Solicitud
-            </button>
-          }
-        />
+    <div className="min-h-screen bg-background font-sans flex flex-col">
+      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" />
+
+      {/* Área de Trabajo - Tabla Intacta */}
+      <main className="flex-1 p-8 max-w-[1200px] mx-auto w-full">
+        <div className="flex justify-between items-end border-b border-outline pb-4 mb-8">
+          <div>
+            <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {!loading && !errorCarga && solicitudes.length > 0
+                ? textoResumen(resumen)
+                : 'Seguimiento de tus reservas de espacios y equipos.'}
+            </p>
+          </div>
+          <button 
+            onClick={() => setDialogo({ vista: 'formulario' })}
+            className="px-5 py-2.5 bg-accent text-white rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity"
+          >
+            <span className="text-lg">+</span> Nueva Solicitud
+          </button>
+        </div>
 
         {loading ? (
-          <p className="text-sm text-texto-secundario">Cargando radicados...</p>
+          <p className="text-sm text-gray-500">Cargando radicados...</p>
         ) : errorCarga ? (
-          <CajaError className="text-sm font-bold">
+          <p role="alert" className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm font-bold text-accent">
             {errorCarga}
-          </CajaError>
+          </p>
         ) : solicitudes.length === 0 ? (
-          <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
-            <p className="text-texto-secundario text-sm">No tienes solicitudes registradas aún.</p>
+          <div className="border border-outline rounded-lg p-8 text-center bg-surface">
+            <p className="text-gray-500 text-sm">No tienes solicitudes registradas aún.</p>
           </div>
         ) : (
           <div className="space-y-4">
             {/* Wireframe B1 · intervención inmediata: lo que espera al solicitante, arriba. */}
             {avisoPorDecidir !== null && (
-              <p className="p-3 border border-dotted border-borde-control rounded-sm bg-superficie-suave text-sm font-bold text-primary">
+              <p className="p-3 border border-dotted border-gray-500 rounded-sm bg-gray-50 text-sm font-bold text-primary">
                 <span aria-hidden="true">↻ </span>
                 {avisoPorDecidir}
               </p>
@@ -243,7 +239,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             ))}
           </div>
         )}
-      </PantallaConSesion>
+      </main>
 
       {/* Diálogo B2 (formulario) y B1b (éxito). Siempre montado: `showModal()` necesita el
           elemento. El contenido solo existe abierto, así un diálogo cerrado no deja campos
@@ -253,7 +249,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
         ref={dialogoRef}
         onClose={() => setDialogo(DIALOGO_CERRADO)}
         aria-labelledby={ids.titulo}
-        className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-borde-suave rounded-xl p-6 shadow-xl backdrop:bg-black/50"
+        className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-outline rounded-xl p-6 shadow-xl backdrop:bg-black/50"
       >
         {dialogo.vista === 'exito' && (
           <ExitoRadicado
@@ -268,14 +264,13 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             <h3 id={ids.titulo} className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
             
             <form onSubmit={handleCrearSolicitud} className="space-y-4 text-sm">
-              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
-              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_DATOS}</legend>
+              
               <div>
-                <label htmlFor={ids.categoria} className="block text-texto-secundario mb-1">Categoría</label>
+                <label htmlFor={ids.categoria} className="block text-gray-600 mb-1">Categoría</label>
                 <select 
                   id={ids.categoria}
                   required 
-                  className="w-full border border-borde-control rounded-sm p-2 text-primary" 
+                  className="w-full border border-outline rounded-sm p-2 text-primary" 
                   value={form.categoria}
                   // SE10: en un servicio, el texto que explica el lugar describe la categoría elegida.
                   aria-describedby={eligeLugar ? undefined : ids.lugarDeServicios}
@@ -310,18 +305,18 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                   onCambio={(subEspacio) => setForm({ ...form, subEspacio })}
                 />
               ) : (
-                <p id={ids.lugarDeServicios} className="text-xs text-texto-secundario">
+                <p id={ids.lugarDeServicios} className="text-xs text-gray-500">
                   {TEXTO_LUGAR_DE_SERVICIOS}
                 </p>
               )}
 
               <div>
-                <label htmlFor={ids.proposito} className="block text-texto-secundario mb-1">Propósito de la reserva</label>
+                <label htmlFor={ids.proposito} className="block text-gray-600 mb-1">Propósito de la reserva</label>
                 <textarea 
                   id={ids.proposito}
                   required 
                   rows={2}
-                  className="w-full border border-borde-control rounded-sm p-2 text-primary resize-none" 
+                  className="w-full border border-outline rounded-sm p-2 text-primary resize-none" 
                   placeholder="Describe brevemente el uso..."
                   value={form.proposito}
                   onChange={e => setForm({...form, proposito: e.target.value})}
@@ -341,30 +336,22 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                 />
               )}
 
-              </fieldset>
-
-              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
-              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_FRANJA}</legend>
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
-              </fieldset>
 
-              {/* R9-3 (D-R3-3): antes esta caja no tenía role="alert" y un rechazo al radicar (CA-04, CA-06,
-                  anexo, sub-espacio) no se anunciaba. Ningún campo del formulario anuncia su propio error:
-                  la alerta no se duplica. */}
               {errorValidacion && (
-                <CajaError className="mt-2 text-xs font-bold">
+                <div className="p-3 mt-2 bg-red-50 border border-red-200 rounded-sm text-xs font-bold text-accent">
                   {errorValidacion}
-                </CajaError>
+                </div>
               )}
 
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-borde-control rounded-sm text-texto-secundario hover:bg-superficie-suave">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm font-bold transition-colors">Enviar Radicado</button>
+                <button type="button" onClick={() => setDialogo(DIALOGO_CERRADO)} className="px-4 py-2 border border-outline rounded-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-primary text-white rounded-sm font-bold hover:opacity-90">Enviar Radicado</button>
               </div>
             </form>
           </>
         )}
       </dialog>
-    </>
+    </div>
   );
 }

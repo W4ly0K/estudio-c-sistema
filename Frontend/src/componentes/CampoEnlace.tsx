@@ -26,10 +26,10 @@ export function CampoEnlace({ etiqueta, ayuda, valor, onCambio, invalido, soloLe
   const idAyuda = `${id}-ayuda`
   return (
     <div className="mt-4">
-      <label htmlFor={id} className="block font-bold text-primary">
+      <label htmlFor={id} className="block font-semibold text-primary">
         {etiqueta}
       </label>
-      <p id={idAyuda} className="text-xs text-texto-secundario mb-1">
+      <p id={idAyuda} className="text-xs text-gray-600 mb-1">
         {ayuda}
       </p>
       <input
@@ -44,7 +44,7 @@ export function CampoEnlace({ etiqueta, ayuda, valor, onCambio, invalido, soloLe
         readOnly={soloLectura}
         aria-describedby={idAyuda}
         aria-invalid={invalido || undefined}
-        className={`w-full p-2 rounded-sm text-sm ${invalido ? 'border-2 border-dashed border-primary' : 'border border-borde-control'}`}
+        className={`w-full p-2 rounded-sm text-sm ${invalido ? 'border-2 border-dashed border-primary' : 'border border-outline'}`}
       />
     </div>
   )

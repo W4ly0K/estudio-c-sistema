@@ -22,26 +22,11 @@
      surface y ~6:1 sobre background (WCAG AA), medido en tema.test.ts. No es accent: ese rojo es
      el de los errores y las acciones destructivas. */
   --color-urgencia: #BA1828;
-  /* R9-3 (D-R3-3): borde de las cajas de error. Alias de accent (cesmag-rojo-2): ≥ 3:1 sobre surface. */
-  --color-borde-error: #E00F38;
 
   /* Fondos y bordes */
   --color-background: #f4f7f6;
   --color-surface: #ffffff;
-
-  /* Fase 9 · R9-3 (ADR-010, D-R3-2): neutros propios, derivados del Azul 2 porque el manual no
-     define grises. Siempre en hex, para que tema.test.ts mida cada par de contraste.
-     9.3.3: outline (#c6c6cd, 1,70:1) se retiró; los controles usan borde-control y los
-     contenedores y separadores, borde-suave. El placeholder usa texto-terciario. */
-  /* 9.3.3: texto principal (reemplaza gray-700), mismo tono del Azul 2 desaturado. */
-  --color-texto-principal: #3A4057;
-  --color-texto-secundario: #545D7C;
-  --color-texto-terciario: #646C88;
-  --color-borde-control: #7C849F;
-  --color-borde-suave: #D5D9E5;
-  --color-superficie-suave: #F1F3F8;
-  /* D-R3-6: anillo de focus-visible (2 px, con desplazamiento blanco de 2 px). Es cesmag-azul-1. */
-  --color-foco: #1F5BA3;
+  --color-outline: #c6c6cd;
 
   --font-sans: "Roboto", sans-serif;
 }
@@ -63,21 +48,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-texto-terciario);
-  }
-
-  /*
-   * R9-3 · D-R3-6: foco visible propio. Anillo de 2 px en el token foco (Azul 1) separado 2 px del
-   * control; la sombra blanca rellena esa separación, así el anillo se mide contra blanco (6,81:1)
-   * sobre cualquier fondo, incluido el Azul 2 del futuro encabezado. Solo con :focus-visible: el
-   * clic con ratón no lo muestra. Las cabeceras que reciben el foco por código (tabIndex={-1})
-   * conservan su outline-none a propósito. En un control con sombra de utilidad (shadow-*), esa
-   * sombra prevalece y la separación muestra el fondo; el anillo sigue visible sobre los fondos claros.
-   */
-  :focus-visible {
-    outline: 2px solid var(--color-foco);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 2px var(--color-surface);
+    color: var(--color-gray-400);
   }
 
   /*
@@ -85,11 +56,10 @@
    * ancla, el navegador deja este margen arriba: nada enfocado queda escondido bajo el
    * encabezado. Holgado a propósito: entre md y lg el encabezado puede ocupar dos líneas.
    * En móvil no hace falta: allí el encabezado no es fijo.
-   * R9-3 · V1-A: de 8rem a 10.5rem por la franja institucional (unos 2.25rem más).
    */
   @media (min-width: 48rem) {
     html {
-      scroll-padding-top: 10.5rem;
+      scroll-padding-top: 8rem;
     }
   }
 }

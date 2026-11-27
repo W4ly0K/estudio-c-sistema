@@ -44,7 +44,7 @@ describe('DialogoConfirmacion · razón del bloqueo (Fase 7 · B2)', () => {
     const { dialogo } = mostrar({ puedeConfirmar: false, razonBloqueo: RAZON })
     const confirmar = within(dialogo).getByRole('button', { name: 'Sí, rechazar' })
 
-    expect(confirmar).toHaveClass('bg-superficie-suave', 'border-dashed', 'cursor-not-allowed')
+    expect(confirmar).toHaveClass('bg-gray-200', 'border-dashed', 'cursor-not-allowed')
     expect(confirmar).not.toHaveClass('bg-accent')
   })
 
@@ -72,7 +72,7 @@ describe('DialogoConfirmacion · razón del bloqueo (Fase 7 · B2)', () => {
 
     expect(confirmar).toBeDisabled()
     expect(confirmar).not.toHaveAttribute('aria-describedby')
-    expect(confirmar).not.toHaveClass('bg-superficie-suave')
+    expect(confirmar).not.toHaveClass('bg-gray-200')
     expect(within(dialogo).queryByText(RAZON)).not.toBeInTheDocument()
   })
 

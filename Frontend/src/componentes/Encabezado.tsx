@@ -1,19 +1,13 @@
-import type { MouseEvent } from 'react'
 import { NavLink } from 'react-router'
 import type { UsuarioSesion } from '../api/esquemas'
-import escudoCesmag from '../assets/escudo-universidad-cesmag.png'
 import logoEstudioC from '../assets/logo-estudio-c-horizontal.png'
-import { ETIQUETAS_ROL } from '../presentacion/etiquetas'
-import { ALT_ESCUDO, DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL } from '../presentacion/identidad'
 import { navegacionDelRol } from '../presentacion/navegacion'
 
 interface EncabezadoProps {
   usuario: UsuarioSesion
   onLogout: () => void
+  titulo: string
 }
-
-/** Destino de «Saltar al contenido»: el `<main>` de PantallaConSesion. */
-export const ID_CONTENIDO = 'contenido'
 
 /** Área táctil de 44 px (WCAG 2.5.5) para cada control del encabezado. */
 const AREA_TACTIL = 'inline-flex min-h-11 items-center'
@@ -37,59 +31,16 @@ const AREA_TACTIL = 'inline-flex min-h-11 items-center'
  * - El nombre envuelve (`min-w-0` + `break-words`) y nunca se trunca: cortarlo esconde datos.
  * - Fijo (`sticky`) solo desde `md`: en móvil se desplaza con la página y no tapa el contenido.
  *   El `scroll-padding-top` de `index.css` evita que el foco quede bajo el encabezado fijo.
- *
- * Fase 9 · R9-3 · V1-A (ADR-010 §2.8): dos niveles.
- * - «Saltar al contenido» es el primer elemento enfocable; lleva el foco al `<main>` por código
- *   (sin cambiar la URL ni depender del router).
- * - Nivel 1: franja en Azul 2 con la pertenencia en texto (Universidad CESMAG · CIDU · Estudio C).
- *   No hay escudo ni marcador que lo simule (preguntas 14 y 15). La franja es el primer elemento
- *   del mismo contenedor flexible y ocupa su propia línea de borde a borde (ancho más el relleno,
- *   sin encogerse): el orden C8 de lo que sigue (marca → navegación → nombre → Salir) no cambia.
- * - Nivel 2: el escudo oficial (32 px en móvil, 40 px desde md) y, separado por un divisor y su
- *   área de respeto, el logo de Estudio C: dos identidades distintas, no un identificador nuevo
- *   (Manual, págs. 9, 10 y 14). El escudo no se repite en la franja azul. El descriptor se oculta
- *   por debajo de sm para que el encabezado móvil siga compacto (el pie lo muestra). Después, la
- *   navegación y el usuario. El título de
- *   la página ya no se repite aquí: es el `h1` de CabeceraPagina (V1-B). El rol se
- *   muestra en palabras y sin el rojo de error (D-R3-4).
  */
-export function Encabezado({ usuario, onLogout }: EncabezadoProps) {
-  const saltarAlContenido = (evento: MouseEvent<HTMLAnchorElement>) => {
-    evento.preventDefault()
-    document.getElementById(ID_CONTENIDO)?.focus()
-  }
+export function Encabezado({ usuario, onLogout, titulo }: EncabezadoProps) {
   return (
-    <header className="relative w-full bg-surface border-b border-borde-suave px-4 pb-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
-      <a
-        href={`#${ID_CONTENIDO}`}
-        onClick={saltarAlContenido}
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-[60] focus:rounded-sm focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-primary"
-      >
-        Saltar al contenido
-      </a>
-      <div data-parte="identidad" className="-mx-4 sm:-mx-8 md:shrink-0 md:basis-[calc(100%_+_4rem)] bg-primary px-4 py-2 sm:px-8 text-surface">
-        <p className="text-sm font-bold tracking-wide break-words">
-          {JERARQUIA_INSTITUCIONAL.map((parte, i) => (
-            <span key={parte}>
-              {i > 0 && <span aria-hidden="true"> · </span>}
-              {parte}
-            </span>
-          ))}
-        </p>
-      </div>
+    <header className="w-full bg-surface border-b border-outline px-4 py-3 sm:px-8 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-6 md:sticky md:top-0 z-50 shadow-xs">
       <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:gap-4">
-        <div data-parte="marca" className="flex min-w-0 items-center gap-3 md:gap-4">
-          <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-8 w-8 md:h-10 md:w-10 shrink-0 object-contain" />
-          <img
-            src={logoEstudioC}
-            alt="Logo Estudio C"
-            className="h-8 md:h-10 w-auto shrink-0 border-l border-borde-suave pl-3 md:pl-4"
-          />
-          <p className="hidden sm:block min-w-0 border-l border-borde-suave pl-4 font-bold text-primary tracking-wide">
-            {DESCRIPTOR_SISTEMA}
-          </p>
+        <div data-parte="marca" className="flex min-w-0 items-center gap-4">
+          <img src={logoEstudioC} alt="Logo Estudio C" className="h-10 w-auto shrink-0" />
+          <span className="font-bold text-primary border-l border-outline pl-4 tracking-wide">{titulo}</span>
         </div>
-        <nav aria-label="Navegación principal" className="md:border-l md:border-borde-suave md:pl-4">
+        <nav aria-label="Navegación principal" className="md:border-l md:border-outline md:pl-4">
           <ul className="flex flex-wrap items-center gap-2 text-sm">
             {navegacionDelRol(usuario.rol).map((enlace) => (
               <li key={enlace.ruta}>
@@ -100,7 +51,7 @@ export function Encabezado({ usuario, onLogout }: EncabezadoProps) {
                     `${AREA_TACTIL} px-2 rounded-sm ${
                       isActive
                         ? 'font-bold text-primary underline decoration-2 underline-offset-4'
-                        : 'text-texto-secundario hover:text-primary hover:underline'
+                        : 'text-gray-600 hover:text-primary hover:underline'
                     }`
                   }
                 >
@@ -114,14 +65,14 @@ export function Encabezado({ usuario, onLogout }: EncabezadoProps) {
       <div data-parte="usuario" className="flex min-w-0 items-center justify-between gap-4 md:ml-auto md:justify-end">
         <div className="min-w-0 md:max-w-xs md:text-right">
           <p className="text-sm font-bold text-primary break-words">{usuario.nombre}</p>
-          <p className="text-xs text-texto-secundario">
-            Rol: <span className="font-bold text-texto-principal">{ETIQUETAS_ROL[usuario.rol]}</span>
+          <p className="text-xs text-gray-500">
+            Rol: <span className="font-semibold text-accent">{usuario.rol}</span>
           </p>
         </div>
         <button
           type="button"
           onClick={onLogout}
-          className={`${AREA_TACTIL} shrink-0 px-4 border border-borde-control rounded-sm text-sm font-medium hover:bg-superficie-suave text-primary transition-colors`}
+          className={`${AREA_TACTIL} shrink-0 px-4 border border-outline rounded-sm text-sm font-medium hover:bg-gray-50 text-primary transition-colors`}
         >
           Salir
         </button>

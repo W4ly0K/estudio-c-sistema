@@ -6,23 +6,20 @@ import { ETIQUETAS_CORTAS_SUB_ESPACIO, etiquetaEstado } from '../presentacion/et
  * Insignias de estado del wireframe (Sección D): se distinguen por la FORMA del borde
  * y un símbolo, no solo por el color (DV6 · accesibilidad). `Record<Estado, …>`: un
  * estado nuevo no compila hasta tener su insignia.
- * R9-3 (ADR-010, pregunta 16): equivalencia neutra 1:1 de los grises a los tokens medidos; se
- * conservan la escala de intensidad, los bordes y los símbolos. Los estados en curso no usan el
- * azul, reservado a las acciones, para que una insignia sólida no parezca un botón.
  */
 const ESTILO: Readonly<Record<Estado, { readonly clases: string; readonly simbolo: string }>> = {
-  Recibido: { clases: 'bg-superficie-suave border border-borde-control text-texto-principal', simbolo: '' },
-  Validado: { clases: 'bg-surface border border-texto-principal text-texto-principal', simbolo: '' },
-  'En Producción': { clases: 'bg-texto-principal border border-texto-principal text-surface', simbolo: '●' },
-  // Fase 8: en curso como "En Producción", pero en otra etapa: un tono más claro y un lápiz.
-  'Edición y postproducción': { clases: 'bg-texto-secundario border border-texto-secundario text-surface', simbolo: '✎' },
-  Entregado: { clases: 'bg-superficie-suave border border-texto-principal text-texto-principal', simbolo: '✓' },
-  Rechazado: { clases: 'bg-surface border border-dashed border-texto-principal text-texto-principal', simbolo: '✕' },
-  'Cancelado por el Usuario': { clases: 'bg-superficie-suave border border-borde-suave text-texto-secundario', simbolo: '' },
-  'Pendiente de Reprogramación': { clases: 'bg-surface border border-dotted border-borde-control text-texto-principal', simbolo: '↻' },
+  Recibido: { clases: 'bg-gray-100 border border-gray-400 text-gray-700', simbolo: '' },
+  Validado: { clases: 'bg-white border border-gray-900 text-gray-900', simbolo: '' },
+  'En Producción': { clases: 'bg-gray-900 border border-gray-900 text-white', simbolo: '●' },
+  // Fase 8: en curso como "En Producción", pero en otra etapa: gris medio (no negro) y un lápiz.
+  'Edición y postproducción': { clases: 'bg-gray-700 border border-gray-700 text-white', simbolo: '✎' },
+  Entregado: { clases: 'bg-gray-100 border border-gray-900 text-gray-900', simbolo: '✓' },
+  Rechazado: { clases: 'bg-white border border-dashed border-gray-900 text-gray-900', simbolo: '✕' },
+  'Cancelado por el Usuario': { clases: 'bg-gray-200 border border-gray-200 text-gray-500', simbolo: '' },
+  'Pendiente de Reprogramación': { clases: 'bg-white border border-dotted border-gray-500 text-gray-700', simbolo: '↻' },
   // Fase 7: final como Rechazado, pero sin decisión del Estudio sobre el contenido. Borde
-  // discontinuo GRUESO y claro (Rechazado: fino y oscuro) y un círculo vacío, no la ✕ del rechazo.
-  'No atendida': { clases: 'bg-superficie-suave border-2 border-dashed border-borde-control text-texto-secundario', simbolo: '○' },
+  // discontinuo GRUESO y gris (Rechazado: fino y negro) y un círculo vacío, no la ✕ del rechazo.
+  'No atendida': { clases: 'bg-gray-100 border-2 border-dashed border-gray-400 text-gray-600', simbolo: '○' },
 }
 
 /**
@@ -34,7 +31,7 @@ export function InsigniaEstado({ estado, perspectiva }: { estado: Estado; perspe
   return (
     <span
       data-estado={estado}
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-bold ${clases}`}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-semibold ${clases}`}
     >
       {/* El símbolo es decorativo: el lector de pantalla lee el nombre del estado. */}
       {simbolo !== '' && <span aria-hidden="true">{simbolo}</span>}
@@ -47,14 +44,10 @@ export function InsigniaEstado({ estado, perspectiva }: { estado: Estado; perspe
  * Urgencia (README del backend §9): reserva antes del 6.º día hábil. Borde discontinuo grueso.
  * Fase 8 · requisito 6: en el rojo institucional (token `urgencia`, contraste AA medido en
  * tema.test.ts). La forma sigue distinguiéndola de un error, que tiene borde continuo (DV6).
- * R9-3 (D-R3-3): `data-insignia="urgencia"` es su marca; la caja de error usa `data-aviso="error"`.
  */
 export function InsigniaUrgencia() {
   return (
-    <span
-      data-insignia="urgencia"
-      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-urgencia text-urgencia bg-surface"
-    >
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm text-xs font-bold uppercase tracking-wider border-2 border-dashed border-urgencia text-urgencia bg-surface">
       <span aria-hidden="true">⚠</span>
       Urgencia
     </span>
@@ -77,7 +70,7 @@ export function InsigniaSubEspacio({ subEspacio }: { subEspacio: SubEspacio }) {
   return (
     <span
       data-sub-espacio={subEspacio}
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-borde-control bg-surface text-xs font-medium text-texto-principal"
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-400 bg-surface text-xs font-medium text-gray-700"
     >
       <span aria-hidden="true">{SIMBOLO_SUB_ESPACIO[subEspacio]}</span>
       <span className="sr-only">Sub-espacio: </span>

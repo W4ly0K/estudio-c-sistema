@@ -32,7 +32,7 @@ export function CampoSubEspacio({ leyenda, valor, onCambio, soloLectura = false 
   const id = useId()
   return (
     <fieldset>
-      <legend className="block text-texto-secundario mb-1">{leyenda}</legend>
+      <legend className="block text-gray-600 mb-1">{leyenda}</legend>
       <div className="space-y-2">
         {SUB_ESPACIOS.map((opcion) => {
           const idOpcion = `${id}-${opcion}`
@@ -55,7 +55,7 @@ export function CampoSubEspacio({ leyenda, valor, onCambio, soloLectura = false 
                 <label htmlFor={idOpcion} className="font-medium text-primary">
                   {ETIQUETAS_SUB_ESPACIO[opcion]}
                 </label>
-                <p id={idAyuda} className="text-xs text-texto-secundario">
+                <p id={idAyuda} className="text-xs text-gray-500">
                   {AYUDAS_SUB_ESPACIO[opcion]}
                 </p>
               </div>
