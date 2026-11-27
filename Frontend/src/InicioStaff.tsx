@@ -4,7 +4,8 @@ import type { Resultado } from './api/cliente'
 import { useApi } from './api/contexto-api'
 import { textoDeError } from './api/errores'
 import type { SolicitudTablero, UsuarioSesion } from './api/esquemas'
-import { Encabezado } from './componentes/Encabezado'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { atajosDelStaff, resumenInicioStaff, type AtajoInicio } from './presentacion/inicio'
 import { RUTA_TABLERO } from './rutas'
 import { CajaError } from './componentes/CajaError'
@@ -54,18 +55,17 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
   const error = !cargando && resultado !== undefined && !resultado.ok ? textoDeError(resultado.error) : null
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo={TEXTO_TITULO_INICIO_STAFF} />
-      <main className="flex-1 p-8 max-w-[1100px] mx-auto w-full space-y-6">
-        <div className="flex flex-wrap justify-between items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Hola, {usuario.nombre}</h2>
-            <p className="text-sm text-texto-secundario">Esto es lo que espera tu atención en el Estudio C.</p>
-          </div>
-          <Link to={RUTA_TABLERO} className="px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm text-sm font-bold transition-colors">
-            {TEXTO_IR_AL_TABLERO}
-          </Link>
-        </div>
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1100px] mx-auto w-full space-y-6">
+        <CabeceraPagina
+          contexto={TEXTO_TITULO_INICIO_STAFF}
+          titulo={`Hola, ${usuario.nombre}`}
+          descripcion="Esto es lo que espera tu atención en el Estudio C."
+          accion={
+            <Link to={RUTA_TABLERO} className="inline-block px-4 py-2 bg-primary hover:bg-primary-hover text-surface rounded-sm text-sm font-bold transition-colors">
+              {TEXTO_IR_AL_TABLERO}
+            </Link>
+          }
+        />
 
         {cargando && atajos === null && <p className="text-sm text-texto-secundario">{TEXTO_CARGANDO_INICIO}</p>}
         {error !== null && (
@@ -86,7 +86,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
         {atajos !== null && (
           <>
             <nav aria-label="Atajos del Staff">
-              <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {atajos.map((atajo) => (
                   <li key={atajo.clave}>
                     <TarjetaAtajo atajo={atajo} />
@@ -97,8 +97,7 @@ export default function InicioStaff({ usuario, onLogout }: InicioStaffProps) {
             <p className="text-xs text-texto-secundario">{TEXTO_NOTA_RELOJ}</p>
           </>
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 
@@ -116,15 +115,17 @@ function TarjetaAtajo({ atajo }: { atajo: AtajoInicio }) {
   const borde = resaltado ? (urgente ? 'border-2 border-urgencia' : 'border-2 border-primary') : 'border border-borde-suave'
   const texto = urgente ? 'text-urgencia' : 'text-primary'
   return (
-    <div data-atencion={resaltado} data-urgencia={urgente} className={`h-full rounded-lg bg-surface p-4 ${borde}`}>
+    <div data-atencion={resaltado} data-urgencia={urgente} className={`flex h-full flex-col rounded-lg bg-surface p-5 ${borde}`}>
+      {/* V1-C (ADR-010 §2.8 C-11): la cifra domina; el título la nombra y la ayuda queda abajo,
+          alineada entre tarjetas. El nombre accesible del enlace sigue siendo "número + título". */}
       <Link to={RUTA_TABLERO} aria-describedby={idAyuda} className={`block ${texto} hover:underline`}>
-        <span className="block text-3xl font-black">
+        <span className="block text-4xl font-black leading-none">
           {resaltado && <span aria-hidden="true">⚠ </span>}
           {atajo.cantidad}
         </span>{' '}
-        <span className="block font-bold">{atajo.titulo}</span>
+        <span className="mt-2 block font-bold">{atajo.titulo}</span>
       </Link>
-      <p id={idAyuda} className="mt-2 text-xs text-texto-secundario">
+      <p id={idAyuda} className="mt-auto pt-3 text-xs text-texto-secundario">
         {atajo.ayuda}
       </p>
     </div>

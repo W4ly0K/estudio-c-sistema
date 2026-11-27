@@ -2,10 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 y 15 y el recurso oficial del escudo en una tinta (§3); la pregunta 16 se resolvió el 2026-11-23 (§2.7) |
+| **Estado** | 📝 **Propuesto.** Decisiones aprobadas en sesión el 2026-11-09; implementación en curso por lotes. Siguen abiertas las preguntas 14 y 15 y el recurso oficial del escudo en una tinta (§3); la pregunta 16 se resolvió el 2026-11-23 (§2.7). El escudo oficial a color está integrado (§2.8 C-9), pero su **uso institucional sigue condicionado al visto bueno de Comunicaciones**. El 2026-11-24 el responsable del proyecto autorizó integrar la ampliación en `develop` solo como integración de desarrollo: sin `main`, sin despliegue y sin publicación oficial |
 | **Fecha** | 2026-11-09 · diagnóstico actualizado el 2026-11-23 |
 | **Autor** | Sebastián Eraso (Práctica Formativa, Ingeniería de Sistemas) |
-| **Rama** | `feat/fase-9-identidad-institucional`, creada desde `develop` @ `67a1fb2` (R9-1 integrado por el PR #17) |
+| **Rama** | `feat/fase-9-identidad-institucional`, creada desde `develop` @ `67a1fb2` (R9-1 integrado por el PR #17) e integrada por el PR #18 (`a5a74ed`) · ampliación visual (V1-A a V1-D, V2 y C-13) en `feat/fase-9-identidad-v1a`, creada desde `develop` @ `a5a74ed` |
 | **Complementa a** | [ADR-006](ADR-006-frontend-contrato-tipado.md) (frontend tipado y pruebas de contrato que leen el código fuente) · [ADR-008](ADR-008-edicion-postproduccion-y-enlace-de-entrega.md) (VI1 a VI3: alias por rol y urgencia en Rojo 1, AA medido en `tema.test.ts`) · [ADR-009](ADR-009-anexo-del-solicitante-y-fuente-unica-del-enlace.md) (`EnlaceExternoSeguro` y los campos que se reestilizan) |
 | **Relacionado con** | Backlog de la Fase 9 (R9-3) · PRD v2.5 (borrador) · *Manual de identidad visual* CESMAG (págs. 7 a 12 y 15) · *Manual de Roboto* · bitácora del PR #13 (identidad del Estudio C) |
 
@@ -66,6 +66,7 @@
 ### 2.5 Marca, foco y guardia (D-R3-5 a D-R3-7)
 
 - **D-R3-5 · Encabezado institucional:** franja en Azul 2 con el **escudo**, «Universidad CESMAG» y el logo del Estudio C. **Pendiente:** depende de la pregunta 14 y del recurso del escudo (§3); no se implementa antes.
+  - **Enmienda (2026-11-24, §2.8 C-2):** mientras la pregunta 14 siga abierta, el encabezado se implementa en dos niveles con la identidad en **texto** y sin escudo ni marcador que lo simule. El escudo se integra en V2.
   - **Versión del escudo:** positiva sobre blanco o en una tinta blanca sobre azul (pág. 9). Nunca deformado ni recoloreado (pág. 15).
   - **Tamaño y área:** ≥ 24 px de alto en pantalla (equivalente a 6 mm), con su área de seguridad (pág. 10).
   - **Recurso:** recortado a su contenido real desde el original de 1201 px (lección 1 del PR #13). Si no existe la versión oficial en una tinta, se pide a la Oficina de Comunicaciones y Mercadeo.
@@ -79,6 +80,26 @@
 - La paleta complementaria por facultades, los degradados como fondo de texto y el modo oscuro.
 - El inventario (`Recurso` y `Solicitud_Recurso`, suspendido desde la Fase 7).
 - El backend y la base de datos: R9-3 es solo frontend.
+
+### 2.8 Composición institucional (V1, 2026-11-24)
+
+Objetivo aprobado por el responsable del proyecto: que el sistema se perciba como una plataforma de la Universidad CESMAG vinculada al CIDU, no como una aplicación genérica con colores institucionales. Las capturas del sitio institucional son referencia de **estructura**; los prototipos de otros sistemas, solo inspiración.
+
+| Id | Decisión |
+|---|---|
+| C-1 | **Identidad textual única** en `presentacion/identidad.ts`: «Universidad CESMAG · CIDU · Estudio C», «Sistema de Solicitudes y Reservas» y el lema «Ciencia y Servicio», confirmados por el responsable del proyecto. CIDU va solo como sigla. Ningún componente dibuja ni simula el escudo |
+| C-2 | **Encabezado de dos niveles** (enmienda de D-R3-5): franja en Azul 2 con la identidad en texto blanco (11,12:1) y barra blanca con el logo de Estudio C, el sistema y la página, la navegación por rol y el usuario. Se conserva el orden C8 (marca → navegación → nombre → Salir) y el comportamiento responsivo. «Saltar al contenido» es el primer elemento enfocable y lleva el foco al contenido principal |
+| C-3 | **Composición común** `PantallaConSesion`: encabezado, `<main id="contenido">` con foco por código y pie, en las 6 pantallas con sesión |
+| C-4 | **Pie discreto** `PieInstitucional`: pertenencia, sistema y lema; sin datos de contacto ni enlaces, porque ninguno está verificado |
+| C-5 | **Rol en palabras** («Solicitante», «Staff») y sin el rojo de error (D-R3-4) |
+| C-7 | **Cabecera de página** `CabeceraPagina` (V1-B): el único `h1` de cada pantalla con sesión, con rótulo de contexto, descripción y acción principal opcionales. El encabezado deja de repetir el título de la página y muestra el nombre del sistema. En los detalles, el `h1` nombra la pantalla y el radicado sigue siendo el `h2` que recibe el foco al cargar |
+| C-8 | **Acceso de dos paneles** (V1-B): panel institucional en Azul 2 con la pertenencia en texto, el sistema, el descriptor y el lema (apilado arriba en móvil), y la tarjeta de acceso con el logo de Estudio C. Lo comparten el login, la verificación y el reintento. Sin cambios en Google, la sesión ni los mensajes |
+| C-9 | **Escudo oficial, solo sobre blanco** (V2, autorizado por el responsable del proyecto el 2026-11-24). Recurso: `https://www.unicesmag.edu.co/recursos/uploads/2022/04/Escudos_2-2-1024x1024.png`, PNG 1024 × 1024 RGBA a color, SHA-256 `a9b952d4e4c015bb3513d1451b37a7bb2ee79b90b649f46ca3a36d118fe9b09f`, descargado del dominio de la Universidad y verificado por el responsable del proyecto. Se usa en `src/assets/escudo-universidad-cesmag.png` sin recolorear, recortar, deformar ni aplicar efectos; solo se escala en proporción. Ubicación: barra blanca del encabezado (32 px en móvil, 40 px desde `md`), a la izquierda del logo de Estudio C y separado por un divisor; panel institucional del acceso (48 px en móvil, 80 px desde `md`), sobre un disco blanco del contenedor (`bg-surface`, relleno de 8 a 12 px) que lo separa del Azul 2 y sirve de área de respeto, encima de la identidad textual y centrado con ella en ambos ejes (ajuste del 2026-11-24 tras la revisión visual del responsable del proyecto; la tarjeta de acceso conserva solo el logo de Estudio C). No va en la franja azul del encabezado, el pie, las tarjetas, los formularios ni los diálogos. Reglas verificadas en el Manual (págs. 8, 9, 10 y 14): versión a color, proporción, tamaño mínimo de 6 × 6 mm, escudo a la izquierda del texto, sin efectos ni baja resolución. **Pendiente de Comunicaciones:** el valor exacto del área de seguridad «x», el uso junto al logo de Estudio C sin constituir un identificador alterado, el uso a color sobre Azul 2 (solo hay una muestra, «Función fondos») y la confirmación del archivo como recurso digital autorizado. **No existe visto bueno formal de Comunicaciones** |
+| C-10 | **Lema institucional** «Hombres nuevos para tiempos nuevos» (Manual, págs. 15 y 16, de Fray Guillermo de Castellana, OFMCap.) en el acceso y el pie, en lugar de «Ciencia y Servicio», que es la leyenda del escudo y solo aparece dentro de su imagen |
+| C-11 | **Inicios del solicitante y del Staff** (V1-C): componente `Seccion` (región nombrada por su `h2`) con tres variantes que se distinguen por la forma: `atencion` (borde grueso en Azul 2 sobre superficie suave), `normal` (sin marco) y `secundaria` (superficie suave, borde fino). Solicitante: dos columnas desde `lg`, con pendientes (atención) y próximas en la principal y «Antes de reservar» (secundaria) en un `aside` «Recomendaciones»; el orden del DOM conserva la prioridad, que es también la de móvil. Staff: los cuatro atajos con la cifra dominante, la ayuda alineada abajo y cuatro columnas desde `lg`; se conservan los datos, su orden, la forma de lo que pide atención y el rojo de urgencia. El acceso al tablero sigue siendo la acción de la cabecera. Sin métricas nuevas (R9-4 queda fuera) |
+| C-12 | **Tablero, tarjetas, detalles y formulario** (V1-D, refinamiento visual sin cambios funcionales). Tablero: cada columna con su cabecera sobre blanco separada por un borde y el contador en una píldora **fuera** del `h3` (la región se sigue nombrando solo por su estado); el vacío, en una caja centrada. Se conservan las 5 columnas activas, su orden, la distribución y la prioridad de urgencia. Tarjetas: radicado con más presencia, franja en negrita y, en el tablero, la acción al pie separada por un borde; sin quitar datos. Detalles: relleno adaptable (`p-4` en móvil, `p-6` desde `sm`) y títulos de sección del mismo tamaño, sin cambiar los niveles de encabezado ni el foco programático; no se usa `Seccion` porque cambiaría la jerarquía sin aportar valor. Formulario de radicación: dos `fieldset` con `legend`, «Datos de la solicitud» (categoría, sub-espacio o explicación del lugar, propósito y anexo) y «Fecha y horario» (fecha y horas); mismos campos, etiquetas, validaciones y mensajes |
+| C-13 | **Composición del tablero del Staff** (ajuste a C-12, solo presentación). Fila principal con las cuatro etapas operativas (Recibido, Revisado y aprobado, En Producción, Edición y postproducción) y, debajo, «Pendiente de Reprogramación» como sección de ancho completo con su contador, su aviso y sus tarjetas en rejilla; vacía, se muestra compacta en una sola línea. El orden del DOM es el de lectura (las cuatro etapas, luego la espera, luego las cerradas), también en móvil. No es un estado nuevo: los cinco estados, sus nombres y alias, la pertenencia a las activas (`agruparTablero`), la prioridad de urgencia, las insignias y las cerradas no cambian |
+| C-6 | **Dirección aprobada para los lotes siguientes:** V1-B (login de dos paneles y cabeceras de página con un `h1` por pantalla), V1-C (inicios del solicitante y del Staff), V1-D (tablero, detalles, tarjetas y formularios) y V2 (escudo oficial, tras las preguntas 14 y 15). Tema claro con superficies blancas; sin rojo decorativo mientras D-R3-4 no cambie |
 
 ### 2.7 Registro de decisiones de implementación (2026-11-23)
 
@@ -105,10 +126,10 @@ Decisiones tomadas por el responsable del proyecto durante 9.3.3, sobre la base 
 
 | Pregunta | Opción vigente por defecto | Qué cambia si la respuesta es otra |
 |---|---|---|
-| **14** · ¿Escudo y logo del Estudio C juntos? ¿Cuál tiene más jerarquía? ¿Hace falta el visto bueno de Comunicaciones? | Escudo a la izquierda en el encabezado y logo del Estudio C como marca del sistema | Cambia la composición del encabezado y del login; si Comunicaciones debe aprobar, la integración de 9.3.4 espera su visto bueno |
+| **14** · ¿Escudo y logo del Estudio C juntos? ¿Cuál tiene más jerarquía? ¿Hace falta el visto bueno de Comunicaciones? | Escudo a la izquierda en el encabezado y logo del Estudio C como marca del sistema. **2026-11-24:** implementado así con autorización del responsable del proyecto y las reglas del Manual (§2.8 C-9); **sigue abierta** hasta el visto bueno de Comunicaciones. El responsable autorizó integrar en `develop` sin ese visto bueno, solo para desarrollo; `main`, el despliegue y la publicación oficial lo esperan | Cambia la composición del encabezado y del login; si Comunicaciones debe aprobar, la integración de 9.3.4 espera su visto bueno |
 | **15** · ¿Los azules como marca y el rojo para el escudo y la urgencia? | Sí (H9-1) | — |
 | **16** · ¿Qué debe mantenerse sí o sí en el tablero? | ✅ **Resuelta el 2026-11-23** (§2.7, I-4): las 5 columnas, los alias por rol y las insignias, con la equivalencia neutra 1:1 | Criterio de aceptación: pruebas de `TableroStaff`, `Insignias` y de los alias, sin cambios de comportamiento |
-| Recurso oficial del escudo en una tinta | Pendiente de verificar en los archivos | Si no existe: el escudo en positivo sobre una placa blanca dentro de la franja azul, respetando el área de seguridad |
+| Recurso oficial del escudo en una tinta | Se usa el archivo oficial **a color**, sin alteraciones, sobre una superficie blanca dentro de la franja azul (§2.8 C-9). La versión en una tinta **sigue pendiente** de conseguirse | Si se obtiene la versión en una tinta y Comunicaciones la indica para fondos azules, sustituye a la placa blanca |
 
 ---
 
@@ -149,6 +170,8 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 
 - Las respuestas 14 a 16 y la revisión visual conjunta del sitio institucional (paso 9.3.0).
 - El recurso oficial del escudo en una tinta.
+- El visto bueno de Comunicaciones para el uso institucional del escudo: condición para `main`, el despliegue y cualquier publicación oficial.
+- La revisión visual manual de la ampliación (V1-A a V1-D, V2 y C-13) a 320, 768 y 1280 px y con zoom al 200 %, con evidencia por punto.
 - `public/icons.svg` y `src/assets/Logo_Estudio_C_2-02.svg` (pendiente heredado del PR #13): el 2026-11-23 un `grep` no encontró referencias en `.ts`, `.tsx`, `.html` ni `.css`. **Pendientes de revisión: no se eliminan todavía**; su retiro es una decisión aparte.
 
 ---
@@ -165,3 +188,9 @@ Cifras: se registran de la salida real de la terminal en la bitácora de R9-3.
 | `d8a2e0b` | 9.3.4 · Marca: encabezado con escudo, acción principal en azul y foco ⏳ (los errores sobre `surface` y el deshabilitado se adelantaron al cierre de 9.3.3: I-5 e I-6; la acción principal y el foco, en el lote sin escudo: I-8 e I-9; el encabezado espera las preguntas 14 y 15 y el recurso del escudo) |
 | `8bc8b41` | 9.3.5 · Login institucional ⏳ (lote sin escudo: I-10; el escudo espera las preguntas 14 y 15) |
 | `8c6d401` | 9.3.6 · Verificación (`tsc`, `npm test`, revisión manual en local), bitácora y PR ⏳ (preparación: I-11 e I-12) |
+| `39ccc11` · `5de6743` | V1-A · Encabezado institucional textual, identidad compartida y pie (§2.8 C-1 a C-5) ✅ |
+| `598407c` · `7dab6db` | V1-B · Acceso de dos paneles y cabeceras de página con un `h1` por pantalla (§2.8 C-7 y C-8) ✅ |
+| `b651a3e` · `14be0c6` · `8ae70c5` · `ca30e90` | V2 · Escudo oficial en el encabezado y en el panel del acceso; lema institucional (§2.8 C-9 y C-10) ✅ (uso institucional condicionado al visto bueno de Comunicaciones) |
+| `9254f35` · `6221666` | V1-C · Inicios del solicitante y del Staff con `Seccion` (§2.8 C-11) ✅ |
+| `3bccf2d` · `60a46e9` · `656d3e3` · `4158496` · `d409ef3` | V1-D · Tablero, tarjetas, detalles y formulario (§2.8 C-12): pruebas automatizadas conformes (935/935); revisión visual pendiente ⏳ |
+| `df27714` · `dc15056` | C-13 · Composición del tablero: cuatro etapas operativas y la espera debajo (§2.8 C-13): pruebas automatizadas conformes (939/939, 54 archivos; lint y build conformes); revisión visual pendiente ⏳ |

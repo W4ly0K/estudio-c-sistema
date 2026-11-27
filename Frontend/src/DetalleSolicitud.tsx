@@ -8,7 +8,8 @@ import type { Rol } from './api/maquina-estados'
 import type { RespuestaComando } from './api/solicitudes'
 import { AccionesSolicitud } from './componentes/AccionesSolicitud'
 import { EdicionAnexo } from './componentes/EdicionAnexo'
-import { Encabezado } from './componentes/Encabezado'
+import { CabeceraPagina } from './componentes/CabeceraPagina'
+import { PantallaConSesion } from './componentes/PantallaConSesion'
 import { InsigniaEstado, InsigniaUrgencia } from './componentes/Insignias'
 import { EnlaceAnexo, TEXTO_ANEXO } from './componentes/EnlaceAnexo'
 import { EnlaceProductoFinal, TEXTO_PRODUCTO_FINAL } from './componentes/EnlaceProductoFinal'
@@ -109,15 +110,15 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
   if (radicado === undefined) return <Navigate to={RUTA_INICIO} replace />
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Seguimiento de solicitud" />
-      <main className="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
+    <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1000px] mx-auto w-full space-y-6">
         <Link to={RUTA_MIS_SOLICITUDES} className="inline-block text-sm font-medium text-primary underline">
           <span aria-hidden="true">← </span>Volver al panel
         </Link>
+        {/* V1-B: el h1 nombra la pantalla; el radicado sigue siendo el h2 que recibe el foco al cargar. */}
+        <CabeceraPagina titulo="Seguimiento de solicitud" />
         {carga.tipo === 'cargando' && <p className="text-sm text-texto-secundario">Cargando la solicitud...</p>}
         {carga.tipo === 'no-encontrada' && (
-          <div className="border border-borde-suave rounded-lg p-8 text-center bg-surface">
+          <div className="border border-borde-suave rounded-lg p-6 sm:p-8 text-center bg-surface">
             <h2 ref={tituloRef} tabIndex={-1} className="text-xl font-bold text-primary outline-none">
               {TEXTO_NO_ENCONTRADA}
             </h2>
@@ -149,8 +150,7 @@ export default function DetalleSolicitud({ usuario, onLogout }: DetalleSolicitud
             alRecargar={() => setVersion((v) => v + 1)}
           />
         )}
-      </main>
-    </div>
+      </PantallaConSesion>
   )
 }
 
@@ -189,7 +189,7 @@ function Contenido({
 
   return (
     <>
-      <section className="border border-borde-suave rounded-lg p-6 bg-surface">
+      <section className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
         <p className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 ref={tituloRef} tabIndex={-1} className="text-2xl font-black text-primary outline-none">
@@ -255,7 +255,7 @@ function Contenido({
 
       {/* B4: la propuesta y su motivo; la decisión, en las acciones de abajo. */}
       {propuesta !== null && (
-        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-6 bg-surface text-sm">
+        <section aria-label="Propuesta de reprogramación" className="border-2 border-primary rounded-lg p-4 sm:p-6 bg-surface text-sm">
           <h3 className="font-bold text-primary">
             <span aria-hidden="true">↻ </span>Propuesta de reprogramación del Staff Estudio C
           </h3>

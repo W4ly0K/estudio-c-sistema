@@ -85,10 +85,11 @@
    * ancla, el navegador deja este margen arriba: nada enfocado queda escondido bajo el
    * encabezado. Holgado a propósito: entre md y lg el encabezado puede ocupar dos líneas.
    * En móvil no hace falta: allí el encabezado no es fijo.
+   * R9-3 · V1-A: de 8rem a 10.5rem por la franja institucional (unos 2.25rem más).
    */
   @media (min-width: 48rem) {
     html {
-      scroll-padding-top: 8rem;
+      scroll-padding-top: 10.5rem;
     }
   }
 }

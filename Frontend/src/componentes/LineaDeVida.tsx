@@ -19,8 +19,8 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
   const id = useId()
   return (
     <div className="space-y-6">
-      <section aria-labelledby={`${id}-linea`} className="border border-borde-suave rounded-lg p-6 bg-surface">
-        <h3 id={`${id}-linea`} className="text-sm font-bold text-primary mb-5">
+      <section aria-labelledby={`${id}-linea`} className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
+        <h3 id={`${id}-linea`} className="text-base font-bold text-primary mb-5">
           Línea de vida
         </h3>
         {/* Fase 8: 5 pasos con la edición (PODCAST y VIDEO), 4 sin ella. Clases literales para Tailwind. */}
@@ -54,8 +54,8 @@ export function LineaDeVida({ linea }: { linea: DatosLinea }) {
         )}
       </section>
 
-      <section aria-labelledby={`${id}-historial`} className="border border-borde-suave rounded-lg p-6 bg-surface">
-        <h3 id={`${id}-historial`} className="text-sm font-bold text-primary mb-4">
+      <section aria-labelledby={`${id}-historial`} className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface">
+        <h3 id={`${id}-historial`} className="text-base font-bold text-primary mb-4">
           Historial de cambios
         </h3>
         <ol className="space-y-3">

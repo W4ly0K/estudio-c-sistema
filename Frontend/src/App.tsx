@@ -10,10 +10,12 @@ import TableroStaff from './TableroStaff';
 import { SoloRol } from './componentes/SoloRol';
 import { ProveedorApi } from './api/ProveedorApi';
 import type { UsuarioSesion } from './api/esquemas';
+import escudoCesmag from './assets/escudo-universidad-cesmag.png';
 import logoEstudioC from './assets/logo-estudio-c-horizontal.png';
 import { textoDeError } from './api/errores';
 import { RUTA_DETALLE, RUTA_INICIO, RUTA_MIS_SOLICITUDES, RUTA_TABLERO } from './rutas';
 import { useSesion } from './sesion/use-sesion';
+import { ALT_ESCUDO, DESCRIPTOR_SISTEMA, JERARQUIA_INSTITUCIONAL, LEMA, SISTEMA } from './presentacion/identidad';
 
 export const TEXTO_VERIFICANDO = 'Verificando tu sesión…';
 /** Estado informativo mientras el servidor valida la credencial de Google (no es un error). */
@@ -21,14 +23,46 @@ export const TEXTO_AUTENTICANDO = 'Autenticando...';
 export const TEXTO_SIN_VERIFICAR =
   'No pudimos verificar tu sesión con el servidor. Tu sesión sigue guardada: intenta de nuevo en un momento.';
 
-/** Marco común de las pantallas sin sesión (login, verificación y reintento). */
+/**
+ * Marco común de las pantallas sin sesión (login, verificación y reintento).
+ *
+ * R9-3 · V1-B (ADR-010 §2.8 C-8): dos paneles. El institucional, en Azul 2 con texto blanco
+ * (11,12:1), reúne el escudo oficial y la identidad (Universidad CESMAG · CIDU · Estudio C, el
+ * descriptor y el lema) en un solo grupo, centrado en horizontal y en vertical; en móvil se apila
+ * arriba como una banda compacta. La tarjeta conserva solo el logo de Estudio C y lo que ya hacía
+ * (Google, estados y mensajes). Relleno menor en móvil para que quepa en 320 px.
+ *
+ * V2 (§2.8 C-9): el escudo es el PNG oficial sin efectos; solo se escala en proporción. Va sobre un
+ * disco blanco (`bg-surface`) que lo separa del Azul 2 y sirve de área de respeto; el disco es del
+ * contenedor, no de la imagen.
+ */
 function PantallaCentrada({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
-        <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
-        {children}
-      </div>
+    <div className="min-h-screen bg-background font-sans flex flex-col md:flex-row">
+      <header className="bg-primary text-surface px-6 py-6 sm:px-10 md:w-2/5 md:py-12 flex flex-col items-center justify-center">
+        <div className="mx-auto flex w-full max-w-md flex-col items-center gap-2 md:gap-3 text-center">
+          <div data-parte="escudo" className="rounded-full bg-surface p-2 md:p-3">
+            <img src={escudoCesmag} alt={ALT_ESCUDO} className="h-12 w-12 md:h-20 md:w-20 object-contain" />
+          </div>
+          <p data-parte="identidad" className="text-sm font-bold tracking-wide break-words">
+            {JERARQUIA_INSTITUCIONAL.map((parte, i) => (
+              <span key={parte}>
+                {i > 0 && <span aria-hidden="true"> · </span>}
+                {parte}
+              </span>
+            ))}
+          </p>
+          <p className="text-2xl md:text-4xl font-black">{SISTEMA}</p>
+          <p className="text-base">{DESCRIPTOR_SISTEMA}</p>
+          <p className="text-sm italic">{LEMA}</p>
+        </div>
+      </header>
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
+        <div className="bg-surface p-6 sm:p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
+          <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 max-w-full mx-auto mb-6 object-contain" />
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
@@ -149,13 +183,9 @@ function App() {
   const autenticando = status === TEXTO_AUTENTICANDO;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-surface p-10 border border-borde-suave rounded-xl shadow-md max-w-sm w-full text-center flex flex-col items-center">
-        {/* R9-3 · 9.3.5: el título es el h1 de la página (no hay encabezado sin sesión); Roboto 900 en
-            Azul 2 y la indicación en texto-secundario, en tamaño legible. El escudo espera las preguntas
-            14 y 15 (ADR-010). */}
-        <img src={logoEstudioC} alt="Logo Estudio C" className="h-16 w-64 mx-auto mb-6 object-contain" />
-        
+    <PantallaCentrada>
+        {/* R9-3 · 9.3.5: el título es el h1 de la página; Roboto 900 en Azul 2 y la indicación en
+            texto-secundario, en tamaño legible. V1-B: comparte el marco de dos paneles. */}
         <h1 className="text-2xl font-black text-primary mb-2">Acceso al Sistema</h1>
         <p className="text-sm text-texto-secundario mb-6">
           Inicia sesión exclusivamente con tu correo institucional CESMAG.
@@ -176,12 +206,7 @@ function App() {
         ) : (
           mensaje && <p className="mt-3 text-xs font-bold text-accent">{mensaje}</p>
         )}
-      </div>
-      
-      <p className="mt-6 text-xs text-texto-terciario font-medium">
-        Universidad CESMAG · Ciencia y Servicio
-      </p>
-    </div>
+    </PantallaCentrada>
   );
 }
 

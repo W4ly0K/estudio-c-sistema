@@ -20,7 +20,8 @@ import {
 } from './componentes/CampoSubEspacio';
 import { CampoEnlace } from './componentes/CampoEnlace';
 import { CamposFranja } from './componentes/CamposFranja';
-import { Encabezado } from './componentes/Encabezado';
+import { CabeceraPagina } from './componentes/CabeceraPagina';
+import { PantallaConSesion } from './componentes/PantallaConSesion';
 import { ExitoRadicado } from './componentes/ExitoRadicado';
 import { TarjetaSolicitud } from './componentes/TarjetaSolicitud';
 import {
@@ -34,6 +35,10 @@ import { ETIQUETAS_CATEGORIA } from './presentacion/etiquetas';
 import { FRANJA_VACIA, franjaDesdeCampos, type ValoresFranja } from './presentacion/franja';
 import { resumirSolicitudes, textoPorDecidir, textoResumen } from './presentacion/resumen';
 import { CajaError } from './componentes/CajaError';
+
+/** V1-D (ADR-010 §2.8 C-12): grupos del formulario B2. Solo agrupan; no cambian campos ni reglas. */
+export const TEXTO_GRUPO_DATOS = 'Datos de la solicitud';
+export const TEXTO_GRUPO_FRANJA = 'Fecha y horario';
 
 interface DashboardProps {
   usuario: UsuarioSesion;
@@ -194,27 +199,25 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
   const avisoPorDecidir = textoPorDecidir(resumen);
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      <Encabezado usuario={usuario} onLogout={onLogout} titulo="Panel de Solicitudes" />
-
-      {/* Área de Trabajo - Tabla Intacta */}
-      <main className="flex-1 p-8 max-w-[1200px] mx-auto w-full">
-        <div className="flex justify-between items-end border-b border-borde-suave pb-4 mb-8">
-          <div>
-            <h2 className="text-2xl font-black text-primary">Historial de Radicados</h2>
-            <p className="text-sm text-texto-secundario mt-1">
-              {!loading && !errorCarga && solicitudes.length > 0
-                ? textoResumen(resumen)
-                : 'Seguimiento de tus reservas de espacios y equipos.'}
-            </p>
-          </div>
-          <button 
-            onClick={() => setDialogo({ vista: 'formulario' })}
-            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
-          >
-            <span className="text-lg">+</span> Nueva Solicitud
-          </button>
-        </div>
+    <>
+      <PantallaConSesion usuario={usuario} onLogout={onLogout} claseContenido="flex-1 p-8 max-w-[1200px] mx-auto w-full space-y-8">
+        <CabeceraPagina
+          contexto="Panel de Solicitudes"
+          titulo="Historial de Radicados"
+          descripcion={
+            !loading && !errorCarga && solicitudes.length > 0
+              ? textoResumen(resumen)
+              : 'Seguimiento de tus reservas de espacios y equipos.'
+          }
+          accion={
+            <button 
+              onClick={() => setDialogo({ vista: 'formulario' })}
+              className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-surface rounded-sm shadow-xs text-sm font-bold flex items-center gap-2 transition-colors"
+            >
+              <span className="text-lg">+</span> Nueva Solicitud
+            </button>
+          }
+        />
 
         {loading ? (
           <p className="text-sm text-texto-secundario">Cargando radicados...</p>
@@ -240,7 +243,7 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             ))}
           </div>
         )}
-      </main>
+      </PantallaConSesion>
 
       {/* Diálogo B2 (formulario) y B1b (éxito). Siempre montado: `showModal()` necesita el
           elemento. El contenido solo existe abierto, así un diálogo cerrado no deja campos
@@ -265,7 +268,8 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
             <h3 id={ids.titulo} className="text-lg font-bold text-primary mb-4">Nueva Solicitud · Estudio C</h3>
             
             <form onSubmit={handleCrearSolicitud} className="space-y-4 text-sm">
-              
+              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
+              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_DATOS}</legend>
               <div>
                 <label htmlFor={ids.categoria} className="block text-texto-secundario mb-1">Categoría</label>
                 <select 
@@ -337,7 +341,12 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
                 />
               )}
 
+              </fieldset>
+
+              <fieldset className="rounded-lg border border-borde-suave p-4 space-y-4">
+              <legend className="px-1 text-sm font-bold text-primary">{TEXTO_GRUPO_FRANJA}</legend>
               <CamposFranja valores={form.franja} onCambio={(franja) => setForm({ ...form, franja })} ahora={new Date()} />
+              </fieldset>
 
               {/* R9-3 (D-R3-3): antes esta caja no tenía role="alert" y un rechazo al radicar (CA-04, CA-06,
                   anexo, sub-espacio) no se anunciaba. Ningún campo del formulario anuncia su propio error:
@@ -356,6 +365,6 @@ export default function Dashboard({ usuario, onLogout }: DashboardProps) {
           </>
         )}
       </dialog>
-    </div>
+    </>
   );
 }

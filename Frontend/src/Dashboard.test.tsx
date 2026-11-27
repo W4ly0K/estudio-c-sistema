@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import Dashboard from './Dashboard'
+import Dashboard, { TEXTO_GRUPO_DATOS, TEXTO_GRUPO_FRANJA } from './Dashboard'
 import { ProveedorApi } from './api/ProveedorApi'
 import { TEXTO_SIN_CONEXION } from './api/errores'
 import { TEXTO_AVISO_URGENCIA, TEXTO_EXITO_TITULO } from './componentes/ExitoRadicado'
@@ -649,5 +649,25 @@ describe('Dashboard con la api inyectada', () => {
       elegir('PODCAST')
       expect(screen.getByText(TEXTO_ANEXO_INVALIDO)).toBeInTheDocument()
     })
+  })
+})
+
+describe('Dashboard · formulario agrupado (R9-3 · V1-D)', () => {
+  it('agrupa los campos en «Datos de la solicitud» y «Fecha y horario» sin cambiar sus etiquetas', async () => {
+    mostrar(apiFalsa())
+    await screen.findByText('No tienes solicitudes registradas aún.')
+    fireEvent.click(screen.getByRole('button', { name: /Nueva Solicitud/ }))
+
+    const datos = screen.getByRole('group', { name: TEXTO_GRUPO_DATOS })
+    const franja = screen.getByRole('group', { name: TEXTO_GRUPO_FRANJA })
+    expect(within(datos).getByLabelText('Categoría')).toBeInTheDocument()
+    expect(within(datos).getByLabelText('Propósito de la reserva')).toBeInTheDocument()
+    expect(within(franja).getByLabelText('Fecha')).toBeInTheDocument()
+    expect(within(franja).getByLabelText('Hora de inicio')).toBeInTheDocument()
+    expect(within(franja).getByLabelText('Hora de finalización')).toBeInTheDocument()
+    // El orden de lectura no cambia: primero los datos, luego la franja, luego los botones.
+    const enviar = screen.getByRole('button', { name: 'Enviar Radicado' })
+    expect(datos.compareDocumentPosition(franja) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(franja.compareDocumentPosition(enviar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

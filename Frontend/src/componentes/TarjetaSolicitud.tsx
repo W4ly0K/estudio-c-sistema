@@ -42,13 +42,13 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
   return (
     <article
       aria-labelledby={idRadicado}
-      className={`rounded-lg p-6 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
+      className={`rounded-lg p-4 sm:p-6 bg-surface shadow-xs ${esUrgencia ? 'border-2 border-primary' : 'border border-borde-suave'}`}
     >
       <div className="flex flex-wrap justify-between items-start gap-3 border-b border-borde-suave pb-4 mb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <span className="text-xs text-texto-secundario font-bold tracking-wider">RADICADO</span>
-            <h3 id={idRadicado} className="text-lg font-black text-primary">{radicado}</h3>
+            <h3 id={idRadicado} className="text-lg font-black tracking-wide text-primary">{radicado}</h3>
           </div>
           {/* Fase 7 · PRD v2.2 §5.1: el lugar va junto a la categoría (lo que se reservó). */}
           <div className="flex flex-wrap items-center gap-2">
@@ -68,7 +68,7 @@ export function TarjetaSolicitud({ solicitud }: { solicitud: SolicitudPropia }) 
         <div>
           <p className="text-texto-secundario mb-0.5">Fecha y horario (hora de Colombia)</p>
           {/* DH2 · F2b: siempre en Bogotá y en 24 horas, se mire desde donde se mire. */}
-          <p className="font-medium text-primary">{formatearFranja(inicio, fin)}</p>
+          <p className="font-bold text-primary">{formatearFranja(inicio, fin)}</p>
         </div>
         <div>
           <p className="text-texto-secundario mb-0.5">Propósito</p>

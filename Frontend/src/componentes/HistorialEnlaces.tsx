@@ -66,8 +66,8 @@ export function HistorialEnlaces({ radicado, idSolicitante, version }: Historial
   }, [api, radicado, clave])
 
   return (
-    <section aria-labelledby={`${id}-titulo`} className="border border-borde-suave rounded-lg p-6 bg-surface text-sm">
-      <h3 id={`${id}-titulo`} className="text-sm font-bold text-primary">
+    <section aria-labelledby={`${id}-titulo`} className="border border-borde-suave rounded-lg p-4 sm:p-6 bg-surface text-sm">
+      <h3 id={`${id}-titulo`} className="text-base font-bold text-primary">
         {TEXTO_TITULO_HISTORIAL}
       </h3>
       <p className="mt-1 text-xs text-texto-secundario">{TEXTO_NOTA_HISTORIAL}</p>
